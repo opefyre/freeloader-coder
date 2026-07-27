@@ -1,1 +1,1 @@
-export const studioSurface = "design-system-gallery";
+export const studioSurface = "workspace-control-center";

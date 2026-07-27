@@ -1,6 +1,7 @@
 import "@fontsource-variable/geist";
 import "../../../packages/ui/src/tokens.css";
 import "./styles.css";
+import { renderWorkspace } from "./workspace.js";
 
 import {
   Activity,
@@ -296,4 +297,8 @@ function bindControls(): void {
   });
 }
 
-render();
+if (window.location.pathname === "/design-system") {
+  render();
+} else {
+  renderWorkspace(app);
+}
