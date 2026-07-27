@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+.turbo/
+.next/
+dist/
+coverage/
+*.log
+*.sqlite
+*.sqlite-*
+.pipeline-studio/
+artifacts/
+worktrees/
+secrets/
+
