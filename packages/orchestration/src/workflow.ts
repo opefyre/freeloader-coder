@@ -10,6 +10,7 @@ export type Stage =
   | "design_review"
   | "committing"
   | "integrating"
+  | "integration_validation"
   | "review_ready"
   | "needs_user"
   | "quarantined";
@@ -41,6 +42,7 @@ export interface WorkflowAdapters {
   review(taskId: string, kind: "functional" | "design"): Promise<ReviewResult>;
   commit(taskId: string): Promise<string>;
   integrate(taskId: string): Promise<string>;
+  validateIntegration(taskId: string): Promise<ValidationResult>;
 }
 
 export interface WorkflowOptions {
@@ -125,7 +127,13 @@ export async function runWorkflow(
     const commitEvidence = await adapters.commit(taskId);
     advance("integrating", commitEvidence);
     const integrationEvidence = await adapters.integrate(taskId);
-    advance("review_ready", integrationEvidence);
+    advance("integration_validation", integrationEvidence);
+    const integrationValidation = await adapters.validateIntegration(taskId);
+    if (!integrationValidation.passed) {
+      advance("quarantined", integrationValidation.evidence);
+      return record;
+    }
+    advance("review_ready", integrationValidation.evidence);
     return record;
   }
 }

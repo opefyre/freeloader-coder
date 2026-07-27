@@ -12,6 +12,7 @@ function fakeAdapters(overrides: Partial<WorkflowAdapters> = {}): WorkflowAdapte
     review: async (_taskId, kind) => ({ verdict: "pass", evidence: `${kind} approved` }),
     commit: async () => "commit observed",
     integrate: async () => "integration observed",
+    validateIntegration: async () => ({ passed: true, evidence: "integration passed" }),
     ...overrides
   };
 }
@@ -28,7 +29,8 @@ test("single-computer fake journey reaches review ready with observed evidence",
     "functional approved",
     "design approved",
     "commit observed",
-    "integration observed"
+    "integration observed",
+    "integration passed"
   ]);
 });
 
@@ -67,4 +69,15 @@ test("review uncertainty requires the user and prevents commit or integration", 
   }));
   assert.equal(result.stage, "needs_user");
   assert.equal(effects, 0);
+});
+
+test("failed post-integration validation cannot become review ready", async () => {
+  const result = await runWorkflow("task-5", fakeAdapters({
+    validateIntegration: async () => ({
+      passed: false,
+      evidence: "integration regression"
+    })
+  }));
+  assert.equal(result.stage, "quarantined");
+  assert.equal(result.evidence.at(-1), "integration regression");
 });
