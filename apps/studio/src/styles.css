@@ -1278,8 +1278,23 @@ h1 {
   background: var(--ps-surface-raised);
 }
 
+.option-button[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--ps-accent) 14%, var(--ps-surface-raised));
+  color: var(--ps-accent);
+  box-shadow: inset 0 0 0 0.125rem color-mix(in oklch, var(--ps-accent) 45%, transparent);
+}
+
 .option-button small {
   color: var(--ps-text-muted);
+}
+
+.decision-recorded {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
+  margin: var(--ps-space-3) 0 0 !important;
+  color: var(--ps-positive) !important;
+  font-size: 0.7rem !important;
 }
 
 .proof-score {

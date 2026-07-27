@@ -59,6 +59,7 @@ const surfaceIcons: Record<WorkspaceSurface, string> = {
 
 let density: DensityMode = "guided";
 let situation: NavigationSituation = "busy";
+let selectedProductName: "pipeline-studio" | "freeloader-coder" | undefined;
 let locationState: WorkspaceLocation = safeLocation(window.location.pathname + window.location.search);
 
 export function renderWorkspace(app: HTMLDivElement): void {
@@ -163,7 +164,7 @@ export function renderWorkspace(app: HTMLDivElement): void {
           .slice(0, 5)
           .map(
             (destination) =>
-              `<a href="${hrefFor(destination.id)}" data-workspace-link><i data-lucide="${surfaceIcons[destination.id]}"></i><span><strong>${destination.label}</strong><small>${destination.description}</small></span><kbd>↵</kbd></a>`
+              `<a class="ps-focusable" href="${hrefFor(destination.id)}" data-workspace-link><i data-lucide="${surfaceIcons[destination.id]}"></i><span><strong>${destination.label}</strong><small>${destination.description}</small></span><kbd>↵</kbd></a>`
           )
           .join("")}
       </section>
@@ -234,9 +235,10 @@ function renderSurface(surface: WorkspaceSurface, technicalVisible: boolean): st
       <div class="card-heading"><span class="card-icon caution"><i data-lucide="UserRoundCheck"></i></span><span><small>NEEDS YOU</small><h2>Choose the public product name</h2></span></div>
       <p>The repository is “Freeloader Coder,” while the product currently says “Pipeline Studio.” Work can continue safely without this choice.</p>
       <div class="decision-options">
-        <button class="option-button ps-focusable" type="button">Keep Pipeline Studio <small>Clear, credible product name</small></button>
-        <button class="option-button ps-focusable" type="button">Use Freeloader Coder <small>Matches the public repository</small></button>
+        <button class="option-button ps-focusable" type="button" data-product-choice="pipeline-studio" aria-pressed="${selectedProductName === "pipeline-studio"}">Keep Pipeline Studio <small>Clear, credible product name</small></button>
+        <button class="option-button ps-focusable" type="button" data-product-choice="freeloader-coder" aria-pressed="${selectedProductName === "freeloader-coder"}">Use Freeloader Coder <small>Matches the public repository</small></button>
       </div>
+      ${selectedProductName ? `<p class="decision-recorded"><i data-lucide="Check"></i> Demo choice recorded locally. No project data was changed.</p>` : ""}
       <a href="${hrefFor("decisions")}" class="text-action ps-focusable" data-workspace-link>Review with context <i data-lucide="ArrowRight"></i></a>
     </section>
 
@@ -343,6 +345,13 @@ function bindWorkspace(app: HTMLDivElement): void {
     const next = (situations.indexOf(situation) + 1) % situations.length;
     situation = situations[next] ?? "busy";
     renderWorkspace(app);
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-product-choice]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedProductName = button.dataset.productChoice as typeof selectedProductName;
+      renderWorkspace(app);
+    });
   });
 
   const palette = app.querySelector<HTMLElement>("[data-command-palette]");

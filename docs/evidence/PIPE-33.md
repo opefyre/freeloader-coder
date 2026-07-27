@@ -18,7 +18,7 @@
 ## Verification
 
 - `npm run verify`: passed.
-- 51 automated tests: passed.
+- 54 automated tests: passed.
 - `npm run studio:build`: passed.
 - Desktop visual review at the default browser viewport: passed.
 - Mobile visual review at 390 × 844: passed.
@@ -28,6 +28,7 @@
 - Guided → Advanced state and URL persistence: passed.
 - Command palette open/close flow on mobile: passed.
 - Keyboard shortcut and Escape dismissal: passed.
+- Demo decision selection, pressed state, and no-side-effect notice: passed.
 - Workspace deep-link navigation and browser Back flow: passed.
 - Browser console errors during interaction checks: none.
 
