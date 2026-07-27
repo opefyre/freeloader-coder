@@ -1,1 +1,1 @@
-export const application = "studio";
+export const studioSurface = "design-system-gallery";

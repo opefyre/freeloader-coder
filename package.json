@@ -12,6 +12,8 @@
     "packages/*"
   ],
   "scripts": {
+    "studio:dev": "vite --config apps/studio/vite.config.ts",
+    "studio:build": "vite build --config apps/studio/vite.config.ts",
     "setup:check": "node scripts/setup-check.mjs",
     "format:check": "node scripts/repo-check.mjs format",
     "lint": "node scripts/repo-check.mjs lint",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "24.1.0",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vite": "8.1.5"
   }
 }

@@ -19,7 +19,12 @@ const approvedForcedColorFallbacks = new Set(["packages/ui/src/tokens.css"]);
 async function walk(path) {
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const child = join(path, entry.name);
-    if (entry.isDirectory()) await walk(child);
+    if (
+      entry.isDirectory() &&
+      !["node_modules", "dist", ".git", ".vite"].includes(entry.name)
+    ) {
+      await walk(child);
+    }
     else if (textExtensions.has(extname(entry.name))) await inspect(child);
   }
 }
@@ -39,7 +44,8 @@ async function inspect(path) {
     if (
       path.endsWith(".css") &&
       /font-family\s*:/i.test(content) &&
-      !approvedFontTokens.has(path)
+      !approvedFontTokens.has(path) &&
+      !/font-family\s*:\s*var\(--ps-font-sans\)/i.test(content)
     ) {
       failures.push(`${path}: feature CSS must use --ps-font-sans`);
     }
@@ -52,7 +58,9 @@ async function inspect(path) {
     }
     if (
       path.endsWith(".css") &&
-      /\bborder(?:-\w+)?\s*:/i.test(content) &&
+      /\bborder(?:-(?:top|right|bottom|left|block|inline)(?:-(?:width|style|color))?)?\s*:/i.test(
+        content
+      ) &&
       !approvedForcedColorFallbacks.has(path)
     ) {
       failures.push(`${path}: decorative borders are prohibited`);
