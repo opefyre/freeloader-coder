@@ -1,0 +1,74 @@
+:root {
+  color-scheme: dark;
+  --ps-font-sans: "Geist Variable", "Geist", system-ui, sans-serif;
+  --ps-bg-canvas: oklch(0.13 0.018 266);
+  --ps-bg-deep: oklch(0.09 0.014 266);
+  --ps-surface-glass: oklch(0.23 0.024 266 / 0.58);
+  --ps-surface-raised: oklch(0.28 0.028 266 / 0.72);
+  --ps-surface-hover: oklch(0.34 0.032 266 / 0.76);
+  --ps-text-primary: oklch(0.97 0.008 266);
+  --ps-text-secondary: oklch(0.75 0.02 266);
+  --ps-text-muted: oklch(0.6 0.02 266);
+  --ps-accent: oklch(0.78 0.15 168);
+  --ps-info: oklch(0.75 0.13 232);
+  --ps-positive: oklch(0.78 0.15 150);
+  --ps-caution: oklch(0.82 0.15 84);
+  --ps-critical: oklch(0.7 0.2 28);
+  --ps-focus: oklch(0.84 0.16 190);
+  --ps-shadow-glass: 0 24px 72px oklch(0.02 0.01 266 / 0.5);
+  --ps-shadow-raised: 0 14px 38px oklch(0.02 0.01 266 / 0.36);
+  --ps-radius-sm: 0.75rem;
+  --ps-radius-md: 1rem;
+  --ps-radius-lg: 1.5rem;
+  --ps-radius-xl: 2rem;
+  --ps-space-1: 0.25rem;
+  --ps-space-2: 0.5rem;
+  --ps-space-3: 0.75rem;
+  --ps-space-4: 1rem;
+  --ps-space-6: 1.5rem;
+  --ps-space-8: 2rem;
+  --ps-space-12: 3rem;
+  --ps-motion-fast: 120ms;
+  --ps-motion-standard: 200ms;
+  --ps-motion-deliberate: 320ms;
+}
+
+.ps-surface {
+  background: var(--ps-surface-glass);
+  box-shadow: var(--ps-shadow-glass);
+  backdrop-filter: blur(1.25rem) saturate(135%);
+  border-radius: var(--ps-radius-lg);
+}
+
+.ps-focusable:focus-visible {
+  outline: 0.125rem solid var(--ps-focus);
+  outline-offset: 0.1875rem;
+}
+
+[data-density="guided"] {
+  --ps-control-height: 2.75rem;
+  --ps-density-gap: var(--ps-space-4);
+}
+
+[data-density="advanced"] {
+  --ps-control-height: 2.25rem;
+  --ps-density-gap: 0.625rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .ps-surface {
+    forced-color-adjust: auto;
+    outline: 0.0625rem solid CanvasText;
+  }
+}
