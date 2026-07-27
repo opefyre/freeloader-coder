@@ -23,6 +23,8 @@
 - Desktop visual review at the default browser viewport: passed.
 - Mobile visual review at 390 × 844: passed.
 - Tablet visual review at 820 × 900: passed.
+- Wide-desktop review at 1600 × 1000: passed; activity dock visible and no
+  horizontal overflow.
 - Effective 200% reflow review at 640 CSS pixels: passed with no horizontal
   overflow.
 - Guided → Advanced state and URL persistence: passed.
