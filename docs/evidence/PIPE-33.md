@@ -22,8 +22,12 @@
 - `npm run studio:build`: passed.
 - Desktop visual review at the default browser viewport: passed.
 - Mobile visual review at 390 × 844: passed.
+- Tablet visual review at 820 × 900: passed.
+- Effective 200% reflow review at 640 CSS pixels: passed with no horizontal
+  overflow.
 - Guided → Advanced state and URL persistence: passed.
 - Command palette open/close flow on mobile: passed.
+- Keyboard shortcut and Escape dismissal: passed.
 - Workspace deep-link navigation and browser Back flow: passed.
 - Browser console errors during interaction checks: none.
 
@@ -31,7 +35,7 @@
 
 - No model, provider, Jira, or pipeline claim is fetched from production yet.
   Operational values shown in this slice are clearly contained fixture content
-  for UI development.
+  for UI development and are visibly labeled as demo data.
 - External GitHub navigation uses an explicit trusted URL.
 - Deep links contain identifiers and display state only; tokens, commands,
   filesystem paths, and secrets are rejected by the navigation contract.

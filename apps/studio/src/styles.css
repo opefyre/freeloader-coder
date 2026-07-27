@@ -970,11 +970,25 @@ h1 {
 }
 
 .workspace-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-space-2);
   margin-bottom: var(--ps-space-1);
   color: var(--ps-accent);
   font-size: 0.7rem;
   font-weight: 750;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fixture-badge {
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--ps-caution) 12%, transparent);
+  color: var(--ps-caution);
+  font-size: 0.56rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 

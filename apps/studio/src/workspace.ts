@@ -109,7 +109,7 @@ export function renderWorkspace(app: HTMLDivElement): void {
       <main class="workspace-main" id="workspace-main">
         <header class="workspace-topbar">
           <div>
-            <p class="workspace-kicker">${surfaceTitle(locationState.surface).kicker}</p>
+            <p class="workspace-kicker">${surfaceTitle(locationState.surface).kicker}<span class="fixture-badge">Demo data</span></p>
             <h1>${surfaceTitle(locationState.surface).title}</h1>
           </div>
           <div class="workspace-actions">
@@ -135,7 +135,7 @@ export function renderWorkspace(app: HTMLDivElement): void {
 
       <aside class="activity-dock" aria-label="Live activity">
         <div class="dock-heading">
-          <div><span class="live-dot"></span><strong>Live work</strong></div>
+          <div><span class="live-dot"></span><strong>Live work</strong><small class="fixture-badge">Demo</small></div>
           <button class="icon-button ps-focusable" type="button" aria-label="Pause after current step"><i data-lucide="Pause"></i></button>
         </div>
         <section class="active-run">
@@ -261,7 +261,7 @@ function renderSurface(surface: WorkspaceSurface, technicalVisible: boolean): st
 
     ${technicalVisible ? `<section class="technical-card ps-surface">
       <div><p class="eyebrow">Advanced detail</p><h2>Runtime snapshot</h2></div>
-      <code>branch main</code><code>commit 726d351</code><code>checks 51/51</code><code>build verified</code>
+      <code>branch main</code><code>public sync verified</code><code>checks 51/51</code><code>build verified</code>
     </section>` : ""}
   </div>`;
 }
