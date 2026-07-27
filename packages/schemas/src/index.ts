@@ -166,6 +166,53 @@ export const eventSchema = z.discriminatedUnion("type", [
   z.strictObject({ schemaVersion: version, sequence: z.number().int().positive(), eventId: id, occurredAt: timestamp, type: z.literal("lease.released"), payload: z.strictObject({ taskId: id, leaseId: id }) })
 ]);
 
+const modelFindingSchema = z.strictObject({
+  severity: z.enum(["info", "minor", "major", "critical"]),
+  path: z.string().min(1).nullable(),
+  message: z.string().min(1).max(2_000)
+});
+
+export const modelResultEnvelopeSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    schemaVersion: version,
+    requestId: id,
+    kind: z.literal("plan"),
+    result: z.strictObject({
+      summary: z.string().min(1).max(2_000),
+      files: z.array(z.strictObject({
+        path: z.string().min(1),
+        reason: z.string().min(1).max(1_000)
+      })).min(1),
+      steps: z.array(z.string().min(1)).min(1),
+      risks: z.array(z.string().min(1))
+    })
+  }),
+  z.strictObject({
+    schemaVersion: version,
+    requestId: id,
+    kind: z.literal("implementation"),
+    result: z.strictObject({
+      summary: z.string().min(1).max(2_000),
+      edits: z.array(z.strictObject({
+        path: z.string().min(1),
+        expectedSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+        content: z.string()
+      })).min(1),
+      notes: z.array(z.string())
+    })
+  }),
+  z.strictObject({
+    schemaVersion: version,
+    requestId: id,
+    kind: z.literal("review"),
+    result: z.strictObject({
+      verdict: z.enum(["pass", "fail", "needs_user"]),
+      summary: z.string().min(1).max(2_000),
+      findings: z.array(modelFindingSchema)
+    })
+  })
+]);
+
 export const safeErrorSchema = z.strictObject({
   schemaVersion: version,
   code: z.enum(["INVALID_INPUT", "PERMISSION_DENIED", "QUOTA_EXHAUSTED", "DEPENDENCY_BLOCKED", "PROVIDER_UNAVAILABLE", "VALIDATION_FAILED", "EFFECT_UNKNOWN", "INTERNAL"]),

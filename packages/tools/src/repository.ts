@@ -15,6 +15,25 @@ export interface EditEvidence {
   readonly bytes: number;
 }
 
+export interface WorktreeGitAdapter {
+  addWorktree(input: {
+    readonly repositoryRoot: string;
+    readonly worktreePath: string;
+    readonly branch: string;
+    readonly baseline: string;
+  }): Promise<void>;
+  inspectWorktree(worktreePath: string): Promise<{
+    readonly branch: string;
+    readonly head: string;
+  }>;
+}
+
+export interface PreparedWorktree {
+  readonly path: string;
+  readonly branch: string;
+  readonly baseline: string;
+}
+
 export class LocalWorkspace {
   readonly #root: string;
   readonly #allowedPaths: ReadonlySet<string>;
@@ -127,6 +146,39 @@ export function assertProjectRelativePath(path: string): void {
 
 export function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+export async function prepareWorktree(input: {
+  readonly repositoryRoot: string;
+  readonly worktreeRoot: string;
+  readonly taskId: string;
+  readonly runId: string;
+  readonly baseline: string;
+  readonly git: WorktreeGitAdapter;
+}): Promise<PreparedWorktree> {
+  const repositoryRoot = await realpath(input.repositoryRoot);
+  await mkdir(input.worktreeRoot, { recursive: true, mode: 0o700 });
+  const worktreeRoot = await realpath(input.worktreeRoot);
+  const suffix = sha256(input.runId).slice(0, 10);
+  const slug = input.taskId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!slug) throw new Error("Task ID cannot produce a safe branch name.");
+  if (!/^[a-f0-9]{7,64}$/.test(input.baseline)) throw new Error("Baseline commit is invalid.");
+  const branch = `studio/${slug}-${suffix}`;
+  const path = resolve(worktreeRoot, `${slug}-${suffix}`);
+  const fromRoot = relative(worktreeRoot, path);
+  if (fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new Error("Worktree path escapes its root.");
+
+  await input.git.addWorktree({
+    repositoryRoot,
+    worktreePath: path,
+    branch,
+    baseline: input.baseline
+  });
+  const observed = await input.git.inspectWorktree(path);
+  if (observed.branch !== branch || observed.head !== input.baseline) {
+    throw new Error("Worktree postcondition was not observed.");
+  }
+  return { path, branch, baseline: input.baseline };
 }
 
 async function nearestExistingParent(start: string): Promise<string> {

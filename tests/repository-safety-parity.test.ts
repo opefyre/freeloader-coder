@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { LocalWorkspace, sha256 } from "../packages/tools/src/repository.js";
+import {
+  LocalWorkspace,
+  prepareWorktree,
+  sha256
+} from "../packages/tools/src/repository.js";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "studio-workspace-"));
@@ -64,4 +68,46 @@ test("workspace refuses symbolic-link reads and writes", async () => {
     expectedSha256: null,
     content: "changed"
   }]));
+});
+
+test("worktree preparation uses a bounded path and verifies branch/head postconditions", async () => {
+  const repositoryRoot = await mkdtemp(join(tmpdir(), "studio-repository-"));
+  const worktreeRoot = await mkdtemp(join(tmpdir(), "studio-worktrees-"));
+  let requested: { worktreePath: string; branch: string; baseline: string } | null = null;
+  const baseline = "a".repeat(40);
+  const result = await prepareWorktree({
+    repositoryRoot,
+    worktreeRoot,
+    taskId: "TASK 42",
+    runId: "run-1",
+    baseline,
+    git: {
+      addWorktree: async (input) => {
+        requested = input;
+      },
+      inspectWorktree: async () => {
+        if (!requested) throw new Error("Missing request.");
+        return { branch: requested.branch, head: requested.baseline };
+      }
+    }
+  });
+  assert.equal(result.path.startsWith(await realpath(worktreeRoot)), true);
+  assert.match(result.branch, /^studio\/task-42-[a-f0-9]{10}$/);
+  assert.equal(result.baseline, baseline);
+});
+
+test("worktree preparation fails when Git postconditions do not match", async () => {
+  const repositoryRoot = await mkdtemp(join(tmpdir(), "studio-repository-"));
+  const worktreeRoot = await mkdtemp(join(tmpdir(), "studio-worktrees-"));
+  await assert.rejects(() => prepareWorktree({
+    repositoryRoot,
+    worktreeRoot,
+    taskId: "task-1",
+    runId: "run-1",
+    baseline: "a".repeat(40),
+    git: {
+      addWorktree: async () => undefined,
+      inspectWorktree: async () => ({ branch: "wrong", head: "b".repeat(40) })
+    }
+  }));
 });
