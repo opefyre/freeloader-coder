@@ -4,6 +4,10 @@ export const schemaVersion = 1 as const;
 const id = z.string().min(1).max(160);
 const timestamp = z.iso.datetime({ offset: true });
 const version = z.literal(schemaVersion);
+const extensions = z.record(
+  z.string().regex(/^[a-z0-9]+(?:[.-][a-z0-9]+)+$/),
+  z.unknown()
+).default({});
 
 export const taskStatusSchema = z.enum([
   "draft",
@@ -23,8 +27,32 @@ export const taskSchema = z.strictObject({
   id,
   title: z.string().min(1).max(500),
   status: taskStatusSchema,
-  revision: z.number().int().nonnegative()
+  revision: z.number().int().nonnegative(),
+  extensions
 });
+
+export const legacyTaskV0Schema = z.strictObject({
+  id,
+  summary: z.string().min(1).max(500),
+  state: z.enum(["queued", "active", "complete"])
+});
+
+export function migrateTaskV0(input: unknown): Task {
+  const legacy = legacyTaskV0Schema.parse(input);
+  const status = {
+    queued: "ready",
+    active: "working",
+    complete: "done"
+  }[legacy.state] as Task["status"];
+  return taskSchema.parse({
+    schemaVersion,
+    id: legacy.id,
+    title: legacy.summary,
+    status,
+    revision: 0,
+    extensions: { "studio.migration.source": "task-v0" }
+  });
+}
 
 export const dependencySchema = z.strictObject({
   schemaVersion: version,
@@ -147,6 +175,30 @@ export const safeErrorSchema = z.strictObject({
   retryable: z.boolean(),
   diagnosticId: id
 });
+
+export const localDiagnosticSchema = z.strictObject({
+  diagnosticId: id,
+  code: safeErrorSchema.shape.code,
+  owner: safeErrorSchema.shape.owner,
+  safeMessage: safeErrorSchema.shape.safeMessage,
+  nextAction: safeErrorSchema.shape.nextAction,
+  retryable: z.boolean(),
+  localDetail: z.string().max(10_000),
+  cause: z.unknown().optional()
+});
+
+export function toSafeError(input: unknown): SafeError {
+  const diagnostic = localDiagnosticSchema.parse(input);
+  return safeErrorSchema.parse({
+    schemaVersion,
+    code: diagnostic.code,
+    owner: diagnostic.owner,
+    safeMessage: diagnostic.safeMessage,
+    nextAction: diagnostic.nextAction,
+    retryable: diagnostic.retryable,
+    diagnosticId: diagnostic.diagnosticId
+  });
+}
 
 export type Task = z.infer<typeof taskSchema>;
 export type DomainEvent = z.infer<typeof eventSchema>;
