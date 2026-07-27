@@ -1,0 +1,27 @@
+{
+  "name": "pipeline-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup:check": "node scripts/setup-check.mjs",
+    "format:check": "node scripts/repo-check.mjs format",
+    "lint": "node scripts/repo-check.mjs lint",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "build": "tsc --project tsconfig.build.json",
+    "test": "node --test dist/tests/*.test.js",
+    "verify": "npm run setup:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "24.1.0",
+    "typescript": "5.9.2"
+  }
+}

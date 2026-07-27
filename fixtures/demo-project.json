@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "demo-notes",
+    "name": "Demo Notes",
+    "repository": "local/demo-notes",
+    "defaultBranch": "main"
+  },
+  "task": {
+    "id": "TASK-DEMO-001",
+    "title": "Add an empty state to saved notes",
+    "status": "ready",
+    "acceptanceCriteria": [
+      "Empty state is keyboard reachable",
+      "Copy explains how to create the first note",
+      "Offline validation passes"
+    ]
+  }
+}
