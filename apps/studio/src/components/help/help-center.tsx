@@ -176,7 +176,7 @@ export function HelpCenter() {
             </label>
           </div>
           <div className="grid grid-cols-3 gap-2 lg:w-72">
-            <HeroMetric value="9" label="Guides" />
+            <HeroMetric value="10" label="Guides" />
             <HeroMetric value="7" label="Journeys" />
             <HeroMetric value="0" label="Data sent" />
           </div>
@@ -558,6 +558,13 @@ export function HelpCenter() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <a
+              href="/releases"
+              className="inline-flex h-9 items-center gap-2 rounded-full bg-secondary px-4 text-sm font-medium hover:bg-secondary/75"
+            >
+              <ShieldCheck weight="fill" />
+              Release Center
+            </a>
             <a
               href="https://github.com/opefyre/freeloader-coder/blob/main/CONTRIBUTING.md"
               target="_blank"

@@ -7,6 +7,7 @@ export const studioViews = [
   "integrations",
   "evidence",
   "help",
+  "releases",
   "settings"
 ] as const;
 
@@ -21,6 +22,7 @@ const routes: Record<StudioView, string> = {
   integrations: "/integrations",
   evidence: "/evidence",
   help: "/help",
+  releases: "/releases",
   settings: "/settings"
 };
 

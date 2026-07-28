@@ -21,6 +21,7 @@ import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { Pause } from "@phosphor-icons/react/Pause";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
 import { Question } from "@phosphor-icons/react/Question";
+import { RocketLaunch } from "@phosphor-icons/react/RocketLaunch";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Sparkle } from "@phosphor-icons/react/Sparkle";
 import { Sun } from "@phosphor-icons/react/Sun";
@@ -40,6 +41,7 @@ import { HelpCenter } from "./components/help/help-center.js";
 import { IntegrationWorkbench } from "./components/integrations/integration-workbench.js";
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
+import { ReleaseCenter } from "./components/releases/release-center.js";
 import { ControlCenter } from "./components/control-center/control-center.js";
 import { ResilienceCenter } from "./components/resilience/resilience-center.js";
 import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
@@ -146,6 +148,11 @@ const viewCopy: Record<
     eyebrow: "Offline · Product-aware · Safe to share",
     title: "Help that knows the workflow",
     description: "Learn, recover, and prepare support evidence without leaking sensitive data.",
+  },
+  releases: {
+    eyebrow: "Candidate 0.8.0-beta.2 · Local verification",
+    title: "Releases you can prove and undo",
+    description: "Inspect artifacts, compatibility, updates, rollout gates, and incident recovery before publishing.",
   },
   settings: {
     eyebrow: "Local-first configuration",
@@ -282,6 +289,12 @@ function App() {
     const items = [
       ...navItems,
       {
+        id: "releases" as const,
+        label: "Releases",
+        note: "Updates, compatibility, and rollout",
+        icon: RocketLaunch,
+      },
+      {
         id: "settings" as const,
         label: "Settings",
         note: "Connections, privacy, and safeguards",
@@ -409,6 +422,20 @@ function App() {
             View safeguards
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => navigate("releases")}
+          aria-current={activeView === "releases" ? "page" : undefined}
+          className={cn(
+            "mt-3 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+            activeView === "releases" &&
+              "bg-sidebar-accent text-sidebar-accent-foreground"
+          )}
+        >
+          <RocketLaunch size={18} />
+          Releases
+        </button>
 
         <button
           type="button"
@@ -1180,6 +1207,10 @@ function WorkspaceSurface({
 
   if (view === "help") {
     return <HelpCenter />;
+  }
+
+  if (view === "releases") {
+    return <ReleaseCenter />;
   }
 
   return (

@@ -163,6 +163,23 @@ const rawArticles: readonly HelpArticle[] = [
     jiraKey: "PIPE-100"
   }),
   article({
+    id: "update-pipeline-studio",
+    title: "Update Pipeline Studio safely",
+    summary: "Verify compatibility, preserve projects and data, preview migrations, and retain a proven rollback before applying a source update.",
+    category: "safety",
+    journeys: [],
+    keywords: ["update", "release", "migration", "compatibility", "rollback"],
+    steps: [
+      "Open Releases and confirm the target manifest, signature, compatibility evidence, and known limitations.",
+      "Wait for active work to reach a checkpoint, then create the project checkpoint and database backup.",
+      "Review migrations, changed files, required disk, and the exact rollback version.",
+      "Apply and verify the update; restore the last compatible version if verification is interrupted or fails."
+    ],
+    safeAlternative: "Remain on the current supported version when compatibility, signature, preservation, or rollback evidence is incomplete.",
+    sourcePath: "docs/guides/updating.md",
+    jiraKey: "PIPE-98"
+  }),
+  article({
     id: "share-a-safe-support-report",
     title: "Share a safe support report",
     summary: "Create a reproducible report without credentials, source code, personal paths, or private account data.",

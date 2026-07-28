@@ -12,6 +12,7 @@ Start with:
 - [Review previews and evidence](previews-and-evidence.md)
 - [Recover or restore work](recovery.md)
 - [Publish verified work](publishing.md)
+- [Update Pipeline Studio safely](updating.md)
 
 Every guide names the observable result, the user-controlled effect, and what
 to do when Pipeline Studio cannot prove that an action is safe.

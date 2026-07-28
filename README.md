@@ -43,6 +43,11 @@ in-product Help Center is available at `/help`. Contributors should start with
 [CONTRIBUTING.md](CONTRIBUTING.md), and security reports must use the private
 process in [SECURITY.md](SECURITY.md).
 
+The local [Release Center](docs/architecture/release-lifecycle.md) at
+`/releases` previews reproducible artifacts, compatibility, preservation-first
+updates, rollout gates, incidents, and rollback. It does not enable CI/CD or
+deployment automation.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.
