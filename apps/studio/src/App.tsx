@@ -28,6 +28,10 @@ import { X } from "@phosphor-icons/react/X";
 import { useEffect, useMemo, useState } from "react";
 
 import { controlCenterMetric } from "../../../fixtures/control-center-metrics.js";
+import {
+  approvalFacts,
+  contentPatternExamples,
+} from "../../../packages/ui/src/content.js";
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { Button } from "./components/ui/button.js";
@@ -117,7 +121,7 @@ function initialView(): StudioView {
 const stages = [
   { label: "Readiness", note: "Goal and repository understood", state: "done" },
   { label: "Breakdown", note: "6 scoped tasks created", state: "done" },
-  { label: "Implementation", note: "Responsive navigation shell", state: "active" },
+  { label: "Implementation", note: "Plans, approvals, errors", state: "active" },
   { label: "Validation", note: "Type, lint, build and UI", state: "next" },
   { label: "Review", note: "Two independent reviewers", state: "next" },
 ] as const;
@@ -433,13 +437,13 @@ function App() {
                             <span className="size-1.5 animate-pulse rounded-full bg-primary" />
                             Working now
                           </Badge>
-                          <span className="text-xs font-medium text-muted-foreground">PIPE-33</span>
+                          <span className="text-xs font-medium text-muted-foreground">PIPE-34</span>
                         </div>
                         <CardTitle className="mt-4 text-xl">
-                          Build the responsive workspace navigation
+                          Build reusable trust language
                         </CardTitle>
                         <CardDescription>
-                          The implementer is aligning routes, keyboard behavior, and compact layouts.
+                          The Studio is standardizing how plans, approvals, failures, and evidence are explained.
                         </CardDescription>
                       </div>
                       <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
@@ -448,11 +452,11 @@ function App() {
                     </CardHeader>
                     <CardContent className="mt-6">
                       <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full w-[68%] rounded-full bg-primary" />
+                        <div className="h-full w-[35%] rounded-full bg-primary" />
                       </div>
                       <div className="mt-2 flex justify-between text-xs text-muted-foreground">
                         <span>Implementation</span>
-                        <span>68%</span>
+                        <span>35%</span>
                       </div>
                       <div className="mt-7 grid gap-1 sm:grid-cols-5">
                         {stages.map((stage, index) => (
@@ -958,6 +962,7 @@ function WorkspaceSurface({
               <SourceRow label="Evidence" value="87 checks" state="Fresh" />
             </CardContent>
           </Card>
+          <ApprovalPreview />
           <Card>
             <CardHeader>
               <CardTitle>Execution boundary</CardTitle>
@@ -987,20 +992,20 @@ function WorkspaceSurface({
                 <div className="flex items-center gap-2">
                   <Badge tone="active">Implementation</Badge>
                   <a
-                    href="https://opefyre.atlassian.net/browse/PIPE-33"
+                    href="https://opefyre.atlassian.net/browse/PIPE-34"
                     target="_blank"
                     rel="noreferrer"
                     className="text-xs font-semibold text-primary hover:underline"
                   >
-                    PIPE-33
+                    PIPE-34
                   </a>
                 </div>
                 <CardTitle className="mt-4 text-xl">
-                  Responsive workspace navigation
+                  Reusable trust-language patterns
                 </CardTitle>
                 <CardDescription>
-                  Restoring route-aware behavior, keyboard navigation, and durable
-                  workspace state inside the redesigned shell.
+                  Defining shared, versioned patterns for plans, approvals, errors,
+                  retries, recovery, and evidence.
                 </CardDescription>
               </div>
               <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
@@ -1010,9 +1015,9 @@ function WorkspaceSurface({
             <CardContent className="mt-7">
               <div className="flex items-center gap-3">
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full w-[82%] rounded-full bg-primary" />
+                  <div className="h-full w-[35%] rounded-full bg-primary" />
                 </div>
-                <strong className="text-sm">82%</strong>
+                <strong className="text-sm">35%</strong>
               </div>
               <div className="mt-7 grid gap-2 sm:grid-cols-5">
                 {stages.map((stage, index) => (
@@ -1044,10 +1049,10 @@ function WorkspaceSurface({
               <Badge>3 ready · 5 dependent</Badge>
             </CardHeader>
             <CardContent className="mt-5 space-y-2">
-              <TaskRow id="PIPE-33" title="Workspace navigation shell" state="Working now" tone="active" />
-              <TaskRow id="PIPE-34" title="Conversation-first command surface" state="Ready next" tone="positive" />
-              <TaskRow id="PIPE-35" title="Trustworthy task timeline" state="After PIPE-34" tone="neutral" />
+              <TaskRow id="PIPE-34" title="Plain-language trust patterns" state="Working now" tone="active" />
+              <TaskRow id="PIPE-35" title="Trustworthy task timeline" state="Ready next" tone="positive" />
               <TaskRow id="PIPE-36" title="Decision inbox and explanations" state="After PIPE-35" tone="neutral" />
+              <TaskRow id="PIPE-37" title="Preview and checkpoint experience" state="After PIPE-36" tone="neutral" />
             </CardContent>
           </Card>
         </div>
@@ -1364,6 +1369,43 @@ function CommandPalette({
         </div>
       </section>
     </div>
+  );
+}
+
+function ApprovalPreview() {
+  const approval = contentPatternExamples.approval;
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <Badge tone="caution">Before I act</Badge>
+          <ShieldCheck className="text-primary" weight="duotone" />
+        </div>
+        <CardTitle className="mt-4">{approval.title}</CardTitle>
+        <CardDescription>
+          Every approval uses the same four decision facts.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="mt-5 space-y-3">
+        {approvalFacts(approval).map((fact) => (
+          <div key={fact.label} className="rounded-2xl bg-muted/50 p-3">
+            <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {fact.label}
+            </span>
+            <p className="mt-1 text-xs leading-5">{fact.value}</p>
+          </div>
+        ))}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <Button variant="secondary" size="sm">
+            {approval.alternativeAction}
+          </Button>
+          <Button size="sm">{approval.recommendedAction}</Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          Demo only. No local or external effect is connected.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

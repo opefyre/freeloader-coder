@@ -48,7 +48,16 @@ test("workspace provides dedicated interactive surfaces rather than inert anchor
   }
   assert.match(source, /onClick=\{\(\) => navigate\(item\.id\)\}/);
   assert.match(source, /onClick=\{\(\) => navigate\("conversation"\)\}/);
-  assert.match(source, /https:\/\/opefyre\.atlassian\.net\/browse\/PIPE-33/);
+  assert.match(source, /https:\/\/opefyre\.atlassian\.net\/browse\/PIPE-34/);
+});
+
+test("workspace renders the shared approval pattern with all required decision facts", async () => {
+  const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  assert.match(source, /contentPatternExamples\.approval/);
+  assert.match(source, /approvalFacts\(approval\)/);
+  assert.match(source, /Before I act/);
+  assert.match(source, /Every approval uses the same four decision facts/);
+  assert.match(source, /No local or external effect is connected/);
 });
 
 test("workspace renders provider evidence as interactive, explicitly demo-scoped telemetry", async () => {

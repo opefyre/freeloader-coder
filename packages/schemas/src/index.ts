@@ -177,6 +177,97 @@ export const recoverySchema = z.strictObject({
   attempt: z.number().int().positive()
 });
 
+const contentText = z.string().trim().min(1).max(500);
+const contentList = z.array(contentText).min(1).max(12);
+
+export const planContentSchema = z.strictObject({
+  schemaVersion: version,
+  kind: z.literal("plan"),
+  title: contentText,
+  outcome: contentText,
+  steps: z.array(
+    z.strictObject({
+      id,
+      label: contentText,
+      outcome: contentText,
+      effect: z.enum(["read", "local_change", "external_change"]),
+      status: z.enum(["proposed", "ready", "working", "verified", "blocked"])
+    })
+  ).min(1).max(20),
+  assumptions: z.array(contentText).max(12),
+  questions: z.array(contentText).max(12),
+  whatThisMeans: contentText
+});
+
+export const approvalContentSchema = z.strictObject({
+  schemaVersion: version,
+  kind: z.literal("approval"),
+  title: contentText,
+  whatChanges: contentList,
+  where: contentList,
+  externalEffects: z.array(contentText).max(12),
+  cost: z.strictObject({
+    mode: z.enum(["free", "paid", "unknown"]),
+    explanation: contentText,
+    maximum: contentText.nullable()
+  }),
+  undo: z.strictObject({
+    reversible: z.boolean(),
+    explanation: contentText
+  }),
+  recommendedAction: contentText,
+  alternativeAction: contentText
+}).superRefine((value, context) => {
+  if (value.cost.mode === "paid" && value.cost.maximum === null) {
+    context.addIssue({
+      code: "custom",
+      message: "Paid approval content must state the maximum charge.",
+      path: ["cost", "maximum"]
+    });
+  }
+});
+
+export const errorContentSchema = z.strictObject({
+  schemaVersion: version,
+  kind: z.literal("error"),
+  title: contentText,
+  whatHappened: contentText,
+  preservedWork: contentText,
+  recommendedAction: contentText,
+  alternativeAction: contentText,
+  retry: z.strictObject({
+    automatic: z.boolean(),
+    attempted: z.number().int().nonnegative(),
+    remaining: z.number().int().nonnegative(),
+    nextAttemptAt: timestamp.nullable()
+  }),
+  technicalCode: id.nullable(),
+  technicalDetails: contentText.nullable()
+});
+
+export const changeSummaryContentSchema = z.strictObject({
+  schemaVersion: version,
+  kind: z.literal("change_summary"),
+  title: contentText,
+  before: contentText,
+  after: contentText,
+  whatThisMeans: contentText,
+  evidence: contentList
+});
+
+export const standardContentPatternSchema = z.discriminatedUnion("kind", [
+  planContentSchema,
+  approvalContentSchema,
+  errorContentSchema,
+  changeSummaryContentSchema
+]);
+
+export type PlanContent = z.infer<typeof planContentSchema>;
+export type ApprovalContent = z.infer<typeof approvalContentSchema>;
+export type ErrorContent = z.infer<typeof errorContentSchema>;
+export type ChangeSummaryContent = z.infer<typeof changeSummaryContentSchema>;
+export type StandardContentPattern = z.infer<typeof standardContentPatternSchema>;
+
 export const operationalMetricKindSchema = z.enum([
   "throughput",
   "stage_duration",
