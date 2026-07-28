@@ -17,11 +17,11 @@ effects.
 - Components: React, Base UI, Tailwind v4, and shadcn component patterns.
 - Icons: Phosphor only. Meaningful icons require an accessible name; decorative
   icons are hidden from assistive technology.
-- Brand: the original Pipeline Studio mark is the Relay. Four offset stages
-  advance as a single architectural sequence and resolve into one execution
-  plane. The silhouette expresses coordinated progress without a monogram,
-  crossed paths, arrows, nodes, or a checkmark. Generic library icons must not
-  replace the product mark.
+- Brand: the original Pipeline Studio mark is the Orchestration Core. Multiple
+  channels enter one solid control block, meet inside a protected chamber, and
+  leave through one clean result channel. The negative-space construction
+  expresses provider diversity, controlled execution, and validated output
+  without relying on a monogram or generic developer-tool icon.
 - Color: semantic design tokens only. Feature code must not introduce raw
   color literals.
 - Surfaces: rounded shadcn cards, tokenized elevation, subtle rings, and muted

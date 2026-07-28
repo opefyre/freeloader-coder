@@ -16,11 +16,11 @@ vector product mark.
 
 ## Brand contract
 
-The mark is the custom Relay. Four offset stages advance as one architectural
-sequence and resolve into a single execution plane. It communicates continuous,
-coordinated progress without a monogram, arrows, nodes, a checkmark, or a
-generic developer-tool glyph. Its filled silhouette remains legible at favicon
-size and does not depend on the icon library.
+The mark is the custom Orchestration Core. Five negative-space channels enter
+one solid control block, meet inside a protected central chamber, and leave
+through one clean result channel. This directly represents provider diversity,
+controlled orchestration, and one validated output. The compact silhouette
+remains legible at favicon size and does not depend on the icon library.
 
 Reusable assets:
 
