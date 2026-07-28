@@ -46,6 +46,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.j
 import { cn } from "./lib/utils.js";
 import {
   costSafetySummary,
+  providerQueueSnapshot,
   providerTelemetry,
   routeEvidenceSummary,
   successfulProviderCalls,
@@ -1096,6 +1097,69 @@ function WorkspaceSurface({
     );
     return (
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="min-w-0 xl:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Capacity scheduler</CardTitle>
+              <CardDescription>
+                Dispatches only when a free provider has safe capacity. Waiting work sleeps until its next eligible window.
+              </CardDescription>
+            </div>
+            <Badge tone="positive">No spin retries</Badge>
+          </CardHeader>
+          <CardContent className="mt-7 grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_18rem]">
+            <div className="rounded-3xl bg-emerald-400/[.07] p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Dispatching now
+                </span>
+                <strong className="text-2xl">{providerQueueSnapshot.dispatches.length}</strong>
+              </div>
+              <div className="mt-5 space-y-3">
+                {providerQueueSnapshot.dispatches.map((dispatch) => (
+                  <div key={dispatch.taskId} className="flex items-center justify-between gap-4 text-sm">
+                    <span className="font-semibold">{dispatch.taskId}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {dispatch.providerId} · {dispatch.modelId}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-3xl bg-amber-400/[.08] p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Scheduled waits
+                </span>
+                <strong className="text-2xl">{providerQueueSnapshot.scheduled.length}</strong>
+              </div>
+              <div className="mt-5 space-y-3">
+                {providerQueueSnapshot.scheduled.map((entry) => (
+                  <div key={entry.taskId} className="flex items-center justify-between gap-4 text-sm">
+                    <span className="font-semibold">{entry.taskId}</span>
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <ClockCountdown />
+                      {formatWakeTime(entry.retryAt, providerQueueSnapshot.generatedAt)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-3xl bg-muted/50 p-5">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                QA reserve
+              </span>
+              <div className="mt-5 space-y-4">
+                {providerQueueSnapshot.protectedCapacity.map((entry) => (
+                  <div key={entry.providerId}>
+                    <strong className="text-sm capitalize">{entry.providerId}</strong>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{entry.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <Card className="min-w-0">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -1619,6 +1683,13 @@ function Evidence({ label, value }: { label: string; value: string }) {
       <strong className="mt-1 block capitalize">{value}</strong>
     </div>
   );
+}
+
+function formatWakeTime(retryAt: number, generatedAt: number): string {
+  const remainingSeconds = Math.max(0, Math.ceil((retryAt - generatedAt) / 1_000));
+  if (remainingSeconds < 60) return `in ${remainingSeconds}s`;
+  const minutes = Math.ceil(remainingSeconds / 60);
+  return minutes < 60 ? `in ${minutes}m` : `at ${new Date(retryAt).toISOString().slice(11, 16)} UTC`;
 }
 
 const themeOptions: readonly {

@@ -176,6 +176,7 @@ export async function executeProviderTask(input: {
       .map((attempt) => attempt.candidateId)
   );
   const retryTimes: number[] = [
+    ...(route.nextEligibleAt === null ? [] : [route.nextEligibleAt]),
     ...route.rejected.flatMap((rejection) =>
       rejection.retryAt === null ? [] : [rejection.retryAt]
     ),

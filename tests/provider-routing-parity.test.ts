@@ -85,6 +85,8 @@ test("router falls back around circuits and provider-reported exhaustion", () =>
     "provider-reported-exhausted"
   ]);
   assert.equal(result.rejected[1]?.retryAt, now + 120_000);
+  assert.equal(result.state, "dispatchable");
+  assert.equal(result.nextEligibleAt, now + 60_000);
 });
 
 test("Cloudflare uses neuron budget rather than a fictional generic token cap", () => {
@@ -211,4 +213,49 @@ test("retired routes are never selected and name configured alternatives", () =>
   assert.equal(result.selected?.id, "active-route");
   assert.equal(result.rejected[0]?.reason, "provider-retired");
   assert.match(result.rejected[0]?.detail ?? "", /cloudflare, gemini/);
+});
+
+test("router schedules exhausted capacity and blocks permanent incompatibility", () => {
+  const waiting = routeProviders([{
+    ...base,
+    usage: {
+      ...usage,
+      providerRemainingRequests: 0,
+      providerResetAt: now + 90_000
+    }
+  }], request);
+  assert.equal(waiting.state, "waiting");
+  assert.equal(waiting.nextEligibleAt, now + 90_000);
+
+  const blocked = routeProviders([{ ...base, configured: false }], request);
+  assert.equal(blocked.state, "blocked");
+  assert.equal(blocked.nextEligibleAt, null);
+});
+
+test("protected review capacity cannot be consumed by implementation work", () => {
+  const reserved: ProviderCandidate = {
+    ...base,
+    capacity: { unit: "requests", requestsPerDay: 100 },
+    reservation: { kinds: ["review"], requestsPerDay: 10 },
+    kinds: ["code", "review"],
+    usage: { ...usage, requestsToday: 90 }
+  };
+  const implementation = routeProviders([reserved], request);
+  assert.equal(implementation.state, "waiting");
+  assert.equal(implementation.rejected[0]?.reason, "daily-request-limit");
+
+  const review = routeProviders([reserved], { ...request, kind: "review" });
+  assert.equal(review.state, "dispatchable");
+});
+
+test("router respects provider concurrency admission", () => {
+  const busy: ProviderCandidate = {
+    ...base,
+    capacity: { unit: "requests", maxConcurrentRequests: 2 },
+    usage: { ...usage, activeRequests: 2 }
+  };
+  const result = routeProviders([busy], request);
+  assert.equal(result.state, "waiting");
+  assert.equal(result.rejected[0]?.reason, "concurrency-limit");
+  assert.equal(result.nextEligibleAt, now + 5_000);
 });

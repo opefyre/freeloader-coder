@@ -2,6 +2,7 @@ import {
   routeProviders,
   type ProviderCandidate,
 } from "../../../packages/providers/src/router.js";
+import { planProviderSchedule } from "../../../packages/orchestration/src/provider-scheduler.js";
 import {
   buildProviderTelemetry,
   summarizeProviderAttempts,
@@ -39,7 +40,12 @@ const candidates: readonly ProviderCandidate[] = [
     priority: 10,
     contextWindowTokens: 128_000,
     maxOutputTokens: 64_000,
-    capacity: { unit: "provider_reported" },
+    capacity: {
+      unit: "provider_reported",
+      maxConcurrentRequests: 2,
+      requestsPerDay: 1_000
+    },
+    reservation: { kinds: ["review"], requestsPerDay: 50 },
     usage: {
       ...emptyUsage,
       requestsToday: 12,
@@ -59,10 +65,12 @@ const candidates: readonly ProviderCandidate[] = [
     maxOutputTokens: 4_768,
     capacity: {
       unit: "neurons",
+      maxConcurrentRequests: 1,
       freeUnitsPerDay: 10_000,
       inputUnitsPerMillion: 100,
       outputUnitsPerMillion: 200
     },
+    reservation: { kinds: ["review"], freeUnitsPerDay: 1_500 },
     usage: {
       ...emptyUsage,
       requestsToday: 8,
@@ -123,6 +131,71 @@ const route = routeProviders(candidates, {
   allowPaid: false,
   now
 });
+
+const scheduledRouteRequest = {
+  role: "implementer",
+  kind: "code",
+  dataClass: "source_code",
+  minimumPrivacy: "training_eligible",
+  estimatedInputTokens: 8_000,
+  requestedOutputTokens: 4_000,
+  allowPaid: false,
+  now
+} as const;
+const plannedProviderWork = planProviderSchedule([
+  ...["PIPE-142", "PIPE-145", "PIPE-149"].map((taskId, index) => ({
+    id: taskId,
+    taskId,
+    workUnitId: "implementation",
+    priority: 10 + index,
+    enqueuedAt: now + index,
+    candidates: [candidates[0]!],
+    request: scheduledRouteRequest
+  })),
+  {
+    id: "PIPE-151",
+    taskId: "PIPE-151",
+    workUnitId: "implementation",
+    priority: 20,
+    enqueuedAt: now + 3,
+    candidates: [candidates[2]!],
+    request: scheduledRouteRequest
+  },
+  {
+    id: "PIPE-154",
+    taskId: "PIPE-154",
+    workUnitId: "implementation",
+    priority: 30,
+    enqueuedAt: now + 4,
+    candidates: [{
+      ...candidates[1]!,
+      usage: { ...candidates[1]!.usage, activeRequests: 1 }
+    }],
+    request: scheduledRouteRequest
+  }
+], { now });
+
+export const providerQueueSnapshot = {
+  generatedAt: now,
+  nextWakeAt: plannedProviderWork.nextWakeAt,
+  dispatches: plannedProviderWork.dispatches.map((entry) => ({
+    taskId: entry.item.taskId,
+    providerId: entry.candidate.providerId,
+    modelId: entry.candidate.modelId
+  })),
+  scheduled: plannedProviderWork.waiting.map((entry) => ({
+    taskId: entry.item.taskId,
+    retryAt: entry.retryAt,
+    reason: entry.reason,
+    providerId: entry.route.selected?.providerId
+      ?? entry.route.rejected[0]?.providerId
+      ?? "unavailable"
+  })),
+  protectedCapacity: [
+    { providerId: "groq", label: "50 daily requests held for review" },
+    { providerId: "cloudflare", label: "1,500 neurons held for review" }
+  ]
+} as const;
 
 export const routeEvidenceSummary = {
   selectedProviderId: route.selected?.providerId ?? null,

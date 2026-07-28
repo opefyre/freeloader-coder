@@ -14,6 +14,7 @@ export type ProviderLifecycle = "active" | "retiring" | "retired";
 
 export interface ProviderCapacityPolicy {
   readonly unit: CapacityUnit;
+  readonly maxConcurrentRequests?: number | undefined;
   readonly requestsPerMinute?: number | undefined;
   readonly requestsPerDay?: number | undefined;
   readonly tokensPerMinute?: number | undefined;
@@ -23,7 +24,15 @@ export interface ProviderCapacityPolicy {
   readonly outputUnitsPerMillion?: number | undefined;
 }
 
+export interface ProviderCapacityReservation {
+  readonly kinds: readonly string[];
+  readonly requestsPerDay?: number | undefined;
+  readonly tokensPerDay?: number | undefined;
+  readonly freeUnitsPerDay?: number | undefined;
+}
+
 export interface ProviderCapacityUsage {
+  readonly activeRequests?: number | undefined;
   readonly requestsToday: number;
   readonly tokensToday: number;
   readonly inputTokensToday: number;
@@ -59,6 +68,7 @@ export interface ProviderCandidate {
   readonly contextWindowTokens: number;
   readonly maxOutputTokens: number;
   readonly capacity: ProviderCapacityPolicy;
+  readonly reservation?: ProviderCapacityReservation | undefined;
   readonly usage: ProviderCapacityUsage;
   readonly circuitOpenUntil: number;
 }
@@ -101,6 +111,7 @@ export type RouteRejectionReason =
   | "input-too-large"
   | "output-too-large"
   | "circuit-open"
+  | "concurrency-limit"
   | "minute-request-limit"
   | "minute-token-limit"
   | "daily-request-limit"
@@ -118,9 +129,11 @@ export interface RouteRejection {
 }
 
 export interface RouteDecision {
+  readonly state: "dispatchable" | "waiting" | "blocked";
   readonly selected: ProviderCandidate | null;
   readonly eligible: readonly ProviderCandidate[];
   readonly rejected: readonly RouteRejection[];
+  readonly nextEligibleAt: number | null;
 }
 
 export interface CapacityDecision {
@@ -150,6 +163,7 @@ export function validateRouteCandidates(candidates: readonly ProviderCandidate[]
       throw new Error(`Candidate ${candidate.id} has no usable input context.`);
     }
     validateCapacityPolicy(candidate.capacity, candidate.id);
+    validateCapacityReservation(candidate.reservation, candidate.capacity, candidate.id);
     validateCostDeclaration(candidate);
   }
 }
@@ -181,14 +195,32 @@ export function routeProviders(
     return left.id.localeCompare(right.id);
   });
 
-  return { selected: eligible[0] ?? null, eligible, rejected };
+  const nextEligibleAt = earliestFutureRetry(rejected, request.now);
+  return {
+    state: eligible.length > 0 ? "dispatchable" : nextEligibleAt === null ? "blocked" : "waiting",
+    selected: eligible[0] ?? null,
+    eligible,
+    rejected,
+    nextEligibleAt
+  };
 }
 
 export function evaluateCapacity(
   candidate: ProviderCandidate,
-  request: Pick<RouteRequest, "estimatedInputTokens" | "requestedOutputTokens" | "now">
+  request: Pick<RouteRequest, "estimatedInputTokens" | "requestedOutputTokens" | "kind" | "now">
 ): CapacityDecision {
   const { capacity, usage } = candidate;
+  if (
+    capacity.maxConcurrentRequests !== undefined &&
+    (usage.activeRequests ?? 0) >= capacity.maxConcurrentRequests
+  ) {
+    return {
+      allowed: false,
+      reason: "concurrency-limit",
+      retryAt: request.now + 5_000,
+      projectedFreeUnits: null
+    };
+  }
   const minuteStart = request.now - 60_000;
   const minuteRequestTimestamps = usage.requestTimestamps.filter(
     (timestamp) => timestamp > minuteStart
@@ -215,7 +247,13 @@ export function evaluateCapacity(
       projectedFreeUnits: null
     };
   }
-  if (capacity.requestsPerDay && usage.requestsToday >= capacity.requestsPerDay) {
+  const reservedForOtherWork = candidate.reservation !== undefined &&
+    !candidate.reservation.kinds.includes(request.kind);
+  const usableDailyRequests = subtractReservation(
+    capacity.requestsPerDay,
+    reservedForOtherWork ? candidate.reservation?.requestsPerDay : undefined
+  );
+  if (usableDailyRequests && usage.requestsToday >= usableDailyRequests) {
     return {
       allowed: false,
       reason: "daily-request-limit",
@@ -223,7 +261,11 @@ export function evaluateCapacity(
       projectedFreeUnits: null
     };
   }
-  if (capacity.tokensPerDay && usage.tokensToday + projectedTokens > capacity.tokensPerDay) {
+  const usableDailyTokens = subtractReservation(
+    capacity.tokensPerDay,
+    reservedForOtherWork ? candidate.reservation?.tokensPerDay : undefined
+  );
+  if (usableDailyTokens && usage.tokensToday + projectedTokens > usableDailyTokens) {
     return {
       allowed: false,
       reason: "daily-token-limit",
@@ -260,7 +302,10 @@ export function evaluateCapacity(
     projectedFreeUnits !== null &&
     capacity.freeUnitsPerDay &&
     (usage.freeUnitsToday ?? deriveUsedFreeUnits(capacity, usage)) + projectedFreeUnits >
-      capacity.freeUnitsPerDay
+      (subtractReservation(
+        capacity.freeUnitsPerDay,
+        reservedForOtherWork ? candidate.reservation?.freeUnitsPerDay : undefined
+      ) ?? capacity.freeUnitsPerDay)
   ) {
     return {
       allowed: false,
@@ -405,6 +450,7 @@ function capacityDetail(candidate: ProviderCandidate, decision: CapacityDecision
   const descriptions: Partial<Record<RouteRejectionReason, string>> = {
     "minute-request-limit": "The provider's per-minute request allowance is cooling down.",
     "minute-token-limit": "The provider's per-minute token allowance is cooling down.",
+    "concurrency-limit": "The provider is at its safe concurrent request limit.",
     "daily-request-limit": "The provider's free daily request allowance has been used.",
     "daily-token-limit": "The provider's free daily token allowance has been used.",
     "provider-reported-exhausted": "The provider reports that its current free allowance is exhausted."
@@ -442,6 +488,7 @@ function deriveUsedFreeUnits(
 function validateCapacityPolicy(capacity: ProviderCapacityPolicy, candidateId: string): void {
   for (const value of [
     capacity.requestsPerMinute,
+    capacity.maxConcurrentRequests,
     capacity.requestsPerDay,
     capacity.tokensPerMinute,
     capacity.tokensPerDay,
@@ -460,6 +507,29 @@ function validateCapacityPolicy(capacity: ProviderCapacityPolicy, candidateId: s
       !capacity.outputUnitsPerMillion)
   ) {
     throw new Error(`Candidate ${candidateId} requires complete neuron pricing.`);
+  }
+}
+
+function validateCapacityReservation(
+  reservation: ProviderCapacityReservation | undefined,
+  capacity: ProviderCapacityPolicy,
+  candidateId: string
+): void {
+  if (!reservation) return;
+  if (reservation.kinds.length === 0) {
+    throw new Error(`Candidate ${candidateId} has an empty capacity reservation.`);
+  }
+  for (const [reserved, limit] of [
+    [reservation.requestsPerDay, capacity.requestsPerDay],
+    [reservation.tokensPerDay, capacity.tokensPerDay],
+    [reservation.freeUnitsPerDay, capacity.freeUnitsPerDay]
+  ] as const) {
+    if (reserved !== undefined && (!Number.isFinite(reserved) || reserved <= 0)) {
+      throw new Error(`Candidate ${candidateId} has an invalid capacity reservation.`);
+    }
+    if (reserved !== undefined && (limit === undefined || reserved >= limit)) {
+      throw new Error(`Candidate ${candidateId} reserves all or unknown provider capacity.`);
+    }
   }
 }
 
@@ -493,4 +563,19 @@ function earliestMinuteReset(timestamps: readonly number[], now: number): number
 function nextUtcDay(now: number): number {
   const date = new Date(now);
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1);
+}
+
+function earliestFutureRetry(
+  rejected: readonly RouteRejection[],
+  now: number
+): number | null {
+  const retryTimes = rejected
+    .map((rejection) => rejection.retryAt)
+    .filter((retryAt): retryAt is number => retryAt !== null && retryAt > now);
+  return retryTimes.length > 0 ? Math.min(...retryTimes) : null;
+}
+
+function subtractReservation(limit: number | undefined, reserved: number | undefined): number | undefined {
+  if (limit === undefined) return undefined;
+  return Math.max(0, limit - (reserved ?? 0));
 }
