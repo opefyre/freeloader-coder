@@ -16,9 +16,11 @@ vector product mark.
 
 ## Brand contract
 
-The mark is a custom P-shaped pipeline: a continuous route, three execution
-nodes, and a small verified-completion gesture. It remains recognizable at
-favicon size and does not depend on the icon library.
+The mark is the custom Relay. Four offset stages advance as one architectural
+sequence and resolve into a single execution plane. It communicates continuous,
+coordinated progress without a monogram, arrows, nodes, a checkmark, or a
+generic developer-tool glyph. Its filled silhouette remains legible at favicon
+size and does not depend on the icon library.
 
 Reusable assets:
 

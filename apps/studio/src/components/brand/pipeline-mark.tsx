@@ -18,26 +18,12 @@ function PipelineMark({
       {...props}
     >
       <title id={titleId}>{title}</title>
-      <path
-        d="M10 28V9.5C10 8.67 10.67 8 11.5 8H19c4.42 0 8 3.13 8 7s-3.58 7-8 7h-9"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="10" cy="28" r="2.5" fill="currentColor" />
-      <circle cx="10" cy="8" r="2.5" fill="currentColor" />
-      <circle cx="27" cy="15" r="2.5" fill="currentColor" />
-      <path
-        d="m20.5 27 2.3 2.3 4.7-5.1"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity=".72"
-      />
+      <g fill="currentColor">
+        <path d="M3 4h6v12l4 4v8l-6-5v-4l-4-4Z" />
+        <path d="M11 7h6v11l4 4v9h-6v-6l-4-4Z" />
+        <path d="M19 10h6v10l4 4v8h-6v-5l-4-4Z" />
+        <path d="M27 13h6v19h-6Z" />
+      </g>
     </svg>
   );
 }

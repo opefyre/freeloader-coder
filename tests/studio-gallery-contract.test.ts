@@ -33,7 +33,11 @@ test("Studio ships persistent system, light, and dark themes plus an original ve
   assert.match(theme, /pipeline-studio-theme/);
   assert.match(theme, /prefers-color-scheme: dark/);
   assert.match(mark, /<svg/);
-  assert.match(mark, /stroke-linecap="round"/);
+  assert.match(mark, /offset stages resolving into one execution plane/);
+  assert.match(mark, /<g fill="#101a2c"/);
+  assert.doesNotMatch(mark, /<mask/);
+  assert.doesNotMatch(mark, /<path[^>]+stroke=/);
+  assert.doesNotMatch(mark, /<circle/);
 });
 
 test("Studio contains explicit wide, tablet, and mobile reflow rules", async () => {

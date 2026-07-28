@@ -111,8 +111,8 @@ function App() {
 
       <aside className="hidden min-h-screen bg-sidebar px-4 py-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="flex items-center gap-3 px-2">
-          <span className="grid size-10 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/10">
-            <PipelineMark className="size-7" title="Pipeline Studio mark" />
+          <span className="grid size-10 place-items-center text-primary">
+            <PipelineMark className="size-8" title="Pipeline Studio mark" />
           </span>
           <div>
             <strong className="block text-sm font-semibold">Pipeline Studio</strong>
@@ -187,8 +187,8 @@ function App() {
       <main id="workspace" className="min-w-0">
         <header className="sticky top-0 z-30 flex h-18 items-center justify-between bg-background/88 px-4 backdrop-blur-xl sm:px-7 lg:px-9">
           <div className="flex items-center gap-3 lg:hidden">
-            <span className="grid size-9 place-items-center rounded-2xl bg-primary text-primary-foreground">
-              <PipelineMark className="size-6" title="Pipeline Studio mark" />
+            <span className="grid size-9 place-items-center text-primary">
+              <PipelineMark className="size-7" title="Pipeline Studio mark" />
             </span>
             <strong className="text-sm">Pipeline Studio</strong>
           </div>
