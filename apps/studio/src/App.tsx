@@ -35,6 +35,7 @@ import {
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
+import { IntegrationWorkbench } from "./components/integrations/integration-workbench.js";
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
 import { ControlCenter } from "./components/control-center/control-center.js";
@@ -94,6 +95,7 @@ const navItems = [
   },
   { id: "work", label: "Work", note: "Active, queued, and verified tasks", icon: ListChecks, count: "8" },
   { id: "providers", label: "Providers", note: "Free routes and model health", icon: PlugsConnected },
+  { id: "integrations", label: "Connect", note: "GitHub and Jira workspaces", icon: GitBranch },
   { id: "evidence", label: "Evidence", note: "Checks, checkpoints, and sources", icon: ShieldCheck },
 ] as const;
 
@@ -125,6 +127,11 @@ const viewCopy: Record<
     eyebrow: "Free-provider mesh · Demo evidence",
     title: "Models working as one system",
     description: "Inspect routing, health, usage, fallbacks, and the evidence behind every provider claim.",
+  },
+  integrations: {
+    eyebrow: "GitHub + Jira · Connected Beta",
+    title: "Bring work in. Send proof back.",
+    description: "Connect exact resources, ground selected work, and approve every external write before it happens.",
   },
   evidence: {
     eyebrow: "87 checks passed",
@@ -915,7 +922,7 @@ function App() {
       </main>
 
       <nav
-        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-7 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
         aria-label="Mobile workspace"
       >
         {navItems.map((item) => (
@@ -933,7 +940,7 @@ function App() {
               size={18}
               weight={activeView === item.id ? "fill" : "regular"}
             />
-            <span>{item.label}</span>
+            <span>{item.id === "conversation" ? "Chat" : item.label}</span>
           </button>
         ))}
       </nav>
@@ -989,6 +996,10 @@ function WorkspaceSurface({
         <OrchestrationWorkbench />
       </div>
     );
+  }
+
+  if (view === "integrations") {
+    return <IntegrationWorkbench />;
   }
 
   if (view === "providers") {

@@ -17,6 +17,7 @@ test("every Studio view has a stable clean route", () => {
       ["conversation", "/conversation"],
       ["work", "/work"],
       ["providers", "/providers"],
+      ["integrations", "/integrations"],
       ["evidence", "/evidence"],
       ["settings", "/settings"]
     ]
