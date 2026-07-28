@@ -34,7 +34,7 @@ import {
 } from "../../../packages/ui/src/content.js";
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
-import { Button } from "./components/ui/button.js";
+import { Button, buttonVariants } from "./components/ui/button.js";
 import {
   Card,
   CardContent,
@@ -139,6 +139,71 @@ const providerColor: Record<string, string> = {
   sambanova: "bg-chart-1",
 };
 
+const connectionProfiles = [
+  {
+    id: "groq",
+    name: "Groq",
+    state: "Connected",
+    dashboardUrl: "https://console.groq.com",
+    sourceUrl: "https://console.groq.com/docs/rate-limits",
+    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
+    access: "Free account",
+  },
+  {
+    id: "cloudflare",
+    name: "Cloudflare Workers AI",
+    state: "Connected",
+    dashboardUrl: "https://dash.cloudflare.com",
+    sourceUrl: "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
+    access: "Free allowance",
+  },
+  {
+    id: "gemini",
+    name: "Gemini",
+    state: "Connected",
+    dashboardUrl: "https://aistudio.google.com/apikey",
+    sourceUrl: "https://ai.google.dev/gemini-api/docs/rate-limits",
+    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
+    access: "Free project only",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    state: "Connected",
+    dashboardUrl: "https://openrouter.ai/settings/keys",
+    sourceUrl: "https://openrouter.ai/models?max_price=0",
+    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
+    access: "Free models only",
+  },
+  {
+    id: "github",
+    name: "GitHub Models",
+    state: "Setup needed",
+    dashboardUrl: "https://github.com/marketplace/models",
+    sourceUrl: "https://docs.github.com/en/github-models",
+    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
+    access: "Account limited",
+  },
+  ...verifiedProviderSnapshot.map((provider) => ({
+    id: provider.id,
+    name: provider.label,
+    state: provider.zeroCostEligible ? "Setup needed" : "Credit only",
+    dashboardUrl: provider.dashboardUrl,
+    sourceUrl: provider.sourceUrl,
+    workItemUrl: `https://opefyre.atlassian.net/browse/${
+      {
+        cerebras: "PIPE-179",
+        mistral: "PIPE-180",
+        zhipu: "PIPE-181",
+        sambanova: "PIPE-182",
+        deepseek: "PIPE-183",
+      }[provider.id] ?? "PIPE-178"
+    }`,
+    access: provider.zeroCostEligible ? "Verified free candidate" : "Not a permanent free tier",
+  })),
+] as const;
+
 const summaryMetrics = {
   active: controlCenterMetric("active_leases"),
   queue: controlCenterMetric("queue"),
@@ -154,6 +219,7 @@ function App() {
   const [selectedProvider, setSelectedProvider] = useState(
     providerTelemetry[0]?.providerId ?? ""
   );
+  const [selectedConnection, setSelectedConnection] = useState("cerebras");
   const [costOpen, setCostOpen] = useState(false);
   const [productChoice, setProductChoice] = useState<string>();
   const [message, setMessage] = useState("");
@@ -808,6 +874,8 @@ function App() {
               view={activeView}
               selectedProvider={selectedProvider}
               setSelectedProvider={setSelectedProvider}
+              selectedConnection={selectedConnection}
+              setSelectedConnection={setSelectedConnection}
               message={message}
               setMessage={setMessage}
               sent={sent}
@@ -859,6 +927,8 @@ function WorkspaceSurface({
   view,
   selectedProvider,
   setSelectedProvider,
+  selectedConnection,
+  setSelectedConnection,
   message,
   setMessage,
   sent,
@@ -868,6 +938,8 @@ function WorkspaceSurface({
   view: Exclude<StudioView, "overview">;
   selectedProvider: string;
   setSelectedProvider: (provider: string) => void;
+  selectedConnection: string;
+  setSelectedConnection: (provider: string) => void;
   message: string;
   setMessage: (message: string) => void;
   sent: boolean;
@@ -1315,7 +1387,7 @@ function WorkspaceSurface({
   }
 
   return (
-    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <Card>
         <CardHeader>
           <CardTitle>Provider connections</CardTitle>
@@ -1324,44 +1396,47 @@ function WorkspaceSurface({
           </CardDescription>
         </CardHeader>
         <CardContent className="mt-6 space-y-2">
-          <ConnectionRow name="Groq" state="Connected" />
-          <ConnectionRow name="Cloudflare Workers AI" state="Connected" />
-          <ConnectionRow name="Gemini" state="Connected" />
-          <ConnectionRow name="OpenRouter" state="Connected" />
-          <ConnectionRow name="GitHub Models" state="Setup needed" />
-          <ConnectionRow name="Cerebras" state="Setup needed" />
-          <ConnectionRow name="Mistral" state="Setup needed" />
-          <ConnectionRow name="Zhipu AI" state="Setup needed" />
-          <ConnectionRow name="SambaNova" state="Setup needed" />
+          {connectionProfiles.map((connection) => (
+            <ConnectionRow
+              key={connection.id}
+              name={connection.name}
+              state={connection.state}
+              selected={selectedConnection === connection.id}
+              onSelect={() => setSelectedConnection(connection.id)}
+            />
+          ))}
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Denial of wallet</CardTitle>
-          <CardDescription>
-            Free-only is enforced as policy, not presented as a promise.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="mt-6">
-          <div className="rounded-3xl bg-emerald-400/[.07] p-6">
-            <span className="text-xs text-muted-foreground">
-              Maximum automatic spend
-            </span>
-            <strong className="mt-2 block text-4xl tracking-tight">$0.00</strong>
-            <Badge tone="positive" className="mt-5">
-              Enforced
-            </Badge>
-          </div>
-          <ul className="mt-5 space-y-3 text-sm text-muted-foreground">
-            {costSafetySummary.safeguards.map((safeguard) => (
-              <li key={safeguard} className="flex items-center gap-2">
-                <Check className="text-emerald-600 dark:text-emerald-300" weight="bold" />
-                {safeguard}
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <ConnectionSetup providerId={selectedConnection} />
+        <Card>
+          <CardHeader>
+            <CardTitle>Denial of wallet</CardTitle>
+            <CardDescription>
+              Free-only is enforced as policy, not presented as a promise.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="mt-6">
+            <div className="rounded-3xl bg-emerald-400/[.07] p-6">
+              <span className="text-xs text-muted-foreground">
+                Maximum automatic spend
+              </span>
+              <strong className="mt-2 block text-4xl tracking-tight">$0.00</strong>
+              <Badge tone="positive" className="mt-5">
+                Enforced
+              </Badge>
+            </div>
+            <ul className="mt-5 space-y-3 text-sm text-muted-foreground">
+              {costSafetySummary.safeguards.map((safeguard) => (
+                <li key={safeguard} className="flex items-center gap-2">
+                  <Check className="text-emerald-600 dark:text-emerald-300" weight="bold" />
+                  {safeguard}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1568,12 +1643,99 @@ function Checkpoint({
   );
 }
 
-function ConnectionRow({ name, state }: { name: string; state: string }) {
+function ConnectionSetup({ providerId }: { providerId: string }) {
+  const connection =
+    connectionProfiles.find((candidate) => candidate.id === providerId) ??
+    connectionProfiles[0]!;
+  const ready = connection.state === "Connected";
+  const creditOnly = connection.state === "Credit only";
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle>{connection.name}</CardTitle>
+          <Badge tone={ready ? "positive" : creditOnly ? "caution" : "neutral"}>
+            {connection.state}
+          </Badge>
+        </div>
+        <CardDescription>{connection.access}</CardDescription>
+      </CardHeader>
+      <CardContent className="mt-5 space-y-4">
+        <div className="space-y-2">
+          {[
+            ready ? "Credential reference stored" : "Add a key to the local credential vault",
+            ready ? "Live route observed" : "Run a bounded live canary",
+            ready ? "Capacity tracked" : "Prove free status and account limits",
+          ].map((step, index) => (
+            <div key={step} className="flex items-start gap-3 rounded-2xl bg-muted/45 p-3">
+              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-background text-[10px] font-semibold">
+                {index + 1}
+              </span>
+              <span className="text-xs leading-5 text-muted-foreground">{step}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs leading-5 text-muted-foreground">
+          {creditOnly
+            ? "This provider stays outside permanent free routing. Promotional credit requires a separate balance-safe policy."
+            : ready
+              ? "Demo evidence marks this connection ready. Production readiness still depends on current, sanitized canary evidence."
+              : "Catalog verification is complete. The route remains inactive until its credential, cost, quota, model, and capability evidence pass."}
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <a
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "w-full")}
+            href={connection.dashboardUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Dashboard
+            <ArrowRight />
+          </a>
+          <a
+            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "w-full")}
+            href={connection.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Free-tier proof
+          </a>
+        </div>
+        <a
+          className={cn(buttonVariants({ size: "sm" }), "w-full")}
+          href={connection.workItemUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open implementation ticket
+          <ArrowRight />
+        </a>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ConnectionRow({
+  name,
+  state,
+  selected,
+  onSelect,
+}: {
+  name: string;
+  state: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const connected = state === "Connected";
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 rounded-2xl bg-muted/45 p-4 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl bg-muted/45 p-4 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
+        selected && "bg-primary/[.08] ring-1 ring-primary/15"
+      )}
     >
       <span
         className={cn(

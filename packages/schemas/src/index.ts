@@ -86,6 +86,75 @@ export const modelCallSchema = z.strictObject({
   verified: z.literal(false)
 });
 
+const providerLimitSchema = z.number().int().positive().nullable();
+
+export const providerQuotaEvidenceSchema = z.strictObject({
+  source: z.enum(["official_documentation", "account_api", "response_headers", "conservative_default"]),
+  observedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive(),
+  requestsPerMinute: providerLimitSchema,
+  requestsPerDay: providerLimitSchema,
+  tokensPerMinute: providerLimitSchema,
+  tokensPerDay: providerLimitSchema,
+  remainingRequests: z.number().int().nonnegative().nullable(),
+  remainingTokens: z.number().int().nonnegative().nullable(),
+  resetAt: z.number().int().nonnegative().nullable()
+}).refine(
+  (value) => value.expiresAt > value.observedAt,
+  "Provider quota evidence must expire after it is observed."
+);
+
+export const providerCostEvidenceSchema = z.strictObject({
+  access: z.enum(["permanent_free", "account_limited_free", "promotional_credit", "paid", "unknown"]),
+  plan: z.string().trim().min(1).max(120),
+  zeroCost: z.boolean(),
+  billingEnabled: z.boolean(),
+  observedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive(),
+  source: z.enum(["official_documentation", "account_api", "user_attestation"])
+}).refine(
+  (value) => value.expiresAt > value.observedAt,
+  "Provider cost evidence must expire after it is observed."
+);
+
+export const providerCanaryEvidenceSchema = z.strictObject({
+  status: z.enum(["passed", "failed"]),
+  observedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive(),
+  modelId: id,
+  capabilities: z.array(
+    z.enum(["chat", "structured_output", "tool_calling", "long_context"])
+  ).min(1),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  failureCode: id.nullable()
+}).refine(
+  (value) => value.expiresAt > value.observedAt,
+  "Provider canary evidence must expire after it is observed."
+).refine(
+  (value) => value.status === "failed" || value.failureCode === null,
+  "A passed provider canary cannot include a failure code."
+).refine(
+  (value) => value.status === "passed" || value.failureCode !== null,
+  "A failed provider canary requires a safe failure code."
+);
+
+export const providerConnectionSchema = z.strictObject({
+  schemaVersion: version,
+  id,
+  providerId: id,
+  modelId: id,
+  apiBaseUrl: z.url(),
+  credentialReference: z.string().regex(/^vault:[a-zA-Z0-9._/-]{1,220}$/),
+  credentialFingerprint: z.string().regex(/^[a-f0-9]{12}$/),
+  credentialState: z.enum(["active", "revoked"]),
+  state: z.enum(["validating", "ready", "limited", "invalid", "stale", "revoked"]),
+  cost: providerCostEvidenceSchema,
+  quota: providerQuotaEvidenceSchema,
+  canary: providerCanaryEvidenceSchema,
+  updatedAt: z.number().int().nonnegative()
+});
+
 export const toolCallSchema = z.strictObject({
   ...callBase,
   tool: id,
@@ -808,6 +877,10 @@ export type OperationalMetric = z.infer<typeof operationalMetricSchema>;
 export type ProviderAttemptRecord = z.infer<typeof providerAttemptRecordSchema>;
 export type ProviderJournalEvent = z.infer<typeof providerJournalEventSchema>;
 export type ProviderJournalDocument = z.infer<typeof providerJournalDocumentSchema>;
+export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
+export type ProviderQuotaEvidence = z.infer<typeof providerQuotaEvidenceSchema>;
+export type ProviderCostEvidence = z.infer<typeof providerCostEvidenceSchema>;
+export type ProviderCanaryEvidence = z.infer<typeof providerCanaryEvidenceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationJournalEvent = z.infer<typeof conversationJournalEventSchema>;
 export type ConversationJournal = z.infer<typeof conversationJournalSchema>;

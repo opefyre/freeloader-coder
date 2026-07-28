@@ -72,6 +72,19 @@ test("workspace renders provider evidence as interactive, explicitly demo-scoped
   assert.doesNotMatch(fixture, /from "\.\.\/\.\.\/\.\.\/packages\/providers\/src\/index\.js"/);
 });
 
+test("provider setup exposes verified sources, implementation work, and honest admission states", async () => {
+  const workspace = await readFile("apps/studio/src/App.tsx", "utf8");
+  for (const ticket of ["PIPE-179", "PIPE-180", "PIPE-181", "PIPE-182", "PIPE-183"]) {
+    assert.match(workspace, new RegExp(ticket));
+  }
+  assert.match(workspace, /Open implementation ticket/);
+  assert.match(workspace, /Free-tier proof/);
+  assert.match(workspace, /Run a bounded live canary/);
+  assert.match(workspace, /Prove free status and account limits/);
+  assert.match(workspace, /Promotional credit requires a separate balance-safe policy/);
+  assert.match(workspace, /onClick=\{onSelect\}/);
+});
+
 test("workspace exposes an interactive denial-of-wallet proof instead of a cost promise", async () => {
   const workspace = await readFile("apps/studio/src/App.tsx", "utf8");
   const fixture = await readFile("apps/studio/src/runtime-fixture.ts", "utf8");
