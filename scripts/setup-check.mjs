@@ -12,6 +12,7 @@ const required = [
   "packages/policy/package.json",
   "packages/providers/package.json",
   "packages/connectors/package.json",
+  "packages/conversation/package.json",
   "packages/tools/package.json",
   "packages/validation/package.json",
   "packages/evals/package.json",

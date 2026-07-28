@@ -35,6 +35,7 @@ import {
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
+import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
 import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
 import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
 import { Button, buttonVariants } from "./components/ui/button.js";
@@ -978,117 +979,7 @@ function WorkspaceSurface({
   }
 
   if (view === "conversation") {
-    return (
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Card className="min-h-[32rem]">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Pipeline assistant</CardTitle>
-              <CardDescription>
-                Grounded in the current repository, task graph, and verified evidence.
-              </CardDescription>
-            </div>
-            <Badge tone="positive">Local context ready</Badge>
-          </CardHeader>
-          <CardContent className="mt-8 flex min-h-[24rem] flex-col">
-            <div className="max-w-2xl rounded-3xl bg-muted/65 p-5">
-              <div className="flex items-center gap-2">
-                <span className="grid size-8 place-items-center rounded-xl bg-primary/12 text-primary">
-                  <Sparkle weight="fill" />
-                </span>
-                <strong className="text-sm">What should we build next?</strong>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                I can break down a feature, explain a blocker, inspect current work, or
-                prepare a safe implementation plan. Nothing executes until intent and
-                repository scope are grounded.
-              </p>
-            </div>
-            <div className="mt-5 grid gap-2 sm:grid-cols-3">
-              {[
-                "Explain the active task",
-                "Show what needs me",
-                "Plan the next feature",
-              ].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => {
-                    setMessage(prompt);
-                    setSent(false);
-                  }}
-                  className="rounded-2xl bg-muted/45 p-4 text-left text-xs font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
-                >
-                  {prompt}
-                  <ArrowRight className="mt-5 text-primary" />
-                </button>
-              ))}
-            </div>
-            <form
-              className="mt-auto flex items-end gap-2 rounded-3xl bg-muted p-2 pl-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (message.trim()) {
-                  setSent(true);
-                  setMessage("");
-                }
-              }}
-            >
-              <label className="sr-only" htmlFor="conversation-message">
-                Message the pipeline
-              </label>
-              <textarea
-                id="conversation-message"
-                value={message}
-                onChange={(event) => {
-                  setMessage(event.target.value);
-                  setSent(false);
-                }}
-                rows={2}
-                placeholder="Describe what you want to build…"
-                className="max-h-36 min-h-12 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
-              />
-              <Button size="icon" type="submit" aria-label="Send message">
-                <PaperPlaneTilt weight="fill" />
-              </Button>
-            </form>
-            {sent && (
-              <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-300">
-                Demo message received locally. No task was created.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Grounding</CardTitle>
-              <CardDescription>What the assistant can safely use.</CardDescription>
-            </CardHeader>
-            <CardContent className="mt-5 space-y-3">
-              <SourceRow label="Repository" value="Freeloader Coder" state="Ready" />
-              <SourceRow label="Task graph" value="9 scoped items" state="Ready" />
-              <SourceRow label="Evidence" value="87 checks" state="Fresh" />
-            </CardContent>
-          </Card>
-          <ApprovalPreview />
-          <Card>
-            <CardHeader>
-              <CardTitle>Execution boundary</CardTitle>
-              <CardDescription>
-                Conversation can propose work; the controller owns execution.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="mt-5">
-              <Button variant="secondary" className="w-full" onClick={() => navigate("work")}>
-                <ListChecks />
-                Review current work
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
+    return <ConversationWorkbench navigate={navigate} />;
   }
 
   if (view === "work") {
