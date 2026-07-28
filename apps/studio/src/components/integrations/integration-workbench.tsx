@@ -16,6 +16,7 @@ import { cn } from "../../lib/utils.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card.js";
+import { ToolDeviceFabric } from "./tool-device-fabric.js";
 
 const repositories = [
   {
@@ -343,6 +344,8 @@ export function IntegrationWorkbench() {
           result="Demo receipt: one idempotency marker passed reconciliation. A live adapter must observe the real Jira revision."
         />
       </div>
+
+      <ToolDeviceFabric />
     </section>
   );
 }
