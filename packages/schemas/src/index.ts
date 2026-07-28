@@ -438,6 +438,207 @@ export const localDiagnosticSchema = z.strictObject({
   cause: z.unknown().optional()
 });
 
+export const conversationReferenceSchema = z.strictObject({
+  kind: z.enum(["task", "event", "artifact", "citation", "approval", "action"]),
+  id,
+  digest: z.string().regex(/^sha256:[a-f0-9]{64}$/).nullable()
+});
+
+export const conversationClaimSchema = z.discriminatedUnion("classification", [
+  z.strictObject({
+    classification: z.literal("evidence"),
+    references: z.array(conversationReferenceSchema).min(1)
+  }),
+  z.strictObject({
+    classification: z.enum(["explanation", "inference"]),
+    references: z.array(conversationReferenceSchema)
+  })
+]);
+
+export const intentContractSchema = z.strictObject({
+  schemaVersion: version,
+  intentId: id,
+  sourceMessageId: id,
+  outcome: z.string().min(1).max(2_000),
+  targetProjectId: id,
+  constraints: z.array(z.string().min(1).max(1_000)),
+  acceptanceCriteria: z.array(z.string().min(1).max(1_000)),
+  status: z.enum(["draft", "clarifying", "accepted", "superseded"])
+});
+
+export const citationContractSchema = z.strictObject({
+  schemaVersion: version,
+  citationId: id,
+  sourceKind: z.enum(["url", "repository_file", "artifact", "event", "user_attachment"]),
+  sourceId: id,
+  locator: z.string().min(1).max(2_000),
+  contentDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  trust: z.enum(["user_provided", "observed", "verified"]),
+  capturedAt: timestamp
+});
+
+export const conversationActionSchema = z.strictObject({
+  schemaVersion: version,
+  actionId: id,
+  sourceMessageId: id,
+  taskId: id.nullable(),
+  effect: z.enum(["read", "reversible_write", "irreversible_write"]),
+  status: z.enum(["proposed", "approval_required", "approved", "running", "observed", "failed", "cancelled"]),
+  approvalId: id.nullable(),
+  idempotencyKey: id,
+  evidenceEventIds: z.array(id),
+  postcondition: z.enum(["not_attempted", "unknown", "observed", "not_observed"])
+}).superRefine((value, context) => {
+  if (value.status === "observed" && (value.postcondition !== "observed" || value.evidenceEventIds.length === 0)) {
+    context.addIssue({
+      code: "custom",
+      message: "Observed actions require an observed postcondition and event evidence."
+    });
+  }
+  if (value.effect === "irreversible_write" && !value.approvalId) {
+    context.addIssue({
+      code: "custom",
+      message: "Irreversible actions require approval.",
+      path: ["approvalId"]
+    });
+  }
+});
+
+export const conversationArtifactReferenceSchema = z.strictObject({
+  schemaVersion: version,
+  artifactId: id,
+  taskId: id,
+  digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  mediaType: z.string().min(1).max(200),
+  label: z.string().min(1).max(500)
+});
+
+export const conversationMessageSchema = z.strictObject({
+  schemaVersion: version,
+  messageId: id,
+  conversationId: id,
+  branchId: id,
+  sequence: z.number().int().positive(),
+  createdAt: timestamp,
+  type: z.enum([
+    "user",
+    "assistant",
+    "system",
+    "tool",
+    "question",
+    "plan",
+    "approval",
+    "progress",
+    "result",
+    "error"
+  ]),
+  displayText: z.string().min(1).max(50_000),
+  claim: conversationClaimSchema.nullable(),
+  intentIds: z.array(id),
+  citationIds: z.array(id),
+  actionIds: z.array(id),
+  artifactIds: z.array(id),
+  approvalIds: z.array(id),
+  taskIds: z.array(id),
+  eventIds: z.array(id),
+  retryOfMessageId: id.nullable(),
+  redaction: z.enum(["none", "partial", "full"]),
+  redactedDisplayText: z.string().min(1).max(50_000).nullable()
+}).superRefine((value, context) => {
+  if (
+    ["assistant", "system", "tool", "plan", "approval", "progress", "result", "error"].includes(value.type) &&
+    value.claim === null
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "Operational and assistant messages must classify claims as evidence, explanation, or inference.",
+      path: ["claim"]
+    });
+  }
+  if (
+    ["progress", "result"].includes(value.type) &&
+    value.claim?.classification !== "evidence"
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "Progress and result messages require evidence references.",
+      path: ["claim"]
+    });
+  }
+  if (value.redaction === "none" && value.redactedDisplayText !== null) {
+    context.addIssue({
+      code: "custom",
+      message: "Unredacted messages cannot provide a substitute display.",
+      path: ["redactedDisplayText"]
+    });
+  }
+  if (value.redaction !== "none" && value.redactedDisplayText === null) {
+    context.addIssue({
+      code: "custom",
+      message: "Redacted messages require a safe substitute display.",
+      path: ["redactedDisplayText"]
+    });
+  }
+  if (value.redaction === "full" && value.redactedDisplayText !== "[redacted]") {
+    context.addIssue({
+      code: "custom",
+      message: "Fully redacted messages must use the canonical redaction marker.",
+      path: ["redactedDisplayText"]
+    });
+  }
+});
+
+const conversationEventBase = {
+  schemaVersion: version,
+  sequence: z.number().int().positive(),
+  eventId: id,
+  conversationId: id,
+  occurredAt: timestamp
+};
+
+export const conversationJournalEventSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    ...conversationEventBase,
+    type: z.literal("conversation.created"),
+    projectId: id,
+    rootBranchId: id,
+    retention: z.strictObject({
+      mode: z.enum(["keep", "delete_at"]),
+      deleteAt: timestamp.nullable()
+    })
+  }),
+  z.strictObject({
+    ...conversationEventBase,
+    type: z.literal("conversation.branch_created"),
+    branchId: id,
+    parentBranchId: id,
+    parentMessageId: id
+  }),
+  z.strictObject({
+    ...conversationEventBase,
+    type: z.literal("conversation.message_appended"),
+    message: conversationMessageSchema
+  }),
+  z.strictObject({
+    ...conversationEventBase,
+    type: z.literal("conversation.display_edited"),
+    messageId: id,
+    displayText: z.string().min(1).max(50_000)
+  }),
+  z.strictObject({
+    ...conversationEventBase,
+    type: z.literal("conversation.display_deleted"),
+    messageId: id,
+    reason: z.enum(["user_request", "retention", "privacy_redaction"])
+  })
+]);
+
+export const conversationJournalSchema = z.strictObject({
+  schemaVersion: version,
+  conversationId: id,
+  events: z.array(conversationJournalEventSchema)
+});
+
 export function toSafeError(input: unknown): SafeError {
   const diagnostic = localDiagnosticSchema.parse(input);
   return safeErrorSchema.parse({
@@ -457,3 +658,6 @@ export type SafeError = z.infer<typeof safeErrorSchema>;
 export type ProviderAttemptRecord = z.infer<typeof providerAttemptRecordSchema>;
 export type ProviderJournalEvent = z.infer<typeof providerJournalEventSchema>;
 export type ProviderJournalDocument = z.infer<typeof providerJournalDocumentSchema>;
+export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
+export type ConversationJournalEvent = z.infer<typeof conversationJournalEventSchema>;
+export type ConversationJournal = z.infer<typeof conversationJournalSchema>;
