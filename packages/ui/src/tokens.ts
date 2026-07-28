@@ -32,7 +32,7 @@ export type SemanticTone = (typeof semanticTones)[number];
 
 export const visualSystem = {
   typography: {
-    family: "Space Grotesk",
+    family: "Instrument Sans",
     variable: "--ps-font-sans",
     weights: [400, 500, 600, 700]
   },

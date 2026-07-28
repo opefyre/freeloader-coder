@@ -31,7 +31,7 @@ icons without an accessible name. No icon CDN or placeholder glyph is used.
 
 Passed. Repository lint rejects:
 
-- feature-level font declarations that bypass the Space Grotesk token;
+- feature-level font declarations that bypass the Instrument Sans token;
 - raw feature color literals;
 - decorative CSS borders;
 - React Icons, Heroicons, Phosphor, and Font Awesome imports.
