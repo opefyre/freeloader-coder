@@ -15,12 +15,20 @@ account, or GitHub token is required for offline development and verification.
 git clone <repository-url> pipeline-studio
 cd pipeline-studio
 npm ci
+npm run setup
 npm run verify
 ```
 
 `npm ci` installs the exact dependency graph from `package-lock.json`.
+`npm run setup` performs the same idempotent runtime preflight exposed in the
+Projects screen and writes only non-secret ignored state.
 `npm run verify` is the single local and CI quality gate: environment,
 formatting, repository isolation, strict typechecking, build, and offline tests.
+
+Use `npm start` for the local Studio and `npm run repair` to re-run preflight
+and reconcile routine stopped-service, stale-lock, or port-conflict conditions.
+Repair never removes projects, credentials, checkpoints, or the authoritative
+journal.
 
 ## Workspace map
 

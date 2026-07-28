@@ -15,6 +15,28 @@ can ship.
 Foundation: product contract, architecture, trust boundaries, durable data,
 security, open-source governance, and design-system decisions.
 
+## Clone and run
+
+Requirements: Git, Node.js 22 or newer, npm 10 or newer, 8 GB memory, and
+5 GB free disk. Docker, a local model runtime, cloud accounts, and provider keys are optional.
+
+```sh
+git clone https://github.com/opefyre/freeloader-coder.git pipeline-studio
+cd pipeline-studio
+npm ci
+npm run setup
+npm start
+```
+
+Setup checks the computer, chooses a loopback-only port, and creates private
+ignored runtime state. It does not store credentials in the repository. Repeat
+`npm run setup` safely after fixing a requirement, or run `npm run repair` to
+reconcile routine local-runtime issues without deleting projects or secrets.
+
+Open the URL printed by the start command. Use the Projects screen to inspect
+preflight, isolation strength, missing optional dependencies, and Resume or
+Repair actions.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.
@@ -29,4 +51,3 @@ security, open-source governance, and design-system decisions.
 
 Implementation is tracked in the
 [PIPE Jira project](https://opefyre.atlassian.net/jira/software/projects/PIPE/backlog).
-

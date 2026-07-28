@@ -35,6 +35,7 @@ import {
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
+import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
 import { Button, buttonVariants } from "./components/ui/button.js";
 import {
   Card,
@@ -1451,6 +1452,7 @@ function OnboardingWorkspace() {
 
   return (
     <div className="space-y-4">
+      <RuntimeSetupPanel />
       <Card className="relative overflow-hidden">
         <CardHeader className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
