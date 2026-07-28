@@ -177,6 +177,64 @@ export const recoverySchema = z.strictObject({
   attempt: z.number().int().positive()
 });
 
+export const operationalMetricKindSchema = z.enum([
+  "throughput",
+  "stage_duration",
+  "queue",
+  "active_leases",
+  "retries",
+  "provider_calls",
+  "input_tokens",
+  "output_tokens",
+  "quota_remaining",
+  "fallbacks",
+  "validations",
+  "reviews",
+  "healing",
+  "needs_user",
+  "quarantined",
+  "recoveries"
+]);
+
+export const operationalMetricSchema = z.strictObject({
+  schemaVersion: version,
+  id,
+  kind: operationalMetricKindSchema,
+  label: z.string().min(1).max(120),
+  value: z.number().finite().nullable(),
+  unit: z.enum(["tasks", "calls", "tokens", "milliseconds", "percent", "count"]),
+  scope: z.strictObject({
+    projectId: id,
+    from: timestamp,
+    to: timestamp
+  }).refine(
+    (value) => Date.parse(value.to) > Date.parse(value.from),
+    "Metric scope end must be later than its start."
+  ),
+  provenance: z.strictObject({
+    eventTypes: z.array(z.string().min(1).max(160)).min(1),
+    observedAt: timestamp.nullable(),
+    freshness: z.enum(["fresh", "stale", "missing"]),
+    aggregation: z.enum(["count", "sum", "ratio", "duration", "latest"]),
+    estimated: z.boolean()
+  })
+}).superRefine((value, context) => {
+  if (value.provenance.freshness === "missing" && value.value !== null) {
+    context.addIssue({
+      code: "custom",
+      message: "Missing metrics cannot be silently converted to zero or another value.",
+      path: ["value"]
+    });
+  }
+  if (value.provenance.freshness !== "missing" && value.provenance.observedAt === null) {
+    context.addIssue({
+      code: "custom",
+      message: "Observed metrics require an evidence timestamp.",
+      path: ["provenance", "observedAt"]
+    });
+  }
+});
+
 export const externalEffectSchema = z.strictObject({
   schemaVersion: version,
   id,
@@ -655,6 +713,7 @@ export function toSafeError(input: unknown): SafeError {
 export type Task = z.infer<typeof taskSchema>;
 export type DomainEvent = z.infer<typeof eventSchema>;
 export type SafeError = z.infer<typeof safeErrorSchema>;
+export type OperationalMetric = z.infer<typeof operationalMetricSchema>;
 export type ProviderAttemptRecord = z.infer<typeof providerAttemptRecordSchema>;
 export type ProviderJournalEvent = z.infer<typeof providerJournalEventSchema>;
 export type ProviderJournalDocument = z.infer<typeof providerJournalDocumentSchema>;

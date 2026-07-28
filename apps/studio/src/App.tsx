@@ -26,6 +26,7 @@ import { Sun } from "@phosphor-icons/react/Sun";
 import { Warning } from "@phosphor-icons/react/Warning";
 import { useMemo, useState } from "react";
 
+import { controlCenterMetric } from "../../../fixtures/control-center-metrics.js";
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { Button } from "./components/ui/button.js";
@@ -68,6 +69,13 @@ const providerColor: Record<string, string> = {
   gemini: "bg-chart-3",
   openrouter: "bg-chart-5",
 };
+
+const summaryMetrics = {
+  active: controlCenterMetric("active_leases"),
+  queue: controlCenterMetric("queue"),
+  verified: controlCenterMetric("validations"),
+  needsYou: controlCenterMetric("needs_user"),
+} as const;
 
 function App() {
   const theme = useTheme();
@@ -258,29 +266,25 @@ function App() {
           <section className="metric-grid grid gap-3" aria-label="Pipeline summary">
             <Metric
               icon={Lightning}
-              label="Active work"
-              value="1 task"
+              metric={summaryMetrics.active}
               note="Implementation · 68%"
               tone="text-primary"
             />
             <Metric
               icon={ListChecks}
-              label="Queue"
-              value="8 tasks"
+              metric={summaryMetrics.queue}
               note="3 ready · 5 dependent"
               tone="text-chart-3"
             />
             <Metric
               icon={CheckCircle}
-              label="Verified"
-              value="12 tasks"
+              metric={summaryMetrics.verified}
               note="All checks passed"
               tone="text-emerald-300"
             />
             <Metric
               icon={Warning}
-              label="Needs you"
-              value="1 decision"
+              metric={summaryMetrics.needsYou}
               note="Non-blocking"
               tone="text-amber-300"
             />
@@ -667,24 +671,35 @@ function App() {
 
 function Metric({
   icon: Icon,
-  label,
-  value,
+  metric,
   note,
   tone,
 }: {
   icon: typeof Cpu;
-  label: string;
-  value: string;
+  metric: ReturnType<typeof controlCenterMetric>;
   note: string;
   tone: string;
 }) {
+  const value =
+    metric.value === null
+      ? "Unavailable"
+      : `${metric.value} ${
+          metric.unit === "tasks" ? (metric.value === 1 ? "task" : "tasks") : metric.unit
+        }`;
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <span className="text-xs font-medium text-muted-foreground">{label}</span>
+          <span className="text-xs font-medium text-muted-foreground">{metric.label}</span>
           <strong className="mt-2 block text-xl font-semibold tracking-tight">{value}</strong>
           <span className="mt-1 block text-xs text-muted-foreground">{note}</span>
+          <span
+            className="mt-2 block text-[10px] text-muted-foreground/75"
+            title={`Source events: ${metric.provenance.eventTypes.join(", ")}`}
+          >
+            {metric.provenance.freshness} · observed{" "}
+            {metric.provenance.observedAt?.slice(11, 16) ?? "never"} UTC
+          </span>
         </div>
         <span className={cn("grid size-10 place-items-center rounded-2xl bg-muted", tone)}>
           <Icon size={20} weight="duotone" />
