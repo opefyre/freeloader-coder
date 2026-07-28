@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ResultCache } from "../packages/providers/src/cache.js";
 import {
-  consumeDailyQuota,
+  emptyCapacityUsage,
+  recordCapacityUsage,
   recordCircuitFailure,
   recordCircuitSuccess
 } from "../packages/providers/src/circuit.js";
@@ -67,7 +68,12 @@ test("result cache is scoped, expiring, bounded, unverified, and rejects sensiti
 
 test("circuit opens only after transient threshold and success resets it", () => {
   const first = recordCircuitFailure({
-    state: { consecutiveFailures: 0, openUntil: 0 },
+    state: {
+      consecutiveFailures: 0,
+      openUntil: 0,
+      lastFailureAt: null,
+      lastFailureCode: null
+    },
     now: 100,
     threshold: 2,
     cooldownMs: 50,
@@ -82,32 +88,33 @@ test("circuit opens only after transient threshold and success resets it", () =>
     transient: true
   });
   assert.equal(second.openUntil, 160);
-  assert.deepEqual(recordCircuitSuccess(), { consecutiveFailures: 0, openUntil: 0 });
+  assert.deepEqual(recordCircuitSuccess(), {
+    consecutiveFailures: 0,
+    openUntil: 0,
+    lastFailureAt: null,
+    lastFailureCode: null
+  });
 });
 
-test("daily quota rejects excess and resets after the window", () => {
-  const initial = { windowStart: 100, requests: 0, tokens: 0 };
-  const used = consumeDailyQuota({
-    state: initial,
+test("capacity accounting records actual usage and resets on a UTC day boundary", () => {
+  const used = recordCapacityUsage({
+    state: emptyCapacityUsage(100),
     now: 200,
-    requestLimit: 1,
-    tokenLimit: 10,
-    tokens: 8
+    inputTokens: 6,
+    outputTokens: 2,
+    freeUnits: 0.5
   });
-  assert.throws(() => consumeDailyQuota({
+  assert.equal(used.requestsToday, 1);
+  assert.equal(used.inputTokensToday, 6);
+  assert.equal(used.outputTokensToday, 2);
+  assert.equal(used.freeUnitsToday, 0.5);
+  const reset = recordCapacityUsage({
     state: used,
-    now: 300,
-    requestLimit: 1,
-    tokenLimit: 10,
-    tokens: 1
-  }));
-  const reset = consumeDailyQuota({
-    state: used,
-    now: 100 + 86_400_000,
-    requestLimit: 1,
-    tokenLimit: 10,
-    tokens: 2
+    now: 86_400_100,
+    inputTokens: 2,
+    outputTokens: 1
   });
-  assert.equal(reset.requests, 1);
-  assert.equal(reset.tokens, 2);
+  assert.equal(reset.requestsToday, 1);
+  assert.equal(reset.inputTokensToday, 2);
+  assert.equal(reset.outputTokensToday, 1);
 });

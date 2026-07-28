@@ -34,6 +34,10 @@ import {
   type WorkspaceLocation,
   type WorkspaceSurface
 } from "../../../packages/ui/src/index.js";
+import {
+  providerTelemetry,
+  successfulProviderCalls
+} from "./runtime-fixture.js";
 
 const projectId = "freeloader-coder";
 const activeTaskId = "PIPE-33";
@@ -60,6 +64,7 @@ const surfaceIcons: Record<WorkspaceSurface, string> = {
 let density: DensityMode = "guided";
 let situation: NavigationSituation = "busy";
 let selectedProductName: "pipeline-studio" | "freeloader-coder" | undefined;
+let selectedProviderId = providerTelemetry[0]?.providerId ?? "";
 let locationState: WorkspaceLocation = safeLocation(window.location.pathname + window.location.search);
 
 export function renderWorkspace(app: HTMLDivElement): void {
@@ -261,6 +266,20 @@ function renderSurface(surface: WorkspaceSurface, technicalVisible: boolean): st
       <a href="${hrefFor("tasks")}" class="dock-cta ps-focusable" data-workspace-link>Open task queue <i data-lucide="ArrowRight"></i></a>
     </section>
 
+    <section class="provider-mesh ps-surface">
+      <div class="section-heading compact">
+        <div><p class="eyebrow">Provider mesh · demo evidence</p><h2>Free execution routes</h2></div>
+        <span class="queue-count">${successfulProviderCalls} proven calls</span>
+      </div>
+      <div class="provider-share" aria-label="Successful provider execution share">
+        ${providerTelemetry.map((provider) => providerShare(provider)).join("")}
+      </div>
+      <div class="provider-selector" role="list" aria-label="Provider status">
+        ${providerTelemetry.map((provider) => providerButton(provider)).join("")}
+      </div>
+      ${providerDetail()}
+    </section>
+
     ${technicalVisible ? `<section class="technical-card ps-surface">
       <div><p class="eyebrow">Advanced detail</p><h2>Runtime snapshot</h2></div>
       <code>branch main</code><code>public sync verified</code><code>checks 51/51</code><code>build verified</code>
@@ -354,6 +373,13 @@ function bindWorkspace(app: HTMLDivElement): void {
     });
   });
 
+  app.querySelectorAll<HTMLButtonElement>("[data-provider-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedProviderId = button.dataset.providerId ?? selectedProviderId;
+      renderWorkspace(app);
+    });
+  });
+
   const palette = app.querySelector<HTMLElement>("[data-command-palette]");
   const openPalette = (): void => {
     if (!palette) return;
@@ -376,4 +402,48 @@ function bindWorkspace(app: HTMLDivElement): void {
     locationState = safeLocation(window.location.pathname + window.location.search);
     renderWorkspace(app);
   };
+}
+
+function providerShare(provider: (typeof providerTelemetry)[number]): string {
+  const share = successfulProviderCalls === 0
+    ? 0
+    : Math.round((provider.successfulCalls / successfulProviderCalls) * 100);
+  return `<div class="provider-share-row">
+    <span>${provider.providerId}</span>
+    <div class="provider-share-track" aria-label="${provider.providerId}: ${share}% of successful calls">
+      <i style="width:${share}%"></i>
+    </div>
+    <strong>${share}%</strong>
+  </div>`;
+}
+
+function providerButton(provider: (typeof providerTelemetry)[number]): string {
+  const active = provider.providerId === selectedProviderId;
+  return `<button class="provider-pill ps-focusable ${active ? "active" : ""}" type="button"
+    data-provider-id="${provider.providerId}" aria-pressed="${active}">
+    <span class="provider-health ${provider.health}"></span>
+    <span><strong>${provider.providerId}</strong><small>${provider.successfulCalls} successful · ${provider.failedCalls} failed</small></span>
+  </button>`;
+}
+
+function providerDetail(): string {
+  const provider = providerTelemetry.find((item) => item.providerId === selectedProviderId)
+    ?? providerTelemetry[0];
+  if (!provider) return "";
+  return `<article class="provider-detail">
+    <div>
+      <p class="eyebrow">${provider.health.replace("_", " ")}</p>
+      <h3>${provider.modelId}</h3>
+      <p>${provider.statusDetail}</p>
+    </div>
+    <div class="provider-metrics">
+      <span><strong>${provider.requestsToday}</strong><small>requests today</small></span>
+      <span><strong>${compactNumber(provider.inputTokensToday + provider.outputTokensToday)}</strong><small>observed tokens</small></span>
+      <span><strong>${provider.capacityUnit.replace("_", " ")}</strong><small>budget source</small></span>
+    </div>
+  </article>`;
+}
+
+function compactNumber(value: number): string {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }

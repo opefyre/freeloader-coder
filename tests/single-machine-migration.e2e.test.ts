@@ -43,22 +43,35 @@ test("one-machine migration journey preserves scope, evidence, effects, and comp
   });
   const route = routeProviders([{
     id: "offline-fake",
+    providerId: "fake",
+    modelId: "offline",
     priority: 1,
+    configured: true,
     privacy: "local",
     location: "local",
     paid: false,
     roles: ["implementer"],
     kinds: ["code"],
     dataClasses: ["source_code"],
-    dailyTokenLimit: 10_000,
-    usedTokens: 0,
+    contextWindowTokens: 10_000,
+    maxOutputTokens: 2_000,
+    capacity: { unit: "unmetered" },
+    usage: {
+      requestsToday: 0,
+      tokensToday: 0,
+      inputTokensToday: 0,
+      outputTokensToday: 0,
+      requestTimestamps: [],
+      tokenSamples: []
+    },
     circuitOpenUntil: 0
   }], {
     role: "implementer",
     kind: "code",
     dataClass: "source_code",
     minimumPrivacy: "local",
-    estimatedTokens: 100,
+    estimatedInputTokens: 100,
+    requestedOutputTokens: 100,
     allowPaid: false,
     now: 100
   });

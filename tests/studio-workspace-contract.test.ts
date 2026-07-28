@@ -31,6 +31,17 @@ test("workspace labels fixture claims and prevents inert decision controls", asy
   assert.doesNotMatch(source, /commit 726d351/);
 });
 
+test("workspace renders provider evidence as interactive, explicitly demo-scoped telemetry", async () => {
+  const workspace = await readFile("apps/studio/src/workspace.ts", "utf8");
+  const fixture = await readFile("apps/studio/src/runtime-fixture.ts", "utf8");
+  assert.match(workspace, /Provider mesh · demo evidence/);
+  assert.match(workspace, /data-provider-id/);
+  assert.match(workspace, /successfulProviderCalls/);
+  assert.match(fixture, /buildProviderTelemetry/);
+  assert.match(fixture, /successfulCalls/);
+  assert.doesNotMatch(fixture, /from "\.\.\/\.\.\/\.\.\/packages\/providers\/src\/index\.js"/);
+});
+
 test("workspace has explicit responsive, focus, motion, and contrast contracts", async () => {
   const styles = await readFile("apps/studio/src/styles.css", "utf8");
   const tokens = await readFile("packages/ui/src/tokens.css", "utf8");

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decideRetry } from "../packages/orchestration/src/retry.js";
+import {
+  classifyProviderFailure,
+  decideRetry
+} from "../packages/orchestration/src/retry.js";
 import { modelResultEnvelopeSchema } from "../packages/schemas/src/index.js";
 
 test("model result contracts accept declared plan shape and reject invented fields", () => {
@@ -39,6 +42,7 @@ test("transient retry uses bounded exponential delay and stops at budget", () =>
     action: "retry",
     retryAt: 1_105,
     nextAttempt: 2,
+    consumesTaskAttempt: true,
     reason: "bounded transient retry"
   });
   const exhausted = decideRetry({
@@ -51,6 +55,54 @@ test("transient retry uses bounded exponential delay and stops at budget", () =>
   });
   assert.equal(exhausted.action, "quarantine");
   assert.equal(exhausted.retryAt, null);
+});
+
+test("capacity and gateway interruptions defer without consuming task attempts", () => {
+  for (const failureClass of ["capacity_deferred", "gateway_interrupted"] as const) {
+    const decision = decideRetry({
+      failureClass,
+      attempt: 2,
+      maxAttempts: 3,
+      now: 1_000,
+      baseDelayMs: 100,
+      deterministicJitter: 0,
+      providerRetryAt: 9_000
+    });
+    assert.equal(decision.action, "defer");
+    assert.equal(decision.retryAt, 9_000);
+    assert.equal(decision.nextAttempt, 2);
+    assert.equal(decision.consumesTaskAttempt, false);
+  }
+});
+
+test("provider failures classify rate limits and gateway 499 without guessing", () => {
+  assert.deepEqual(classifyProviderFailure({
+    status: 429,
+    retryAt: 20_000
+  }), {
+    failureClass: "capacity_deferred",
+    retryAt: 20_000,
+    code: "http-429"
+  });
+  assert.equal(classifyProviderFailure({ status: 499 }).failureClass, "gateway_interrupted");
+  assert.equal(classifyProviderFailure({ status: 401 }).failureClass, "permission");
+  assert.equal(classifyProviderFailure({ status: 503 }).failureClass, "transient_provider");
+});
+
+test("repeated provider infrastructure failure asks for help without quarantining task work", () => {
+  const decision = decideRetry({
+    failureClass: "transient_provider",
+    attempt: 2,
+    maxAttempts: 3,
+    now: 1_000,
+    baseDelayMs: 100,
+    deterministicJitter: 0,
+    infrastructureFailureCount: 6,
+    maxInfrastructureFailures: 6
+  });
+  assert.equal(decision.action, "needs_user");
+  assert.equal(decision.nextAttempt, 2);
+  assert.equal(decision.consumesTaskAttempt, false);
 });
 
 test("permission, policy, and uncertain outcomes never retry automatically", () => {
