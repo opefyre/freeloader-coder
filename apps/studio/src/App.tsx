@@ -60,9 +60,19 @@ import {
   type PermissionAction,
   type PermissionProfile,
 } from "./permission-fixture.js";
+import {
+  detectedProject,
+  nextOnboardingStage,
+  onboardingProgress,
+  onboardingStages,
+  previewEvidence,
+  starterPlan,
+  type OnboardingStage,
+} from "./onboarding-fixture.js";
 
 const studioViews = [
   "overview",
+  "projects",
   "conversation",
   "work",
   "providers",
@@ -73,6 +83,7 @@ type StudioView = (typeof studioViews)[number];
 
 const navItems = [
   { id: "overview", label: "Overview", note: "Pipeline health and decisions", icon: Gauge },
+  { id: "projects", label: "Projects", note: "Add, understand, and start safely", icon: FolderOpen },
   {
     id: "conversation",
     label: "Conversation",
@@ -92,6 +103,11 @@ const viewCopy: Record<
     eyebrow: "Freeloader Coder · Demo data",
     title: "Good morning, Opefyre",
     description: "Your pipeline is moving. One safe decision is waiting.",
+  },
+  projects: {
+    eyebrow: "Guided project setup",
+    title: "Start with confidence",
+    description: "Add a repository, understand it automatically, and reach a validated first preview.",
   },
   conversation: {
     eyebrow: "Grounded in this project",
@@ -318,6 +334,7 @@ function App() {
 
         <Button
           variant="secondary"
+          onClick={() => navigate("projects")}
           className="mt-6 h-auto w-full justify-between rounded-2xl px-3 py-2.5"
         >
           <span className="flex items-center gap-2.5 text-left">
@@ -894,7 +911,7 @@ function App() {
       </main>
 
       <nav
-        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-6 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
         aria-label="Mobile workspace"
       >
         {navItems.map((item) => (
@@ -953,6 +970,10 @@ function WorkspaceSurface({
   setSent: (sent: boolean) => void;
   navigate: (view: StudioView) => void;
 }) {
+  if (view === "projects") {
+    return <OnboardingWorkspace />;
+  }
+
   if (view === "conversation") {
     return (
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -1398,6 +1419,489 @@ function WorkspaceSurface({
       selectedConnection={selectedConnection}
       setSelectedConnection={setSelectedConnection}
     />
+  );
+}
+
+function OnboardingWorkspace() {
+  const [onboardingStage, setOnboardingStage] = useState<OnboardingStage>("select");
+  const [entryMethod, setEntryMethod] = useState<"local" | "github">("local");
+  const [githubUrl, setGithubUrl] = useState("https://github.com/opefyre/freeloader-coder");
+  const [notice, setNotice] = useState(
+    "Nothing has been read or changed. Choose how to add the project."
+  );
+  const [decision, setDecision] = useState<"keep" | "restore" | null>(null);
+  const progress = onboardingProgress(onboardingStage);
+  const currentIndex = onboardingStages.findIndex((stage) => stage.id === onboardingStage);
+
+  const advance = () => {
+    const next = nextOnboardingStage(onboardingStage);
+    setOnboardingStage(next);
+    setNotice({
+      analyze: "Repository access confirmed. Analysis is deterministic and excludes likely secrets.",
+      plan: "Project understanding is ready. Review the recommended first task before anything changes.",
+      preview: "The demo preview is validated and attached to a restorable checkpoint.",
+      decision: "Validation is complete. Choose whether to keep or restore the checkpoint.",
+      select: "Choose how to add the project."
+    }[next]);
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card className="relative overflow-hidden">
+        <CardHeader className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Badge tone="active">First project</Badge>
+              <span className="text-xs font-medium text-muted-foreground">{progress}% complete</span>
+            </div>
+            <CardTitle className="mt-4 text-xl">From repository to verified preview</CardTitle>
+            <CardDescription>
+              Five guided steps. Existing work stays untouched, and every change can be restored.
+            </CardDescription>
+          </div>
+          <div className="min-w-44">
+            <div className="h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-[width]"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="mt-2 text-right text-xs text-muted-foreground">
+              About {Math.max(1, starterPlan.expectedMinutes - currentIndex * 2)} minutes remaining
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent className="mt-6">
+          <ol className="grid gap-2 sm:grid-cols-5" aria-label="Project onboarding progress">
+            {onboardingStages.map((stage, index) => (
+              <li
+                key={stage.id}
+                aria-current={stage.id === onboardingStage ? "step" : undefined}
+                className={cn(
+                  "rounded-2xl p-3",
+                  index < currentIndex
+                    ? "bg-emerald-400/[.07]"
+                    : stage.id === onboardingStage
+                      ? "bg-primary/10"
+                      : "bg-muted/45"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "grid size-5 place-items-center rounded-full text-[10px] font-bold",
+                      index < currentIndex
+                        ? "bg-emerald-400/20 text-emerald-700 dark:text-emerald-300"
+                        : stage.id === onboardingStage
+                          ? "bg-primary/20 text-primary"
+                          : "bg-background text-muted-foreground"
+                    )}
+                  >
+                    {index < currentIndex ? <Check weight="bold" /> : index + 1}
+                  </span>
+                  <strong className="text-xs">{stage.label}</strong>
+                </div>
+                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">{stage.note}</p>
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(20rem,.7fr)]">
+        <Card>
+          {onboardingStage === "select" && (
+            <>
+              <CardHeader>
+                <CardTitle>Add the project you want to build</CardTitle>
+                <CardDescription>
+                  Local folders and GitHub clones become the same safe project record.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="mt-6">
+                <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="Repository source">
+                  <button
+                    type="button"
+                    aria-pressed={entryMethod === "local"}
+                    onClick={() => {
+                      setEntryMethod("local");
+                      setNotice("Local folders are inspected read-only before registration.");
+                    }}
+                    className={cn(
+                      "rounded-3xl bg-muted/50 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
+                      entryMethod === "local" && "bg-primary/[.09]"
+                    )}
+                  >
+                    <FolderOpen size={24} className="text-primary" weight="duotone" />
+                    <strong className="mt-5 block">Local folder</strong>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      Register an existing repository without moving or overwriting files.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={entryMethod === "github"}
+                    onClick={() => {
+                      setEntryMethod("github");
+                      setNotice("Private repositories may ask you to connect GitHub, then Resume verification.");
+                    }}
+                    className={cn(
+                      "rounded-3xl bg-muted/50 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
+                      entryMethod === "github" && "bg-primary/[.09]"
+                    )}
+                  >
+                    <GitBranch size={24} className="text-primary" weight="duotone" />
+                    <strong className="mt-5 block">Clone from GitHub</strong>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      Validate access and destination safety before cloning.
+                    </span>
+                  </button>
+                </div>
+                {entryMethod === "local" ? (
+                  <div className="mt-5 rounded-3xl bg-muted/45 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <strong className="text-sm">No folder selected</strong>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          The selected path stays local and is masked during screen sharing.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => setNotice(
+                          "Demo repository selected. No file has been opened or changed."
+                        )}
+                      >
+                        <FolderOpen weight="fill" />
+                        Choose local folder
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5">
+                    <label htmlFor="github-repository-url" className="text-xs font-semibold">
+                      GitHub repository URL
+                    </label>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                      <input
+                        id="github-repository-url"
+                        type="url"
+                        value={githubUrl}
+                        onChange={(event) => setGithubUrl(event.target.value)}
+                        className="h-11 min-w-0 flex-1 rounded-2xl bg-muted px-4 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                      />
+                      <Button
+                        variant="secondary"
+                        onClick={() => setNotice(
+                          "Access can be verified. The destination will be checked before cloning."
+                        )}
+                      >
+                        Verify access
+                      </Button>
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-3 text-xs font-semibold text-primary hover:underline"
+                      onClick={() => setNotice("Access verification resumed from the preserved checkpoint.")}
+                    >
+                      Resume verification
+                    </button>
+                  </div>
+                )}
+                <div className="mt-6 flex justify-end">
+                  <Button onClick={advance}>
+                    Analyze safely
+                    <ArrowRight />
+                  </Button>
+                </div>
+              </CardContent>
+            </>
+          )}
+
+          {onboardingStage === "analyze" && (
+            <>
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div>
+                  <Badge tone="positive">{detectedProject.state}</Badge>
+                  <CardTitle className="mt-4 text-xl">{detectedProject.name}</CardTitle>
+                  <CardDescription>{detectedProject.summary}</CardDescription>
+                </div>
+                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-emerald-400/10 text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle size={24} weight="duotone" />
+                </span>
+              </CardHeader>
+              <CardContent className="mt-6 space-y-5">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <OnboardingFact label="Languages" value={detectedProject.languages.join(", ")} />
+                  <OnboardingFact label="Frameworks" value={detectedProject.frameworks.join(", ")} />
+                  <OnboardingFact label="Validation" value={detectedProject.commands.join(" · ")} />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <GroundingGroup label="Verified facts" items={detectedProject.facts} />
+                  <GroundingGroup label="Inferences" items={detectedProject.inferences} />
+                  <GroundingGroup label="Assumptions" items={detectedProject.assumptions} />
+                  <GroundingGroup label="Your decisions" items={detectedProject.userDecisions} />
+                </div>
+                <details className="rounded-2xl bg-muted/45 p-4">
+                  <summary className="cursor-pointer text-xs font-semibold">
+                    Advanced · citations and protected paths
+                  </summary>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <OnboardingFact label="Cited sources" value="package.json · App.tsx · globals.css" />
+                    <OnboardingFact label="Never grounded" value={detectedProject.protectedPaths.join(" · ")} />
+                  </div>
+                </details>
+                <div className="flex justify-end">
+                  <Button onClick={advance}>
+                    Review safe starter
+                    <ArrowRight />
+                  </Button>
+                </div>
+              </CardContent>
+            </>
+          )}
+
+          {onboardingStage === "plan" && (
+            <>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Badge tone="active">Recommended</Badge>
+                  <Badge>{starterPlan.expectedMinutes} minute estimate</Badge>
+                </div>
+                <CardTitle className="mt-4 text-xl">{starterPlan.title}</CardTitle>
+                <CardDescription>{starterPlan.reason}</CardDescription>
+              </CardHeader>
+              <CardContent className="mt-6">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <PlanGroup label="What will happen" items={starterPlan.effects} />
+                  <PlanGroup label="What proves it worked" items={starterPlan.evidence} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <OnboardingFact label="Model use" value={starterPlan.providerPosture} />
+                  <OnboardingFact label="This computer" value={starterPlan.localResources} />
+                </div>
+                <div className="mt-4 rounded-3xl bg-emerald-400/[.07] p-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+                    <ShieldCheck weight="duotone" />
+                    Safe undo
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{starterPlan.undo}</p>
+                </div>
+                <details className="mt-4 rounded-2xl bg-muted/45 p-4">
+                  <summary className="cursor-pointer text-xs font-semibold">
+                    Advanced · exact operations and limitations
+                  </summary>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <PlanGroup label="Exact operations" items={starterPlan.advancedOperations} />
+                    <PlanGroup label="Limitations" items={starterPlan.limitations} />
+                  </div>
+                </details>
+                <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button variant="secondary" onClick={() => setOnboardingStage("analyze")}>
+                    Review understanding
+                  </Button>
+                  <Button onClick={advance}>
+                    Create validated preview
+                    <ArrowRight />
+                  </Button>
+                </div>
+              </CardContent>
+            </>
+          )}
+
+          {onboardingStage === "preview" && (
+            <>
+              <CardHeader className="flex flex-row items-start justify-between gap-4">
+                <div>
+                  <Badge tone="positive">Validated preview</Badge>
+                  <CardTitle className="mt-4 text-xl">Your first safe change is ready</CardTitle>
+                  <CardDescription>
+                    This preview is evidence-backed and still isolated from your existing work.
+                  </CardDescription>
+                </div>
+                <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                  <Sparkle size={23} weight="fill" />
+                </span>
+              </CardHeader>
+              <CardContent className="mt-6">
+                <div className="overflow-hidden rounded-3xl bg-muted/55 p-3">
+                  <div className="rounded-2xl bg-background p-6 shadow-sm">
+                    <span className="text-[10px] font-semibold uppercase tracking-[.16em] text-primary">
+                      Local preview
+                    </span>
+                    <h3 className="mt-3 text-2xl font-semibold tracking-tight">
+                      Build freely. Keep control.
+                    </h3>
+                    <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+                      A clearer heading, validated against the repository’s existing design system.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {previewEvidence.map((item) => (
+                    <OnboardingFact key={item.label} label={item.label} value={item.value} />
+                  ))}
+                </div>
+                <div className="mt-6 flex justify-end">
+                  <Button onClick={advance}>
+                    Review Keep or Restore
+                    <ArrowRight />
+                  </Button>
+                </div>
+              </CardContent>
+            </>
+          )}
+
+          {onboardingStage === "decision" && (
+            <>
+              <CardHeader>
+                <Badge tone={decision ? "positive" : "caution"}>
+                  {decision ? "Decision recorded" : "One decision left"}
+                </Badge>
+                <CardTitle className="mt-4 text-xl">
+                  {decision === "keep"
+                    ? "Checkpoint kept"
+                    : decision === "restore"
+                      ? "Previous state restored"
+                      : "Keep the validated change?"}
+                </CardTitle>
+                <CardDescription>
+                  {decision === null
+                    ? "Both options preserve unrelated files and existing local work."
+                    : "The guided first-project journey is complete."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="mt-6">
+                {decision === null ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDecision("keep");
+                        setNotice("The validated checkpoint was kept. No external publish occurred.");
+                      }}
+                      className="rounded-3xl bg-primary/10 p-5 text-left outline-none hover:bg-primary/15 focus-visible:ring-3 focus-visible:ring-ring/30"
+                    >
+                      <CheckCircle size={24} className="text-primary" weight="duotone" />
+                      <strong className="mt-5 block">Keep checkpoint</strong>
+                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                        Preserve the validated local change as the new safe starting point.
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDecision("restore");
+                        setNotice("The exact previous state was restored. Unrelated work was preserved.");
+                      }}
+                      className="rounded-3xl bg-muted/55 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+                    >
+                      <ShieldCheck size={24} className="text-primary" weight="duotone" />
+                      <strong className="mt-5 block">Restore previous state</strong>
+                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                        Remove only product-owned changes and return to the saved baseline.
+                      </span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-3xl bg-emerald-400/[.07] p-6 text-center">
+                    <CheckCircle size={34} className="mx-auto text-emerald-700 dark:text-emerald-300" weight="duotone" />
+                    <strong className="mt-4 block">Ready for your next request</strong>
+                    <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+                      Pipeline Studio now understands the project, its safeguards, and how to validate future work.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </>
+          )}
+        </Card>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Safety boundary</CardTitle>
+              <CardDescription>What remains true throughout setup.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5 space-y-3">
+              <SourceRow label="Existing files" value="Never overwritten" state="Protected" />
+              <SourceRow label="Likely secrets" value="Excluded" state="Protected" />
+              <SourceRow label="Automatic spend" value="$0.00" state="Enforced" />
+              <SourceRow label="Restore" value="Product files only" state="Ready" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Current checkpoint</CardTitle>
+              <CardDescription>
+                Product work is isolated from pre-existing changes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5">
+              <div className="rounded-2xl bg-muted/50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold">Before Pipeline Studio</span>
+                  <Badge tone="positive">Restorable</Badge>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Dirty and untracked user files remain outside the product checkpoint.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+          <p
+            aria-live="polite"
+            className="rounded-3xl bg-primary/[.08] p-4 text-xs leading-5 text-muted-foreground"
+          >
+            {notice}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnboardingFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-muted/50 p-4">
+      <span className="text-[10px] font-semibold uppercase tracking-[.14em] text-muted-foreground">
+        {label}
+      </span>
+      <strong className="mt-2 block text-xs leading-5">{value}</strong>
+    </div>
+  );
+}
+
+function GroundingGroup({ label, items }: { label: string; items: readonly string[] }) {
+  return (
+    <div className="rounded-3xl bg-muted/45 p-4">
+      <strong className="text-xs">{label}</strong>
+      <ul className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2">
+            <span className="mt-2 size-1 shrink-0 rounded-full bg-primary" />
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PlanGroup({ label, items }: { label: string; items: readonly string[] }) {
+  return (
+    <div className="rounded-3xl bg-muted/45 p-5">
+      <strong className="text-xs">{label}</strong>
+      <ol className="mt-4 space-y-3">
+        {items.map((item, index) => (
+          <li key={item} className="flex gap-3 text-xs leading-5 text-muted-foreground">
+            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-background text-[10px] font-bold text-foreground">
+              {index + 1}
+            </span>
+            {item}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
