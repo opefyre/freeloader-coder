@@ -25,3 +25,4 @@ export * from "./connection.js";
 export * from "./lifecycle.js";
 export * from "./router.js";
 export * from "./telemetry.js";
+export * from "./wizard.js";

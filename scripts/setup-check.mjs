@@ -17,6 +17,8 @@ const required = [
   "packages/evals/package.json",
   "packages/execution/package.json",
   "packages/runtime/package.json",
+  "packages/security/package.json",
+  "packages/vault/package.json",
   "packages/ui/package.json",
   "fixtures/demo-project.json"
 ];

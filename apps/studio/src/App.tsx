@@ -35,6 +35,7 @@ import {
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
+import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
 import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
 import { Button, buttonVariants } from "./components/ui/button.js";
 import {
@@ -2134,6 +2135,9 @@ function SettingsWorkspace({
       </TabsContent>
 
       <TabsContent value="connections">
+        <div className="mb-4">
+          <ProviderConnectionWizard />
+        </div>
         <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
           <Card>
             <CardHeader>
