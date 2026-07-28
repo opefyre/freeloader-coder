@@ -22,7 +22,7 @@ function applyTheme(mode: ThemeMode): void {
   document.documentElement.style.colorScheme = resolved;
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", resolved === "dark" ? "#10131b" : "#f4f6fb");
+    ?.setAttribute("content", resolved === "dark" ? "#1d1a16" : "#faf7f1");
 }
 
 function initializeTheme(): void {

@@ -13,6 +13,11 @@ vector product mark.
 - System-mode changes react to operating-system preference updates.
 - Browser chrome color follows the resolved theme.
 - Mobile and desktop controls expose the same canonical preference.
+- Light mode uses warm paper neutrals; dark mode uses neutral graphite.
+- Molten amber is reserved for brand, primary actions, focus, and live state.
+- Decorative gradients are prohibited; chart fills may use sharp semantic
+  segments only when they encode data.
+- Instrument Sans is the only product typeface.
 
 ## Brand contract
 

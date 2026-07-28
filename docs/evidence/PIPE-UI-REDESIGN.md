@@ -10,9 +10,9 @@ Household-compatible shadcn application shell.
 - React 19 rendering through Vite
 - Tailwind v4 and shadcn semantic tokens
 - Base UI buttons and tabs
-- Geist as the sole typeface
+- Instrument Sans as the sole typeface
 - Phosphor as the sole icon family
-- Pipeline-specific indigo/cyan palette
+- Pipeline-specific molten-amber/graphite palette with no decorative gradients
 - Responsive sidebar, summary cards, active-run stages, provider execution,
   reliability, cost safeguards, decisions, and assistant input
 

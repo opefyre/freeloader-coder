@@ -14,11 +14,12 @@ test("Studio uses a React landmark, skip link, and labeled shadcn tabs", async (
   assert.match(source, /TabsTrigger value="overview"/);
 });
 
-test("Studio imports shadcn tokens, Geist, and the approved Phosphor package", async () => {
+test("Studio imports shadcn tokens, Instrument Sans, and the approved Phosphor package", async () => {
   const source = await readFile("apps/studio/src/App.tsx", "utf8");
   const css = await readFile("apps/studio/src/globals.css", "utf8");
-  assert.match(css, /@fontsource-variable\/geist/);
+  assert.match(css, /@fontsource-variable\/instrument-sans/);
   assert.match(css, /@import "shadcn\/tailwind\.css"/);
+  assert.doesNotMatch(`${css}\n${source}`, /(?:linear|radial)-gradient/);
   assert.match(source, /@phosphor-icons\/react/);
   assert.doesNotMatch(source, /lucide/);
   assert.doesNotMatch(source, /https?:\/\//);

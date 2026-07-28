@@ -439,7 +439,7 @@ function App() {
                 </div>
 
                 <div className="space-y-4">
-                  <Card className="bg-[linear-gradient(145deg,var(--card),color-mix(in_oklch,var(--card),var(--primary)_7%))]">
+                  <Card>
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <Badge tone="caution">Needs you</Badge>

@@ -15,5 +15,5 @@
       <path d="M35.56 27.02H64v9.96H35.56Z" fill="black"/>
     </mask>
   </defs>
-  <rect x="3.56" y="3.56" width="56.89" height="56.89" rx="16" fill="#6ea8ff" mask="url(#orchestration-core)"/>
+  <rect x="3.56" y="3.56" width="56.89" height="56.89" rx="16" fill="#e6a23c" mask="url(#orchestration-core)"/>
 </svg>

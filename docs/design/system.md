@@ -4,14 +4,14 @@
 
 Pipeline Studio uses the same calm shadcn component language as the Household
 reference application so both products feel deliberate and familiar. It is not
-a clone: Pipeline Studio uses a restrained indigo/cyan identity, denser
+a clone: Pipeline Studio uses a restrained molten-amber/graphite identity, denser
 operational layouts, and data-first content. Depth comes from semantic surface
 tones, soft elevation, and spacing rather than decorative grids or sci-fi
 effects.
 
 ## Locked choices
 
-- Typeface: Geist only, with system fallback while the local font loads.
+- Typeface: Instrument Sans only, with system fallback while the local font loads.
 - Themes: system preference by default, with persistent explicit light and dark
   choices. Both themes are release-blocking visual QA targets.
 - Components: React, Base UI, Tailwind v4, and shadcn component patterns.
