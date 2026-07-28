@@ -10,6 +10,7 @@ import {
   leaseSchema,
   migrateTaskV0,
   modelCallSchema,
+  providerJournalDocumentSchema,
   recoverySchema,
   reviewSchema,
   safeErrorSchema,
@@ -41,6 +42,37 @@ const changed = eventSchema.parse({
 test("strict v1 schemas reject unknown fields and unsupported versions", () => {
   assert.equal(taskSchema.safeParse({ ...created.payload, secret: "no" }).success, false);
   assert.equal(taskSchema.safeParse({ ...created.payload, schemaVersion: 2 }).success, false);
+});
+
+test("provider journal schema rejects malformed digests, events, and unknown fields", () => {
+  const document = {
+    schemaVersion: 1,
+    taskId: "task-1",
+    workUnitId: "implementation",
+    requestDigest: "a".repeat(64),
+    events: [{
+      sequence: 1,
+      eventId: "task-1:provider:1",
+      taskId: "task-1",
+      occurredAt: 100,
+      type: "provider.task_initialized",
+      workUnitId: "implementation",
+      requestDigest: "a".repeat(64)
+    }]
+  };
+  assert.equal(providerJournalDocumentSchema.safeParse(document).success, true);
+  assert.equal(providerJournalDocumentSchema.safeParse({
+    ...document,
+    requestDigest: "not-a-digest"
+  }).success, false);
+  assert.equal(providerJournalDocumentSchema.safeParse({
+    ...document,
+    events: [{ ...document.events[0], hidden: true }]
+  }).success, false);
+  assert.equal(providerJournalDocumentSchema.safeParse({
+    ...document,
+    hidden: true
+  }).success, false);
 });
 
 test("all v1 entity boundaries accept valid fixtures and reject unknown fields", () => {

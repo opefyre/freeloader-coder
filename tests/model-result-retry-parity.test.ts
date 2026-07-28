@@ -87,6 +87,10 @@ test("provider failures classify rate limits and gateway 499 without guessing", 
   assert.equal(classifyProviderFailure({ status: 499 }).failureClass, "gateway_interrupted");
   assert.equal(classifyProviderFailure({ status: 401 }).failureClass, "permission");
   assert.equal(classifyProviderFailure({ status: 503 }).failureClass, "transient_provider");
+  assert.equal(
+    classifyProviderFailure({ status: null, code: "invalid-provider-output" }).failureClass,
+    "validation"
+  );
 });
 
 test("repeated provider infrastructure failure asks for help without quarantining task work", () => {

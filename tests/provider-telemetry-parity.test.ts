@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildProviderTelemetry,
   routeProviders,
+  summarizeProviderAttempts,
   type ProviderCandidate
 } from "../packages/providers/src/index.js";
 
@@ -61,4 +62,33 @@ test("provider telemetry distinguishes configured status from proven successful 
   assert.equal(telemetry.failedCalls, 2);
   assert.equal(telemetry.retryAt, 5_000);
   assert.match(telemetry.statusDetail, /free allowance is exhausted/);
+});
+
+test("telemetry totals are projected from terminal attempt evidence", () => {
+  const runtime = summarizeProviderAttempts([
+    {
+      providerId: "groq",
+      status: "succeeded",
+      startedAt: 100,
+      finishedAt: 200
+    },
+    {
+      providerId: "groq",
+      status: "failed",
+      startedAt: 300,
+      finishedAt: 400
+    },
+    {
+      providerId: "other",
+      status: "succeeded",
+      startedAt: 500,
+      finishedAt: 600
+    }
+  ], "groq");
+  assert.deepEqual(runtime, {
+    successfulCalls: 1,
+    failedCalls: 1,
+    lastSuccessAt: 200,
+    lastFailureAt: 400
+  });
 });

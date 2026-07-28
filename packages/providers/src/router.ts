@@ -4,13 +4,13 @@ export type CapacityUnit = "requests" | "tokens" | "neurons" | "provider_reporte
 
 export interface ProviderCapacityPolicy {
   readonly unit: CapacityUnit;
-  readonly requestsPerMinute?: number;
-  readonly requestsPerDay?: number;
-  readonly tokensPerMinute?: number;
-  readonly tokensPerDay?: number;
-  readonly freeUnitsPerDay?: number;
-  readonly inputUnitsPerMillion?: number;
-  readonly outputUnitsPerMillion?: number;
+  readonly requestsPerMinute?: number | undefined;
+  readonly requestsPerDay?: number | undefined;
+  readonly tokensPerMinute?: number | undefined;
+  readonly tokensPerDay?: number | undefined;
+  readonly freeUnitsPerDay?: number | undefined;
+  readonly inputUnitsPerMillion?: number | undefined;
+  readonly outputUnitsPerMillion?: number | undefined;
 }
 
 export interface ProviderCapacityUsage {
@@ -18,12 +18,12 @@ export interface ProviderCapacityUsage {
   readonly tokensToday: number;
   readonly inputTokensToday: number;
   readonly outputTokensToday: number;
-  readonly freeUnitsToday?: number;
+  readonly freeUnitsToday?: number | undefined;
   readonly requestTimestamps: readonly number[];
   readonly tokenSamples: readonly { readonly at: number; readonly tokens: number }[];
-  readonly providerRemainingRequests?: number | null;
-  readonly providerRemainingTokens?: number | null;
-  readonly providerResetAt?: number | null;
+  readonly providerRemainingRequests?: number | null | undefined;
+  readonly providerRemainingTokens?: number | null | undefined;
+  readonly providerResetAt?: number | null | undefined;
 }
 
 export interface ProviderCandidate {
@@ -54,8 +54,8 @@ export interface RouteRequest {
   readonly requestedOutputTokens: number;
   readonly allowPaid: boolean;
   readonly now: number;
-  readonly preferredProviderIds?: readonly string[];
-  readonly avoidedProviderIds?: readonly string[];
+  readonly preferredProviderIds?: readonly string[] | undefined;
+  readonly avoidedProviderIds?: readonly string[] | undefined;
 }
 
 export type RouteRejectionReason =
@@ -68,6 +68,7 @@ export type RouteRejectionReason =
   | "sensitive-data-requires-local"
   | "privacy-insufficient"
   | "input-too-large"
+  | "output-too-large"
   | "circuit-open"
   | "minute-request-limit"
   | "minute-token-limit"
@@ -157,24 +158,28 @@ export function evaluateCapacity(
 ): CapacityDecision {
   const { capacity, usage } = candidate;
   const minuteStart = request.now - 60_000;
-  const minuteRequests = usage.requestTimestamps.filter((timestamp) => timestamp > minuteStart).length;
-  if (capacity.requestsPerMinute && minuteRequests >= capacity.requestsPerMinute) {
+  const minuteRequestTimestamps = usage.requestTimestamps.filter(
+    (timestamp) => timestamp > minuteStart
+  );
+  if (
+    capacity.requestsPerMinute &&
+    minuteRequestTimestamps.length >= capacity.requestsPerMinute
+  ) {
     return {
       allowed: false,
       reason: "minute-request-limit",
-      retryAt: earliestMinuteReset(usage.requestTimestamps, request.now),
+      retryAt: earliestMinuteReset(minuteRequestTimestamps, request.now),
       projectedFreeUnits: null
     };
   }
-  const minuteTokens = usage.tokenSamples
-    .filter((sample) => sample.at > minuteStart)
-    .reduce((sum, sample) => sum + sample.tokens, 0);
+  const minuteTokenSamples = usage.tokenSamples.filter((sample) => sample.at > minuteStart);
+  const minuteTokens = minuteTokenSamples.reduce((sum, sample) => sum + sample.tokens, 0);
   const projectedTokens = request.estimatedInputTokens + request.requestedOutputTokens;
   if (capacity.tokensPerMinute && minuteTokens + projectedTokens > capacity.tokensPerMinute) {
     return {
       allowed: false,
       reason: "minute-token-limit",
-      retryAt: earliestMinuteReset(usage.tokenSamples.map((sample) => sample.at), request.now),
+      retryAt: earliestMinuteReset(minuteTokenSamples.map((sample) => sample.at), request.now),
       projectedFreeUnits: null
     };
   }
@@ -265,6 +270,12 @@ function rejectionFor(
   }
   if (privacyRank[candidate.privacy] < privacyRank[request.minimumPrivacy]) {
     return reject("privacy-insufficient", `Provider privacy is below ${request.minimumPrivacy}.`);
+  }
+  if (request.requestedOutputTokens > candidate.maxOutputTokens) {
+    return reject(
+      "output-too-large",
+      `Requested output ${request.requestedOutputTokens} exceeds maximum ${candidate.maxOutputTokens}.`
+    );
   }
   const maximumInput = candidate.contextWindowTokens - candidate.maxOutputTokens;
   if (request.estimatedInputTokens > maximumInput) {

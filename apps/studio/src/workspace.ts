@@ -36,6 +36,7 @@ import {
 } from "../../../packages/ui/src/index.js";
 import {
   providerTelemetry,
+  routeEvidenceSummary,
   successfulProviderCalls
 } from "./runtime-fixture.js";
 
@@ -281,8 +282,13 @@ function renderSurface(surface: WorkspaceSurface, technicalVisible: boolean): st
     </section>
 
     ${technicalVisible ? `<section class="technical-card ps-surface">
-      <div><p class="eyebrow">Advanced detail</p><h2>Runtime snapshot</h2></div>
-      <code>branch main</code><code>public sync verified</code><code>checks 51/51</code><code>build verified</code>
+      <div><p class="eyebrow">Advanced detail · recorded route</p><h2>Why this provider was selected</h2></div>
+      <div class="route-explanation">
+        <span><small>Selected route</small><strong>${routeEvidenceSummary.selectedProviderId} · ${routeEvidenceSummary.selectedModelId}</strong></span>
+        <span><small>Eligible fallbacks</small><strong>${routeEvidenceSummary.eligibleProviderIds.join(" → ")}</strong></span>
+        <span><small>Unavailable now</small><strong>${routeEvidenceSummary.rejected.map((item) => `${item.providerId}: ${item.reason.replaceAll("-", " ")}`).join(" · ") || "None"}</strong></span>
+        <span><small>Paid usage</small><strong>${routeEvidenceSummary.paidUsageAllowed ? "Allowed" : "Disabled"}</strong></span>
+      </div>
     </section>` : ""}
   </div>`;
 }

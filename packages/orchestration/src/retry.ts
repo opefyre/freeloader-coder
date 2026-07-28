@@ -46,6 +46,9 @@ export function classifyProviderFailure(input: {
   if (input.status === 401 || input.status === 403) {
     return { failureClass: "permission", retryAt: null, code };
   }
+  if (code === "invalid-provider-output") {
+    return { failureClass: "validation", retryAt: null, code };
+  }
   if (input.status !== null && input.status >= 400 && input.status < 500) {
     return { failureClass: "policy", retryAt: null, code };
   }

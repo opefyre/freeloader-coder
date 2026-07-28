@@ -25,6 +25,28 @@ export interface ProviderRuntimeEvidence {
   readonly lastFailureAt: number | null;
 }
 
+export interface ProviderAttemptEvidence {
+  readonly providerId: string;
+  readonly status: "started" | "failed" | "succeeded";
+  readonly startedAt: number;
+  readonly finishedAt: number | null;
+}
+
+export function summarizeProviderAttempts(
+  attempts: readonly ProviderAttemptEvidence[],
+  providerId: string
+): ProviderRuntimeEvidence {
+  const matching = attempts.filter((attempt) => attempt.providerId === providerId);
+  const succeeded = matching.filter((attempt) => attempt.status === "succeeded");
+  const failed = matching.filter((attempt) => attempt.status === "failed");
+  return {
+    successfulCalls: succeeded.length,
+    failedCalls: failed.length,
+    lastSuccessAt: latestFinishedAt(succeeded),
+    lastFailureAt: latestFinishedAt(failed)
+  };
+}
+
 export function buildProviderTelemetry(input: {
   readonly candidate: ProviderCandidate;
   readonly runtime: ProviderRuntimeEvidence;
@@ -58,4 +80,11 @@ export function buildProviderTelemetry(input: {
       rejection?.detail ??
       (input.runtime.successfulCalls > 0 ? "Available with confirmed successful calls." : "Configured; no successful call recorded yet.")
   };
+}
+
+function latestFinishedAt(attempts: readonly ProviderAttemptEvidence[]): number | null {
+  const timestamps = attempts.flatMap((attempt) =>
+    attempt.finishedAt === null ? [] : [attempt.finishedAt]
+  );
+  return timestamps.length === 0 ? null : Math.max(...timestamps);
 }

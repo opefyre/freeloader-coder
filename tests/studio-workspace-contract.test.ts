@@ -38,6 +38,7 @@ test("workspace renders provider evidence as interactive, explicitly demo-scoped
   assert.match(workspace, /data-provider-id/);
   assert.match(workspace, /successfulProviderCalls/);
   assert.match(fixture, /buildProviderTelemetry/);
+  assert.match(fixture, /routeEvidenceSummary/);
   assert.match(fixture, /successfulCalls/);
   assert.doesNotMatch(fixture, /from "\.\.\/\.\.\/\.\.\/packages\/providers\/src\/index\.js"/);
 });

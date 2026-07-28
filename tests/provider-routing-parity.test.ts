@@ -128,6 +128,24 @@ test("context safety is model-specific", () => {
   assert.equal(result.rejected[0]?.reason, "input-too-large");
 });
 
+test("router enforces output limit and ignores stale minute-window samples", () => {
+  const outputRejected = routeProviders([base], {
+    ...request,
+    requestedOutputTokens: 64_001
+  });
+  assert.equal(outputRejected.rejected[0]?.reason, "output-too-large");
+
+  const withStaleSamples = {
+    ...base,
+    capacity: { unit: "requests" as const, requestsPerMinute: 1 },
+    usage: {
+      ...usage,
+      requestTimestamps: [now - 120_000]
+    }
+  };
+  assert.equal(routeProviders([withStaleSamples], request).selected?.id, base.id);
+});
+
 test("paid providers and external sensitive-data routes remain ineligible", () => {
   const paid = routeProviders([{ ...base, paid: true }], request);
   assert.equal(paid.selected, null);

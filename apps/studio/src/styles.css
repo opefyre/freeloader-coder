@@ -1129,6 +1129,36 @@ h1 {
   display: block;
 }
 
+.route-explanation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.route-explanation span {
+  padding: 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ps-surface-raised) 76%, transparent);
+}
+
+.route-explanation small,
+.route-explanation strong {
+  display: block;
+}
+
+.route-explanation small {
+  margin-bottom: 6px;
+  color: var(--ps-text-muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.route-explanation strong {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .provider-metrics strong {
   font-size: 0.95rem;
   text-transform: capitalize;
@@ -1150,6 +1180,10 @@ h1 {
   }
 
   .provider-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .route-explanation {
     grid-template-columns: 1fr;
   }
 }

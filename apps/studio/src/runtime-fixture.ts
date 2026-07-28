@@ -4,6 +4,7 @@ import {
 } from "../../../packages/providers/src/router.js";
 import {
   buildProviderTelemetry,
+  summarizeProviderAttempts,
   type ProviderTelemetry
 } from "../../../packages/providers/src/telemetry.js";
 
@@ -117,18 +118,30 @@ const route = routeProviders(candidates, {
   allowPaid: false,
   now
 });
-const runtimeEvidence = {
-  groq: { successfulCalls: 10, failedCalls: 2, lastSuccessAt: now - 60_000, lastFailureAt: now - 900_000 },
-  cloudflare: { successfulCalls: 7, failedCalls: 1, lastSuccessAt: now - 240_000, lastFailureAt: now - 1_800_000 },
-  gemini: { successfulCalls: 2, failedCalls: 1, lastSuccessAt: now - 3_600_000, lastFailureAt: now - 120_000 },
-  openrouter: { successfulCalls: 2, failedCalls: 0, lastSuccessAt: now - 7_200_000, lastFailureAt: null }
+
+export const routeEvidenceSummary = {
+  selectedProviderId: route.selected?.providerId ?? null,
+  selectedModelId: route.selected?.modelId ?? null,
+  eligibleProviderIds: route.eligible.map((candidate) => candidate.providerId),
+  rejected: route.rejected.map((rejection) => ({
+    providerId: rejection.providerId,
+    reason: rejection.reason,
+    retryAt: rejection.retryAt
+  })),
+  paidUsageAllowed: false
 } as const;
+const attemptEvidence = [
+  ...attemptsFor("groq", 10, 2, now - 60_000),
+  ...attemptsFor("cloudflare", 7, 1, now - 240_000),
+  ...attemptsFor("gemini", 2, 1, now - 3_600_000),
+  ...attemptsFor("openrouter", 2, 0, now - 7_200_000)
+];
 
 export const providerTelemetry: readonly ProviderTelemetry[] = candidates.map((candidate) =>
   buildProviderTelemetry({
     candidate,
     route,
-    runtime: runtimeEvidence[candidate.providerId as keyof typeof runtimeEvidence],
+    runtime: summarizeProviderAttempts(attemptEvidence, candidate.providerId),
     now
   })
 );
@@ -137,3 +150,30 @@ export const successfulProviderCalls = providerTelemetry.reduce(
   (sum, provider) => sum + provider.successfulCalls,
   0
 );
+
+function attemptsFor(
+  providerId: string,
+  succeeded: number,
+  failed: number,
+  mostRecentSuccess: number
+): readonly {
+  readonly providerId: string;
+  readonly status: "succeeded" | "failed";
+  readonly startedAt: number;
+  readonly finishedAt: number;
+}[] {
+  return [
+    ...Array.from({ length: succeeded }, (_, index) => ({
+      providerId,
+      status: "succeeded" as const,
+      startedAt: mostRecentSuccess - index * 60_000 - 10_000,
+      finishedAt: mostRecentSuccess - index * 60_000
+    })),
+    ...Array.from({ length: failed }, (_, index) => ({
+      providerId,
+      status: "failed" as const,
+      startedAt: mostRecentSuccess - (index + 1) * 300_000 - 10_000,
+      finishedAt: mostRecentSuccess - (index + 1) * 300_000
+    }))
+  ];
+}

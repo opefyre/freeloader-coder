@@ -150,6 +150,162 @@ export const externalEffectSchema = z.strictObject({
   postcondition: z.enum(["unknown", "observed", "not_observed"])
 });
 
+export const providerAttemptRecordSchema = z.strictObject({
+  idempotencyKey: id,
+  runNumber: z.number().int().positive(),
+  candidateId: id,
+  providerId: id,
+  modelId: id,
+  status: z.enum(["started", "failed", "succeeded"]),
+  startedAt: z.number().int().nonnegative(),
+  finishedAt: z.number().int().nonnegative().nullable(),
+  failureClass: z.string().min(1).max(160).nullable(),
+  failureCode: z.string().min(1).max(160).nullable(),
+  retryAt: z.number().int().nonnegative().nullable(),
+  outputDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).nullable(),
+  inputTokens: z.number().int().nonnegative().nullable(),
+  outputTokens: z.number().int().nonnegative().nullable()
+});
+
+const providerCapacityPolicySchema = z.strictObject({
+  unit: z.enum(["requests", "tokens", "neurons", "provider_reported", "unmetered"]),
+  requestsPerMinute: z.number().positive().optional(),
+  requestsPerDay: z.number().positive().optional(),
+  tokensPerMinute: z.number().positive().optional(),
+  tokensPerDay: z.number().positive().optional(),
+  freeUnitsPerDay: z.number().positive().optional(),
+  inputUnitsPerMillion: z.number().positive().optional(),
+  outputUnitsPerMillion: z.number().positive().optional()
+});
+
+const providerCapacityUsageSchema = z.strictObject({
+  requestsToday: z.number().int().nonnegative(),
+  tokensToday: z.number().int().nonnegative(),
+  inputTokensToday: z.number().int().nonnegative(),
+  outputTokensToday: z.number().int().nonnegative(),
+  freeUnitsToday: z.number().nonnegative().optional(),
+  requestTimestamps: z.array(z.number().int().nonnegative()),
+  tokenSamples: z.array(z.strictObject({
+    at: z.number().int().nonnegative(),
+    tokens: z.number().int().nonnegative()
+  })),
+  providerRemainingRequests: z.number().int().nonnegative().nullable().optional(),
+  providerRemainingTokens: z.number().int().nonnegative().nullable().optional(),
+  providerResetAt: z.number().int().nonnegative().nullable().optional()
+});
+
+export const recordedProviderCandidateSchema = z.strictObject({
+  id,
+  providerId: id,
+  modelId: id,
+  priority: z.number().finite(),
+  configured: z.boolean(),
+  privacy: z.enum(["training_eligible", "no_training", "zero_retention", "local"]),
+  location: z.enum(["local", "external"]),
+  paid: z.boolean(),
+  roles: z.array(id),
+  kinds: z.array(id),
+  dataClasses: z.array(z.enum([
+    "public_test",
+    "non_personal_test",
+    "source_code",
+    "personal",
+    "credential"
+  ])),
+  contextWindowTokens: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+  capacity: providerCapacityPolicySchema,
+  usage: providerCapacityUsageSchema,
+  circuitOpenUntil: z.number().int().nonnegative()
+});
+
+export const recordedRouteRequestSchema = z.strictObject({
+  role: id,
+  kind: id,
+  dataClass: z.enum([
+    "public_test",
+    "non_personal_test",
+    "source_code",
+    "personal",
+    "credential"
+  ]),
+  minimumPrivacy: z.enum(["training_eligible", "no_training", "zero_retention", "local"]),
+  estimatedInputTokens: z.number().int().nonnegative(),
+  requestedOutputTokens: z.number().int().positive(),
+  allowPaid: z.boolean(),
+  now: z.number().int().nonnegative(),
+  preferredProviderIds: z.array(id).optional(),
+  avoidedProviderIds: z.array(id).optional()
+});
+
+const providerEventBase = {
+  sequence: z.number().int().positive(),
+  eventId: id,
+  taskId: id,
+  occurredAt: z.number().int().nonnegative()
+};
+
+export const providerJournalEventSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.task_initialized"),
+    workUnitId: id,
+    requestDigest: z.string().regex(/^[a-f0-9]{64}$/)
+  }),
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.run_started"),
+    runNumber: z.number().int().positive()
+  }),
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.route_recorded"),
+    runNumber: z.number().int().positive(),
+    request: recordedRouteRequestSchema,
+    candidates: z.array(recordedProviderCandidateSchema).min(1)
+  }),
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.call_started"),
+    attempt: providerAttemptRecordSchema
+  }),
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.call_failed"),
+    idempotencyKey: id,
+    failureClass: z.string().min(1).max(160),
+    failureCode: z.string().min(1).max(160),
+    retryAt: z.number().int().nonnegative().nullable()
+  }),
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.call_succeeded"),
+    idempotencyKey: id,
+    outputDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative()
+  }),
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.task_deferred"),
+    retryAt: z.number().int().nonnegative(),
+    reason: z.string().min(1).max(1_000)
+  }),
+  z.strictObject({
+    ...providerEventBase,
+    type: z.literal("provider.task_needs_user"),
+    reason: z.string().min(1).max(1_000)
+  })
+]);
+
+export const providerJournalDocumentSchema = z.strictObject({
+  schemaVersion: version,
+  taskId: id,
+  workUnitId: id,
+  requestDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  events: z.array(providerJournalEventSchema)
+});
+
 export const commandSchema = z.strictObject({
   schemaVersion: version,
   commandId: id,
@@ -250,3 +406,6 @@ export function toSafeError(input: unknown): SafeError {
 export type Task = z.infer<typeof taskSchema>;
 export type DomainEvent = z.infer<typeof eventSchema>;
 export type SafeError = z.infer<typeof safeErrorSchema>;
+export type ProviderAttemptRecord = z.infer<typeof providerAttemptRecordSchema>;
+export type ProviderJournalEvent = z.infer<typeof providerJournalEventSchema>;
+export type ProviderJournalDocument = z.infer<typeof providerJournalDocumentSchema>;
