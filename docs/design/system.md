@@ -11,7 +11,7 @@ effects.
 
 ## Locked choices
 
-- Typeface: Manrope only, with system fallback while the local font loads.
+- Typeface: Onest only, with system fallback while the local font loads.
 - Themes: system preference by default, with persistent explicit light and dark
   choices. Both themes are release-blocking visual QA targets.
 - Components: React, Base UI, Tailwind v4, and shadcn component patterns.

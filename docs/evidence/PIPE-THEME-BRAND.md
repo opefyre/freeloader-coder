@@ -17,7 +17,7 @@ vector product mark.
 - Molten amber is reserved for brand, primary actions, focus, and live state.
 - Decorative gradients are prohibited; chart fills may use sharp semantic
   segments only when they encode data.
-- Manrope is the only product typeface.
+- Onest is the only product typeface.
 
 ## Brand contract
 

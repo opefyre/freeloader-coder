@@ -14,7 +14,7 @@ import {
 } from "../packages/ui/src/index.js";
 
 test("design system locks the reference-compatible shadcn visual language", () => {
-  assert.equal(visualSystem.typography.family, "Manrope");
+  assert.equal(visualSystem.typography.family, "Onest");
   assert.equal(visualSystem.iconography.library, "phosphor");
   assert.equal(visualSystem.surfaces.decorativeBorders, false);
   assert.equal(visualSystem.surfaces.treatment, "shadcn-layered");
@@ -70,6 +70,6 @@ test("CSS exposes reduced-motion and forced-color fallbacks", async () => {
   const css = await readFile("apps/studio/src/globals.css", "utf8");
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /forced-colors:\s*active/);
-  assert.match(css, /"Manrope Variable"/);
+  assert.match(css, /"Onest Variable"/);
   assert.match(css, /@import "shadcn\/tailwind\.css"/);
 });
