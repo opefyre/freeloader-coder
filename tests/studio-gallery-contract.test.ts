@@ -22,7 +22,8 @@ test("Studio imports shadcn tokens, Onest, and the approved Phosphor package", a
   assert.doesNotMatch(`${css}\n${source}`, /(?:linear|radial)-gradient/);
   assert.match(source, /@phosphor-icons\/react/);
   assert.doesNotMatch(source, /lucide/);
-  assert.doesNotMatch(source, /https?:\/\//);
+  assert.doesNotMatch(css, /url\(["']?https?:\/\//);
+  assert.doesNotMatch(source, /target="_blank"(?![\s\S]{0,80}rel="noreferrer")/);
 });
 
 test("Studio ships persistent system, light, and dark themes plus an original vector mark", async () => {

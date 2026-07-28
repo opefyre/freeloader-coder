@@ -24,7 +24,8 @@ import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Sparkle } from "@phosphor-icons/react/Sparkle";
 import { Sun } from "@phosphor-icons/react/Sun";
 import { Warning } from "@phosphor-icons/react/Warning";
-import { useMemo, useState } from "react";
+import { X } from "@phosphor-icons/react/X";
+import { useEffect, useMemo, useState } from "react";
 
 import { controlCenterMetric } from "../../../fixtures/control-center-metrics.js";
 import { Badge } from "./components/ui/badge.js";
@@ -47,13 +48,71 @@ import {
 } from "./runtime-fixture.js";
 import { useTheme, type ThemeMode } from "./theme.js";
 
-const navItems = [
-  { label: "Overview", icon: Gauge, active: true },
-  { label: "Conversation", icon: ChatCircleDots, active: false },
-  { label: "Work", icon: ListChecks, count: "8", active: false },
-  { label: "Providers", icon: PlugsConnected, active: false },
-  { label: "Evidence", icon: ShieldCheck, active: false },
+const studioViews = [
+  "overview",
+  "conversation",
+  "work",
+  "providers",
+  "evidence",
+  "settings",
 ] as const;
+type StudioView = (typeof studioViews)[number];
+
+const navItems = [
+  { id: "overview", label: "Overview", note: "Pipeline health and decisions", icon: Gauge },
+  {
+    id: "conversation",
+    label: "Conversation",
+    note: "Ask, clarify, and guide work",
+    icon: ChatCircleDots,
+  },
+  { id: "work", label: "Work", note: "Active, queued, and verified tasks", icon: ListChecks, count: "8" },
+  { id: "providers", label: "Providers", note: "Free routes and model health", icon: PlugsConnected },
+  { id: "evidence", label: "Evidence", note: "Checks, checkpoints, and sources", icon: ShieldCheck },
+] as const;
+
+const viewCopy: Record<
+  StudioView,
+  { eyebrow: string; title: string; description: string }
+> = {
+  overview: {
+    eyebrow: "Freeloader Coder · Demo data",
+    title: "Good morning, Opefyre",
+    description: "Your pipeline is moving. One safe decision is waiting.",
+  },
+  conversation: {
+    eyebrow: "Grounded in this project",
+    title: "Build through conversation",
+    description: "Describe outcomes, clarify intent, and guide the pipeline without losing execution context.",
+  },
+  work: {
+    eyebrow: "1 active · 8 queued",
+    title: "Work that explains itself",
+    description: "Follow every task from readiness through independent review and verified completion.",
+  },
+  providers: {
+    eyebrow: "Free-provider mesh · Demo evidence",
+    title: "Models working as one system",
+    description: "Inspect routing, health, usage, fallbacks, and the evidence behind every provider claim.",
+  },
+  evidence: {
+    eyebrow: "87 checks passed",
+    title: "Trust, with receipts",
+    description: "Review checkpoints, validations, sources, and recoverable proof before accepting a result.",
+  },
+  settings: {
+    eyebrow: "Local-first configuration",
+    title: "Connections and safeguards",
+    description: "Connect services, control privacy, and keep automatic spend locked at zero.",
+  },
+};
+
+function initialView(): StudioView {
+  const candidate = new URLSearchParams(window.location.search).get("view");
+  return studioViews.includes(candidate as StudioView)
+    ? (candidate as StudioView)
+    : "overview";
+}
 
 const stages = [
   { label: "Readiness", note: "Goal and repository understood", state: "done" },
@@ -79,10 +138,14 @@ const summaryMetrics = {
 
 function App() {
   const theme = useTheme();
+  const [activeView, setActiveView] = useState<StudioView>(initialView);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState("");
   const [selectedProvider, setSelectedProvider] = useState(
     providerTelemetry[0]?.providerId ?? ""
   );
   const [costOpen, setCostOpen] = useState(false);
+  const [productChoice, setProductChoice] = useState<string>();
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState(false);
   const selected = providerTelemetry.find(
@@ -98,6 +161,56 @@ function App() {
       0
     );
     return total === 0 ? 0 : Math.round((successfulProviderCalls / total) * 100);
+  }, []);
+  const activeCopy = viewCopy[activeView];
+  const filteredCommands = useMemo(() => {
+    const query = commandQuery.trim().toLowerCase();
+    const items = [
+      ...navItems,
+      {
+        id: "settings" as const,
+        label: "Settings",
+        note: "Connections, privacy, and safeguards",
+        icon: Gear,
+      },
+    ];
+    return query
+      ? items.filter((item) =>
+          `${item.label} ${item.note}`.toLowerCase().includes(query)
+        )
+      : items;
+  }, [commandQuery]);
+
+  function navigate(view: StudioView, replace = false) {
+    setActiveView(view);
+    setCommandOpen(false);
+    setCommandQuery("");
+    const url = new URL(window.location.href);
+    url.hash = "";
+    if (view === "overview") {
+      url.searchParams.delete("view");
+    } else {
+      url.searchParams.set("view", view);
+    }
+    window.history[replace ? "replaceState" : "pushState"]({}, "", url);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  useEffect(() => {
+    const onPopState = () => setActiveView(initialView());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+      if (event.key === "Escape") setCommandOpen(false);
+    };
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, []);
 
   return (
@@ -140,21 +253,26 @@ function App() {
 
         <nav className="mt-7 space-y-1" aria-label="Workspace">
           {navItems.map((item) => (
-            <a
-              key={item.label}
-              href={`#${item.label.toLowerCase()}`}
-              aria-current={item.active ? "page" : undefined}
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => navigate(item.id)}
+              aria-current={activeView === item.id ? "page" : undefined}
               className={cn(
-                "flex h-10 items-center gap-3 rounded-2xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                item.active && "bg-sidebar-accent text-sidebar-accent-foreground"
+                "flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                activeView === item.id &&
+                  "bg-sidebar-accent text-sidebar-accent-foreground"
               )}
             >
-              <item.icon size={18} weight={item.active ? "fill" : "regular"} />
+              <item.icon
+                size={18}
+                weight={activeView === item.id ? "fill" : "regular"}
+              />
               <span>{item.label}</span>
               {"count" in item && (
                 <Badge className="ml-auto px-2 py-0.5">{item.count}</Badge>
               )}
-            </a>
+            </button>
           ))}
         </nav>
 
@@ -175,13 +293,19 @@ function App() {
           </button>
         </div>
 
-        <a
-          href="#settings"
-          className="mt-3 flex h-10 items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+        <button
+          type="button"
+          onClick={() => navigate("settings")}
+          aria-current={activeView === "settings" ? "page" : undefined}
+          className={cn(
+            "mt-3 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+            activeView === "settings" &&
+              "bg-sidebar-accent text-sidebar-accent-foreground"
+          )}
         >
           <Gear size={18} />
           Settings
-        </a>
+        </button>
       </aside>
 
       <main id="workspace" className="min-w-0">
@@ -194,6 +318,7 @@ function App() {
           </div>
           <button
             type="button"
+            onClick={() => setCommandOpen(true)}
             className="hidden h-10 w-full max-w-sm items-center gap-2 rounded-full bg-muted px-4 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 sm:flex"
           >
             <MagnifyingGlass size={17} />
@@ -240,15 +365,13 @@ function App() {
             <div>
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <FolderOpen size={15} />
-                Freeloader Coder
-                <span>·</span>
-                <span>Demo data</span>
+                {activeCopy.eyebrow}
               </div>
               <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
-                Good morning, Opefyre
+                {activeCopy.title}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Your pipeline is moving. One safe decision is waiting.
+                {activeCopy.description}
               </p>
             </div>
             <div className="flex gap-2">
@@ -256,13 +379,15 @@ function App() {
                 <Pause />
                 Pause after step
               </Button>
-              <Button>
+              <Button onClick={() => navigate("conversation")}>
                 <ChatCircleDots weight="fill" />
                 Ask the pipeline
               </Button>
             </div>
           </div>
 
+          {activeView === "overview" ? (
+            <>
           <section className="metric-grid grid gap-3" aria-label="Pipeline summary">
             <Metric
               icon={Lightning}
@@ -362,11 +487,15 @@ function App() {
                         ))}
                       </div>
                       <div className="mt-6 flex flex-wrap items-center gap-3">
-                        <Button size="sm">
+                        <Button size="sm" onClick={() => navigate("work")}>
                           Open task
                           <ArrowRight />
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate("evidence")}
+                        >
                           <GitBranch />
                           View local diff
                         </Button>
@@ -454,10 +583,30 @@ function App() {
                     </CardHeader>
                     <CardContent className="mt-5">
                       <div className="space-y-2">
-                        <Choice label="Pipeline Studio" note="Clear and credible" />
-                        <Choice label="Freeloader Coder" note="Matches the repository" />
+                        <Choice
+                          label="Pipeline Studio"
+                          note="Clear and credible"
+                          selected={productChoice === "Pipeline Studio"}
+                          onSelect={setProductChoice}
+                        />
+                        <Choice
+                          label="Freeloader Coder"
+                          note="Matches the repository"
+                          selected={productChoice === "Freeloader Coder"}
+                          onSelect={setProductChoice}
+                        />
                       </div>
-                      <Button variant="ghost" size="sm" className="mt-3 px-2">
+                      {productChoice && (
+                        <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-300">
+                          Demo choice recorded locally. No project data was changed.
+                        </p>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mt-3 px-2"
+                        onClick={() => navigate("evidence")}
+                      >
                         Review with context
                         <ArrowRight />
                       </Button>
@@ -643,6 +792,19 @@ function App() {
               </Card>
             </TabsContent>
           </Tabs>
+            </>
+          ) : (
+            <WorkspaceSurface
+              view={activeView}
+              selectedProvider={selectedProvider}
+              setSelectedProvider={setSelectedProvider}
+              message={message}
+              setMessage={setMessage}
+              sent={sent}
+              setSent={setSent}
+              navigate={navigate}
+            />
+          )}
         </div>
       </main>
 
@@ -651,21 +813,662 @@ function App() {
         aria-label="Mobile workspace"
       >
         {navItems.map((item) => (
-          <a
-            key={item.label}
-            href={`#${item.label.toLowerCase()}`}
-            aria-current={item.active ? "page" : undefined}
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => navigate(item.id)}
+            aria-current={activeView === item.id ? "page" : undefined}
             className={cn(
               "flex min-h-13 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-medium text-muted-foreground",
-              item.active && "bg-primary/12 text-primary"
+              activeView === item.id && "bg-primary/12 text-primary"
             )}
           >
-            <item.icon size={18} weight={item.active ? "fill" : "regular"} />
+            <item.icon
+              size={18}
+              weight={activeView === item.id ? "fill" : "regular"}
+            />
             <span>{item.label}</span>
-          </a>
+          </button>
         ))}
       </nav>
+
+      {commandOpen && (
+        <CommandPalette
+          query={commandQuery}
+          setQuery={setCommandQuery}
+          commands={filteredCommands}
+          close={() => setCommandOpen(false)}
+          navigate={navigate}
+        />
+      )}
     </div>
+  );
+}
+
+function WorkspaceSurface({
+  view,
+  selectedProvider,
+  setSelectedProvider,
+  message,
+  setMessage,
+  sent,
+  setSent,
+  navigate,
+}: {
+  view: Exclude<StudioView, "overview">;
+  selectedProvider: string;
+  setSelectedProvider: (provider: string) => void;
+  message: string;
+  setMessage: (message: string) => void;
+  sent: boolean;
+  setSent: (sent: boolean) => void;
+  navigate: (view: StudioView) => void;
+}) {
+  if (view === "conversation") {
+    return (
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="min-h-[32rem]">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Pipeline assistant</CardTitle>
+              <CardDescription>
+                Grounded in the current repository, task graph, and verified evidence.
+              </CardDescription>
+            </div>
+            <Badge tone="positive">Local context ready</Badge>
+          </CardHeader>
+          <CardContent className="mt-8 flex min-h-[24rem] flex-col">
+            <div className="max-w-2xl rounded-3xl bg-muted/65 p-5">
+              <div className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-xl bg-primary/12 text-primary">
+                  <Sparkle weight="fill" />
+                </span>
+                <strong className="text-sm">What should we build next?</strong>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                I can break down a feature, explain a blocker, inspect current work, or
+                prepare a safe implementation plan. Nothing executes until intent and
+                repository scope are grounded.
+              </p>
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-3">
+              {[
+                "Explain the active task",
+                "Show what needs me",
+                "Plan the next feature",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => {
+                    setMessage(prompt);
+                    setSent(false);
+                  }}
+                  className="rounded-2xl bg-muted/45 p-4 text-left text-xs font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+                >
+                  {prompt}
+                  <ArrowRight className="mt-5 text-primary" />
+                </button>
+              ))}
+            </div>
+            <form
+              className="mt-auto flex items-end gap-2 rounded-3xl bg-muted p-2 pl-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (message.trim()) {
+                  setSent(true);
+                  setMessage("");
+                }
+              }}
+            >
+              <label className="sr-only" htmlFor="conversation-message">
+                Message the pipeline
+              </label>
+              <textarea
+                id="conversation-message"
+                value={message}
+                onChange={(event) => {
+                  setMessage(event.target.value);
+                  setSent(false);
+                }}
+                rows={2}
+                placeholder="Describe what you want to build…"
+                className="max-h-36 min-h-12 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+              />
+              <Button size="icon" type="submit" aria-label="Send message">
+                <PaperPlaneTilt weight="fill" />
+              </Button>
+            </form>
+            {sent && (
+              <p className="mt-2 text-xs text-emerald-600 dark:text-emerald-300">
+                Demo message received locally. No task was created.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Grounding</CardTitle>
+              <CardDescription>What the assistant can safely use.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5 space-y-3">
+              <SourceRow label="Repository" value="Freeloader Coder" state="Ready" />
+              <SourceRow label="Task graph" value="9 scoped items" state="Ready" />
+              <SourceRow label="Evidence" value="87 checks" state="Fresh" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Execution boundary</CardTitle>
+              <CardDescription>
+                Conversation can propose work; the controller owns execution.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5">
+              <Button variant="secondary" className="w-full" onClick={() => navigate("work")}>
+                <ListChecks />
+                Review current work
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "work") {
+    return (
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0 space-y-4">
+          <Card className="min-w-0">
+            <CardHeader className="flex flex-col items-start justify-between gap-4 sm:flex-row">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Badge tone="active">Implementation</Badge>
+                  <a
+                    href="https://opefyre.atlassian.net/browse/PIPE-33"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-semibold text-primary hover:underline"
+                  >
+                    PIPE-33
+                  </a>
+                </div>
+                <CardTitle className="mt-4 text-xl">
+                  Responsive workspace navigation
+                </CardTitle>
+                <CardDescription>
+                  Restoring route-aware behavior, keyboard navigation, and durable
+                  workspace state inside the redesigned shell.
+                </CardDescription>
+              </div>
+              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                <Code size={23} weight="duotone" />
+              </span>
+            </CardHeader>
+            <CardContent className="mt-7">
+              <div className="flex items-center gap-3">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full w-[82%] rounded-full bg-primary" />
+                </div>
+                <strong className="text-sm">82%</strong>
+              </div>
+              <div className="mt-7 grid gap-2 sm:grid-cols-5">
+                {stages.map((stage, index) => (
+                  <div
+                    key={stage.label}
+                    className={cn(
+                      "rounded-2xl p-3",
+                      index < 3 ? "bg-primary/[.08]" : "bg-muted/50"
+                    )}
+                  >
+                    <span className="text-[10px] font-semibold text-muted-foreground">
+                      0{index + 1}
+                    </span>
+                    <strong className="mt-2 block text-xs">{stage.label}</strong>
+                    <span className="mt-1 block text-[10px] text-muted-foreground">
+                      {index < 2 ? "Verified" : index === 2 ? "Working" : "Waiting"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="min-w-0">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Task graph</CardTitle>
+                <CardDescription>Dependency-aware work, in execution order.</CardDescription>
+              </div>
+              <Badge>3 ready · 5 dependent</Badge>
+            </CardHeader>
+            <CardContent className="mt-5 space-y-2">
+              <TaskRow id="PIPE-33" title="Workspace navigation shell" state="Working now" tone="active" />
+              <TaskRow id="PIPE-34" title="Conversation-first command surface" state="Ready next" tone="positive" />
+              <TaskRow id="PIPE-35" title="Trustworthy task timeline" state="After PIPE-34" tone="neutral" />
+              <TaskRow id="PIPE-36" title="Decision inbox and explanations" state="After PIPE-35" tone="neutral" />
+            </CardContent>
+          </Card>
+        </div>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Live evidence</CardTitle>
+              <CardDescription>Observed during this implementation.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5 space-y-4">
+              <EvidencePulse label="Type check" value="Passed" />
+              <EvidencePulse label="Unit tests" value="87 / 87" />
+              <EvidencePulse label="Browser console" value="Clean" />
+              <EvidencePulse label="Last observation" value="Just now" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Safe controls</CardTitle>
+              <CardDescription>Actions preserve the current checkpoint.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5 grid gap-2">
+              <Button variant="secondary">
+                <Pause />
+                Pause after current step
+              </Button>
+              <Button variant="ghost" onClick={() => navigate("evidence")}>
+                <ShieldCheck />
+                Inspect evidence
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "providers") {
+    const selected = providerTelemetry.find(
+      (provider) => provider.providerId === selectedProvider
+    );
+    return (
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="min-w-0">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Provider mesh</CardTitle>
+              <CardDescription>
+                Successful calls, failures, and free-capacity routing from demo evidence.
+              </CardDescription>
+            </div>
+            <Badge tone="positive">{successfulProviderCalls} successful</Badge>
+          </CardHeader>
+          <CardContent className="mt-7 grid gap-3 md:grid-cols-2">
+            {providerTelemetry.map((provider) => (
+              <button
+                key={provider.providerId}
+                type="button"
+                data-provider-id={provider.providerId}
+                aria-pressed={selectedProvider === provider.providerId}
+                onClick={() => setSelectedProvider(provider.providerId)}
+                className={cn(
+                  "rounded-3xl bg-muted/50 p-5 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
+                  selectedProvider === provider.providerId && "bg-primary/[.09]"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <strong className="capitalize">{provider.providerId}</strong>
+                  <Badge tone={provider.health === "ready" ? "positive" : "caution"}>
+                    {provider.health.replace("_", " ")}
+                  </Badge>
+                </div>
+                <p className="mt-2 truncate text-xs text-muted-foreground">
+                  {provider.modelId}
+                </p>
+                <div className="mt-7 flex gap-6 text-sm">
+                  <span>
+                    <b>{provider.successfulCalls}</b> successful
+                  </span>
+                  <span>
+                    <b>{provider.failedCalls}</b> failed
+                  </span>
+                </div>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="capitalize">
+                {selected?.providerId ?? "Provider"} route
+              </CardTitle>
+              <CardDescription>Selected provider evidence.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5 space-y-4">
+              <SourceRow label="Model" value={selected?.modelId ?? "Unavailable"} state="Observed" />
+              <SourceRow label="Health" value={selected?.health.replace("_", " ") ?? "Unknown"} state="Live" />
+              <SourceRow label="Requests today" value={String(selected?.requestsToday ?? 0)} state="Scoped" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Routing policy</CardTitle>
+              <CardDescription>External free routes first; local fallback last.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5">
+              <div className="rounded-2xl bg-emerald-400/[.07] p-4 text-sm">
+                <strong className="text-emerald-700 dark:text-emerald-300">
+                  Paid routes denied
+                </strong>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Unknown-cost models and billing-enabled projects are ineligible.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "evidence") {
+    return (
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="min-w-0">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Verification timeline</CardTitle>
+              <CardDescription>
+                Every completion claim must trace to an observed postcondition.
+              </CardDescription>
+            </div>
+            <Badge tone="positive">Fresh</Badge>
+          </CardHeader>
+          <CardContent className="mt-7 space-y-3">
+            <Checkpoint
+              time="12:25"
+              title="Typography runtime verified"
+              note="Onest 400/600 loaded in both themes; browser console clean."
+              status="Passed"
+            />
+            <Checkpoint
+              time="12:24"
+              title="Production build completed"
+              note="Bundled application and local font assets generated successfully."
+              status="Passed"
+            />
+            <Checkpoint
+              time="12:24"
+              title="Automated validation completed"
+              note="87 tests, formatting, lint, type checking, and setup checks passed."
+              status="Passed"
+            />
+            <Checkpoint
+              time="12:22"
+              title="Repository checkpoint created"
+              note="Verified source state preserved before the next workspace increment."
+              status="Saved"
+            />
+          </CardContent>
+        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Current proof</CardTitle>
+              <CardDescription>Bounded to this demo repository.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5 grid gap-3">
+              <Evidence label="Automated checks" value="87 / 87 passed" />
+              <Evidence label="Paid routes produced" value="0" />
+              <Evidence label="Provider routes observed" value="4" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Recovery</CardTitle>
+              <CardDescription>The last verified checkpoint is restorable.</CardDescription>
+            </CardHeader>
+            <CardContent className="mt-5">
+              <Button variant="secondary" className="w-full">
+                <ShieldCheck />
+                Review restore point
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Provider connections</CardTitle>
+          <CardDescription>
+            Keys stay local and are never placed in prompts, logs, or exports.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="mt-6 space-y-2">
+          <ConnectionRow name="Groq" state="Connected" />
+          <ConnectionRow name="Cloudflare Workers AI" state="Connected" />
+          <ConnectionRow name="Gemini" state="Connected" />
+          <ConnectionRow name="OpenRouter" state="Connected" />
+          <ConnectionRow name="GitHub Models" state="Setup needed" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Denial of wallet</CardTitle>
+          <CardDescription>
+            Free-only is enforced as policy, not presented as a promise.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="mt-6">
+          <div className="rounded-3xl bg-emerald-400/[.07] p-6">
+            <span className="text-xs text-muted-foreground">
+              Maximum automatic spend
+            </span>
+            <strong className="mt-2 block text-4xl tracking-tight">$0.00</strong>
+            <Badge tone="positive" className="mt-5">
+              Enforced
+            </Badge>
+          </div>
+          <ul className="mt-5 space-y-3 text-sm text-muted-foreground">
+            {costSafetySummary.safeguards.map((safeguard) => (
+              <li key={safeguard} className="flex items-center gap-2">
+                <Check className="text-emerald-600 dark:text-emerald-300" weight="bold" />
+                {safeguard}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CommandPalette({
+  query,
+  setQuery,
+  commands,
+  close,
+  navigate,
+}: {
+  query: string;
+  setQuery: (query: string) => void;
+  commands: readonly {
+    id: StudioView;
+    label: string;
+    note: string;
+    icon: typeof Gear;
+  }[];
+  close: () => void;
+  navigate: (view: StudioView) => void;
+}) {
+  useEffect(() => {
+    document.querySelector<HTMLInputElement>("#command-search")?.focus();
+  }, []);
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-start bg-background/55 px-4 pt-[12vh] backdrop-blur-md">
+      <button
+        type="button"
+        className="absolute inset-0"
+        aria-label="Close command palette"
+        onClick={close}
+      />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Find tasks, runs, or evidence"
+        className="relative mx-auto w-full max-w-2xl rounded-[2rem] bg-popover p-2 shadow-2xl ring-1 ring-foreground/[.08]"
+      >
+        <div className="flex items-center gap-3 px-4 py-3">
+          <MagnifyingGlass className="text-muted-foreground" />
+          <input
+            id="command-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Jump to work, evidence, providers, or settings…"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <Button variant="ghost" size="icon" aria-label="Close command palette" onClick={close}>
+            <X />
+          </Button>
+        </div>
+        <div className="max-h-[26rem] space-y-1 overflow-y-auto p-2">
+          {commands.length ? (
+            commands.map((command) => (
+              <button
+                key={command.id}
+                type="button"
+                onClick={() => navigate(command.id)}
+                className="flex w-full items-center gap-3 rounded-2xl p-3 text-left outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+              >
+                <span className="grid size-10 place-items-center rounded-2xl bg-muted text-primary">
+                  <command.icon size={19} weight="duotone" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm">{command.label}</strong>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {command.note}
+                  </span>
+                </span>
+                <ArrowRight className="text-muted-foreground" />
+              </button>
+            ))
+          ) : (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              No workspace destination matches “{query}”.
+            </p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SourceRow({
+  label,
+  value,
+  state,
+}: {
+  label: string;
+  value: string;
+  state: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-muted/55 p-3">
+      <span className="min-w-0">
+        <span className="block text-[10px] text-muted-foreground">{label}</span>
+        <strong className="block truncate text-xs capitalize">{value}</strong>
+      </span>
+      <Badge tone="positive">{state}</Badge>
+    </div>
+  );
+}
+
+function TaskRow({
+  id,
+  title,
+  state,
+  tone,
+}: {
+  id: string;
+  title: string;
+  state: string;
+  tone: "active" | "positive" | "neutral";
+}) {
+  return (
+    <a
+      href={`https://opefyre.atlassian.net/browse/${id}`}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-3 rounded-2xl bg-muted/45 p-4 outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+    >
+      <span className="grid size-9 place-items-center rounded-xl bg-background text-primary">
+        <ListChecks size={17} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="text-[10px] font-semibold text-muted-foreground">{id}</span>
+        <strong className="block truncate text-sm">{title}</strong>
+      </span>
+      <Badge tone={tone}>{state}</Badge>
+    </a>
+  );
+}
+
+function EvidencePulse({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_0.75rem] shadow-emerald-400/50" />
+        {label}
+      </span>
+      <strong className="text-xs">{value}</strong>
+    </div>
+  );
+}
+
+function Checkpoint({
+  time,
+  title,
+  note,
+  status,
+}: {
+  time: string;
+  title: string;
+  note: string;
+  status: string;
+}) {
+  return (
+    <div className="grid gap-3 rounded-3xl bg-muted/45 p-4 sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center">
+      <span className="text-xs font-semibold text-muted-foreground">{time}</span>
+      <span>
+        <strong className="block text-sm">{title}</strong>
+        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{note}</span>
+      </span>
+      <Badge tone="positive">{status}</Badge>
+    </div>
+  );
+}
+
+function ConnectionRow({ name, state }: { name: string; state: string }) {
+  const connected = state === "Connected";
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 rounded-2xl bg-muted/45 p-4 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+    >
+      <span
+        className={cn(
+          "size-2 rounded-full",
+          connected ? "bg-emerald-400" : "bg-amber-400"
+        )}
+      />
+      <strong className="min-w-0 flex-1 truncate text-sm">{name}</strong>
+      <Badge tone={connected ? "positive" : "caution"}>{state}</Badge>
+      <ArrowRight className="text-muted-foreground" />
+    </button>
   );
 }
 
@@ -720,13 +1523,35 @@ function ProviderFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Choice({ label, note }: { label: string; note: string }) {
+function Choice({
+  label,
+  note,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  note: string;
+  selected: boolean;
+  onSelect: (label: string) => void;
+}) {
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 rounded-2xl bg-muted/65 p-3 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+      aria-pressed={selected}
+      onClick={() => onSelect(label)}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl bg-muted/65 p-3 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
+        selected && "bg-primary/10"
+      )}
     >
-      <span className="size-4 rounded-full bg-background ring-1 ring-foreground/15" />
+      <span
+        className={cn(
+          "grid size-4 place-items-center rounded-full bg-background ring-1 ring-foreground/15",
+          selected && "bg-primary text-primary-foreground ring-primary"
+        )}
+      >
+        {selected && <Check size={10} weight="bold" />}
+      </span>
       <span>
         <strong className="block text-sm">{label}</strong>
         <span className="text-xs text-muted-foreground">{note}</span>
