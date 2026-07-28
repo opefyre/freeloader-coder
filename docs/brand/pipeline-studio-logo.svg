@@ -16,7 +16,7 @@
     </mask>
   </defs>
   <rect x="12.44" y="12.44" width="71.11" height="71.11" rx="20" fill="#e6a23c" mask="url(#orchestration-core)"/>
-  <g fill="#211c17" font-family="Instrument Sans, Arial, sans-serif">
+  <g fill="#211c17" font-family="Manrope, Arial, sans-serif">
     <text x="112" y="47" font-size="34" font-weight="650" letter-spacing="-1.2">Pipeline</text>
     <text x="112" y="73" font-size="22" font-weight="480" letter-spacing="2.2" opacity=".66">STUDIO</text>
   </g>
