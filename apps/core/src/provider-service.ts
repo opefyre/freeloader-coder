@@ -14,10 +14,14 @@ import {
   type ProviderExecutor,
   type ProviderTaskRuntimeResult
 } from "../../../packages/orchestration/src/provider-runtime.js";
-import type {
-  ProviderCandidate,
-  RouteRequest
-} from "../../../packages/providers/src/router.js";
+import type { ProviderConnection } from "../../../packages/schemas/src/index.js";
+import {
+  resolveAdmittedProviderCandidates,
+  type ProviderCapability,
+  type ProviderCapacityUsage,
+  type ProviderCandidate,
+  type RouteRequest
+} from "../../../packages/providers/src/index.js";
 import { JsonProviderJournalStore } from "../../../packages/storage/src/provider-journal.js";
 
 export class ProviderRuntimeService {
@@ -53,6 +57,56 @@ export class ProviderRuntimeService {
     } finally {
       await lease.release();
     }
+  }
+
+  public async executeAdmitted(input: {
+    readonly taskId: string;
+    readonly workUnitId: string;
+    readonly requestDigest: string;
+    readonly connections: readonly ProviderConnection[];
+    readonly priorityByConnectionId: Readonly<Record<string, number>>;
+    readonly usageByConnectionId: Readonly<Record<string, ProviderCapacityUsage>>;
+    readonly requiredCapabilities: readonly ProviderCapability[];
+    readonly routeRequest: RouteRequest;
+    readonly executor: ProviderExecutor;
+  }): Promise<
+    | {
+        readonly state: "executed";
+        readonly result: ProviderTaskRuntimeResult;
+      }
+    | {
+        readonly state: "held";
+        readonly retryAt: number | null;
+        readonly excluded: ReturnType<typeof resolveAdmittedProviderCandidates>["excluded"];
+      }
+  > {
+    const resolution = resolveAdmittedProviderCandidates({
+      connections: input.connections,
+      now: input.routeRequest.now,
+      requiredCapabilities: input.requiredCapabilities,
+      priorityByConnectionId: input.priorityByConnectionId,
+      usageByConnectionId: input.usageByConnectionId
+    });
+    if (resolution.candidates.length === 0) {
+      const retryAt = resolution.excluded
+        .map((entry) => entry.decision.retryAt)
+        .filter((value): value is number => value !== null)
+        .sort((left, right) => left - right)[0] ?? null;
+      return {
+        state: "held",
+        retryAt,
+        excluded: resolution.excluded
+      };
+    }
+    const result = await this.execute({
+      taskId: input.taskId,
+      workUnitId: input.workUnitId,
+      requestDigest: input.requestDigest,
+      candidates: resolution.candidates,
+      routeRequest: input.routeRequest,
+      executor: input.executor
+    });
+    return { state: "executed", result };
   }
 }
 

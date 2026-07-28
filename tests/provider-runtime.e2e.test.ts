@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ProviderRuntimeService } from "../apps/core/src/provider-service.js";
+import type { ProviderConnection } from "../packages/schemas/src/index.js";
 import {
   executeProviderTask,
   providerIdempotencyKey,
@@ -72,6 +73,89 @@ const identity = {
   requestDigest: "a".repeat(64)
 };
 const digest = (character: string): string => `sha256:${character.repeat(64)}`;
+
+function connection(overrides: Partial<ProviderConnection> = {}): ProviderConnection {
+  return {
+    schemaVersion: 1,
+    id: "connection-cerebras",
+    providerId: "cerebras",
+    modelId: "gpt-oss-120b",
+    apiBaseUrl: "https://api.cerebras.ai/v1",
+    credentialReference: "vault:providers/cerebras/primary",
+    credentialFingerprint: "012345abcdef",
+    credentialState: "active",
+    state: "ready",
+    privacyClass: "training_eligible",
+    capabilityRoles: ["implementer"],
+    contextWindowTokens: 131_000,
+    maxOutputTokens: 40_000,
+    cost: {
+      access: "account_limited_free",
+      plan: "Free",
+      zeroCost: true,
+      billingEnabled: false,
+      observedAt: now - 1_000,
+      expiresAt: now + 60_000,
+      source: "account_api"
+    },
+    quota: {
+      source: "account_api",
+      observedAt: now - 1_000,
+      expiresAt: now + 60_000,
+      requestsPerMinute: 5,
+      requestsPerDay: 100,
+      tokensPerMinute: 30_000,
+      tokensPerDay: 1_000_000,
+      remainingRequests: 99,
+      remainingTokens: 999_000,
+      resetAt: now + 60_000
+    },
+    canary: {
+      status: "passed",
+      observedAt: now - 1_000,
+      expiresAt: now + 60_000,
+      modelId: "gpt-oss-120b",
+      capabilities: ["chat"],
+      inputTokens: 8,
+      outputTokens: 2,
+      failureCode: null
+    },
+    updatedAt: now - 1_000,
+    ...overrides
+  };
+}
+
+test("core holds queued work before a stale connection reaches the execution journal", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-admission-"));
+  const service = new ProviderRuntimeService(root);
+  let calls = 0;
+  const result = await service.executeAdmitted({
+    ...identity,
+    connections: [connection({
+      canary: {
+        ...connection().canary,
+        expiresAt: now
+      }
+    })],
+    priorityByConnectionId: { "connection-cerebras": 1 },
+    usageByConnectionId: { "connection-cerebras": usage },
+    requiredCapabilities: ["chat"],
+    routeRequest: {
+      ...routeRequest,
+      role: "implementer",
+      kind: "code"
+    },
+    executor: {
+      execute: async () => {
+        calls += 1;
+        return { outputDigest: digest("f"), inputTokens: 1, outputTokens: 1 };
+      }
+    }
+  });
+  assert.equal(result.state, "held");
+  assert.equal(result.excluded[0]?.decision.reason, "canary-stale");
+  assert.equal(calls, 0);
+});
 
 test("fallback keeps one canonical task and does not execute again after restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "provider-runtime-"));

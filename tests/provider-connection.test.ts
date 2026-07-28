@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createAdmittedProviderCandidate,
+  costEvidenceFromAccount,
   evaluateProviderAdmission,
   ProviderCanaryError,
+  quotaEvidenceFromHeaders,
+  runOpenAiCompatibleCapabilityCanary,
   runOpenAiCompatibleChatCanary
 } from "../packages/providers/src/connection.js";
 import { providerConnectionSchema } from "../packages/schemas/src/index.js";
@@ -29,6 +32,10 @@ function readyConnection(overrides: Record<string, unknown> = {}) {
     credentialFingerprint: "012345abcdef",
     credentialState: "active",
     state: "ready",
+    privacyClass: "training_eligible",
+    capabilityRoles: ["planner", "implementer", "reviewer"],
+    contextWindowTokens: 131_000,
+    maxOutputTokens: 40_000,
     cost: {
       access: "account_limited_free",
       plan: "Free",
@@ -109,6 +116,20 @@ test("admission requires current endpoint, cost, quota, canary, and capability e
   );
 });
 
+test("failed canaries expose specific safe repair guidance", () => {
+  const wrongProject = readyConnection({
+    canary: {
+      ...readyConnection().canary,
+      status: "failed",
+      failureCode: "wrong-project"
+    }
+  });
+  const decision = evaluateProviderAdmission({ connection: wrongProject, now });
+  assert.equal(decision.reason, "canary-failed");
+  assert.match(decision.detail, /different project/);
+  assert.equal(decision.detail.includes("provider-test-value"), false);
+});
+
 test("an admitted candidate uses account limits and provider remaining capacity", () => {
   const candidate = createAdmittedProviderCandidate({
     connection: readyConnection(),
@@ -130,6 +151,8 @@ test("promotional credit and billing-enabled connections cannot enter permanent 
     providerId: "deepseek",
     modelId: "deepseek-v4-flash",
     apiBaseUrl: "https://api.deepseek.com",
+    contextWindowTokens: 1_000_000,
+    maxOutputTokens: 384_000,
     cost: {
       ...readyConnection().cost,
       access: "promotional_credit",
@@ -205,4 +228,105 @@ test("canary errors expose only safe classifications", async () => {
       error.safeCode === "rate-limited" &&
       !error.message.includes("raw provider detail")
   );
+});
+
+test("capability canary proves chat, structured output, and tool calling independently", async () => {
+  const requestedBodies: unknown[] = [];
+  const evidence = await runOpenAiCompatibleCapabilityCanary({
+    providerId: "cerebras",
+    modelId: "gpt-oss-120b",
+    apiKey: "provider-test-value",
+    now,
+    capabilities: ["chat", "structured_output", "tool_calling"],
+    transport: async (_url, init) => {
+      const body: unknown = JSON.parse(init.body);
+      requestedBodies.push(body);
+      const record = body as Record<string, unknown>;
+      const structured = "response_format" in record;
+      const tools = "tools" in record;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          model: "gpt-oss-120b",
+          choices: [{
+            message: tools
+              ? {
+                  content: null,
+                  tool_calls: [{
+                    function: {
+                      name: "pipeline_canary",
+                      arguments: "{\"status\":\"ready\"}"
+                    }
+                  }]
+                }
+              : {
+                  content: structured
+                    ? "{\"status\":\"PIPELINE_STUDIO_CANARY\"}"
+                    : "PIPELINE_STUDIO_CANARY"
+                }
+          }],
+          usage: { prompt_tokens: 2, completion_tokens: 1 }
+        })
+      };
+    }
+  });
+  assert.deepEqual(evidence.capabilities, ["chat", "structured_output", "tool_calling"]);
+  assert.equal(evidence.inputTokens, 6);
+  assert.equal(requestedBodies.length, 3);
+});
+
+test("capability canary cancellation becomes a safe timeout", async () => {
+  await assert.rejects(
+    runOpenAiCompatibleCapabilityCanary({
+      providerId: "cerebras",
+      modelId: "gpt-oss-120b",
+      apiKey: "provider-test-value",
+      now,
+      timeoutMs: 5,
+      capabilities: ["chat"],
+      transport: async (_url, init) => new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => reject(new Error("aborted")));
+      })
+    }),
+    (error: unknown) =>
+      error instanceof ProviderCanaryError && error.safeCode === "timeout"
+  );
+});
+
+test("account response headers override documentation and expire quickly", () => {
+  const evidence = quotaEvidenceFromHeaders({
+    headers: {
+      "X-RateLimit-Limit-Requests": "17",
+      "x-ratelimit-remaining-requests": "3",
+      "x-ratelimit-reset-at": String(Math.floor((now + 60_000) / 1_000))
+    },
+    documented: {
+      requestsPerMinute: 5,
+      tokensPerDay: 1_000_000
+    },
+    now
+  });
+  assert.equal(evidence.source, "response_headers");
+  assert.equal(evidence.requestsPerMinute, 17);
+  assert.equal(evidence.remainingRequests, 3);
+  assert.equal(evidence.tokensPerDay, 1_000_000);
+  assert.equal(evidence.resetAt, now + 60_000);
+});
+
+test("catalog cost evidence never promotes temporary credit into permanent free routing", () => {
+  assert.deepEqual(costEvidenceFromAccount({
+    providerId: "deepseek",
+    plan: "Granted balance",
+    billingEnabled: false,
+    now,
+    source: "account_api"
+  }).access, "promotional_credit");
+  assert.equal(costEvidenceFromAccount({
+    providerId: "cerebras",
+    plan: "Free",
+    billingEnabled: true,
+    now,
+    source: "account_api"
+  }).zeroCost, false);
 });

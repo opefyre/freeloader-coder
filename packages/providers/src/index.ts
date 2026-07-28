@@ -18,8 +18,10 @@ export async function runFakeProvider(request: ModelRequest): Promise<ModelResul
 }
 
 export * from "./cache.js";
+export * from "./adapter.js";
 export * from "./catalog.js";
 export * from "./circuit.js";
 export * from "./connection.js";
+export * from "./lifecycle.js";
 export * from "./router.js";
 export * from "./telemetry.js";

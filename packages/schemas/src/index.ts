@@ -149,10 +149,114 @@ export const providerConnectionSchema = z.strictObject({
   credentialFingerprint: z.string().regex(/^[a-f0-9]{12}$/),
   credentialState: z.enum(["active", "revoked"]),
   state: z.enum(["validating", "ready", "limited", "invalid", "stale", "revoked"]),
+  privacyClass: z.enum(["training_eligible", "no_training", "zero_retention", "local"]),
+  capabilityRoles: z.array(z.enum(["planner", "implementer", "reviewer"])).min(1),
+  contextWindowTokens: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
   cost: providerCostEvidenceSchema,
   quota: providerQuotaEvidenceSchema,
   canary: providerCanaryEvidenceSchema,
   updatedAt: z.number().int().nonnegative()
+}).refine(
+  (value) => value.contextWindowTokens > value.maxOutputTokens,
+  "A provider connection must retain usable input context."
+);
+
+export const providerConnectionStoreSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  connections: z.array(providerConnectionSchema)
+});
+
+export const providerAdapterExtensionSchema = z.strictObject({
+  schemaVersion: version,
+  namespace: z.string().regex(/^[a-z0-9][a-z0-9.-]{0,79}$/),
+  payload: z.record(z.string(), z.unknown())
+});
+
+export const providerAdapterCapabilitySchema = z.enum([
+  "chat",
+  "streaming",
+  "structured_output",
+  "tool_calling",
+  "usage",
+  "model_discovery",
+  "quota_discovery"
+]);
+
+export const providerAdapterModelSchema = z.strictObject({
+  id,
+  label: z.string().trim().min(1).max(160),
+  contextWindowTokens: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+  capabilities: z.array(providerAdapterCapabilitySchema).min(1),
+  lifecycle: z.enum(["active", "retiring", "retired"]),
+  retiresAt: z.number().int().nonnegative().nullable(),
+  extensions: z.array(providerAdapterExtensionSchema)
+}).refine(
+  (value) => value.contextWindowTokens > value.maxOutputTokens,
+  "A provider model must retain usable input context."
+);
+
+export const providerAdapterManifestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  providerId: id,
+  adapterVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+  protocol: z.enum(["openai_compatible"]),
+  capabilities: z.array(providerAdapterCapabilitySchema).min(1),
+  defaultTimeoutMs: z.number().int().min(1_000).max(120_000),
+  sourceUrls: z.array(z.url()).min(1),
+  extensions: z.array(providerAdapterExtensionSchema)
+});
+
+export const providerAdapterErrorSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  code: z.enum([
+    "authentication_denied",
+    "permission_denied",
+    "quota_exhausted",
+    "rate_limited",
+    "model_retired",
+    "model_unavailable",
+    "unsupported_schema",
+    "timeout",
+    "provider_unavailable",
+    "malformed_response",
+    "request_rejected",
+    "unknown"
+  ]),
+  safeMessage: z.string().trim().min(1).max(500),
+  retryable: z.boolean(),
+  retryAt: z.number().int().nonnegative().nullable(),
+  providerRequestId: z.string().trim().min(1).max(200).nullable(),
+  extensions: z.array(providerAdapterExtensionSchema)
+});
+
+export const providerAdapterUsageSchema = z.strictObject({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+  estimated: z.boolean(),
+  extensions: z.array(providerAdapterExtensionSchema)
+}).refine(
+  (value) => value.totalTokens === value.inputTokens + value.outputTokens,
+  "Provider usage total must equal input plus output."
+);
+
+export const providerAdapterResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  providerId: id,
+  modelId: id,
+  requestId: id,
+  content: z.string().max(500_000),
+  finishReason: z.enum(["stop", "length", "tool_call", "content_filter", "unknown"]),
+  usage: providerAdapterUsageSchema,
+  toolCalls: z.array(z.strictObject({
+    id,
+    name: id,
+    argumentsJson: z.string().max(100_000)
+  })),
+  extensions: z.array(providerAdapterExtensionSchema),
+  verified: z.literal(false)
 });
 
 export const toolCallSchema = z.strictObject({
@@ -878,9 +982,17 @@ export type ProviderAttemptRecord = z.infer<typeof providerAttemptRecordSchema>;
 export type ProviderJournalEvent = z.infer<typeof providerJournalEventSchema>;
 export type ProviderJournalDocument = z.infer<typeof providerJournalDocumentSchema>;
 export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
+export type ProviderConnectionStore = z.infer<typeof providerConnectionStoreSchema>;
 export type ProviderQuotaEvidence = z.infer<typeof providerQuotaEvidenceSchema>;
 export type ProviderCostEvidence = z.infer<typeof providerCostEvidenceSchema>;
 export type ProviderCanaryEvidence = z.infer<typeof providerCanaryEvidenceSchema>;
+export type ProviderAdapterExtension = z.infer<typeof providerAdapterExtensionSchema>;
+export type ProviderAdapterCapability = z.infer<typeof providerAdapterCapabilitySchema>;
+export type ProviderAdapterModel = z.infer<typeof providerAdapterModelSchema>;
+export type ProviderAdapterManifest = z.infer<typeof providerAdapterManifestSchema>;
+export type ProviderAdapterError = z.infer<typeof providerAdapterErrorSchema>;
+export type ProviderAdapterUsage = z.infer<typeof providerAdapterUsageSchema>;
+export type ProviderAdapterResponse = z.infer<typeof providerAdapterResponseSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationJournalEvent = z.infer<typeof conversationJournalEventSchema>;
 export type ConversationJournal = z.infer<typeof conversationJournalSchema>;

@@ -1682,6 +1682,29 @@ function ConnectionSetup({ providerId }: { providerId: string }) {
               ? "Demo evidence marks this connection ready. Production readiness still depends on current, sanitized canary evidence."
               : "Catalog verification is complete. The route remains inactive until its credential, cost, quota, model, and capability evidence pass."}
         </p>
+        <details className="rounded-2xl bg-muted/45 p-4">
+          <summary className="cursor-pointer text-xs font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/30">
+            Advanced · sanitized admission evidence
+          </summary>
+          <dl className="mt-4 grid gap-3 text-xs">
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-muted-foreground">Credential</dt>
+              <dd>{ready ? "vault:•••• / fingerprint only" : "Not stored"}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-muted-foreground">Live canary</dt>
+              <dd>{ready ? "Fresh · chat proven" : "Required before dispatch"}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-muted-foreground">Account limits</dt>
+              <dd>{ready ? "Observed · freshness tracked" : "Not observed"}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-muted-foreground">Routing</dt>
+              <dd>{creditOnly ? "Excluded from permanent free" : ready ? "Admitted" : "Held safely"}</dd>
+            </div>
+          </dl>
+        </details>
         <div className="grid grid-cols-2 gap-2">
           <a
             className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "w-full")}

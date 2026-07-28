@@ -2,42 +2,52 @@
 
 Date: 2026-07-28
 
-## Delivered slice
+## Outcome
 
-- Versioned, strict provider connection, cost, quota, and canary evidence schemas.
-- Vault-reference-only credential boundary; provider keys cannot be serialized into a connection record.
-- Deterministic admission checks for connection state, credential state, verified endpoint/model, permanent-free eligibility, billing state, evidence freshness, live canary, and required capabilities.
-- Candidate construction from current account evidence, including provider remaining capacity and a protected review reserve.
-- A bounded OpenAI-compatible chat canary with timeout, cancellation, minimum output, safe status classification, and no raw provider-error propagation.
-- Explicit denial of promotional-credit and billing-enabled connections from permanent free-only routing.
-- Interactive Studio connection inspector with provider dashboards, official free-tier evidence, Jira implementation tickets, admission steps, and an honest DeepSeek credit-only state.
+Pipeline Studio now treats catalog presence, connection state, and execution readiness as separate facts. A provider reaches free-only scheduling only after current credential, endpoint, model, capability, quota, and zero-cost evidence passes the shared admission policy.
 
-## Security and privacy evidence
+## Delivered
 
-- Credential records accept only `vault:` references and a one-way short fingerprint.
-- The live canary receives a credential only as a transient function argument.
-- Canary output stores token counts, model identity, capability, freshness, and a safe status; it does not store prompts, response text, response bodies, or credentials.
-- HTTP failures are reduced to bounded safe classifications.
-- Secret scanning, strict-schema tests, and unknown-field rejection are part of the repository verification.
+- Extended the strict provider connection contract with privacy class, capability roles, context/output limits, account quota evidence, cost evidence, canary freshness, credential reference/fingerprint, and revocation state.
+- Added a vault-bound connection lifecycle for connect, re-probe, model replacement, revoke, and disconnect. The repository receives only a `vault:` reference and one-way fingerprint.
+- Added bounded OpenAI-compatible chat, structured-output, and tool-calling canaries with cancellation, timeout, token usage, strict sentinel validation, and sanitized failures.
+- Added safe repair guidance for invalid keys, wrong projects/regions, unavailable models/endpoints, unsupported schemas/tools, and ineligible credit.
+- Added account response-header quota discovery with short freshness windows and conservative documented fallback. Account-observed values override catalog documentation.
+- Added cost evidence derived from verified catalog access plus account billing state. Billing-enabled, unknown-cost, and promotional-credit-only routes are excluded from permanent free routing.
+- Added atomic private JSON persistence for masked connection evidence. Restart re-probe resolves the key through the vault reference without serializing the key.
+- Added core runtime admission wiring. Stale or failed connections are held before an execution journal or model call is created, preserving queued work and retry budgets.
+- Added Standard UI guidance and expandable Advanced sanitized evidence for credential, canary, quota, and routing state.
 
-## Cost evidence
+## Acceptance evidence
 
-- Permanent free routing requires current cost evidence with `zeroCost: true` and `billingEnabled: false`.
-- Only `permanent_free` and `account_limited_free` access classes are eligible.
-- DeepSeek promotional balance remains ineligible for permanent free routing.
-- Stale cost, quota, or canary evidence removes a connection from admission.
+- Shared adapter/lifecycle path supports Cerebras, Mistral, Zhipu AI, and SambaNova without provider-specific secret handling.
+- `resolveAdmittedProviderCandidates` is the only conversion from a connection record into a runnable free candidate.
+- Stale canary, stale quota, stale cost, revoked credential, model/endpoint mismatch, unproven capability, billing enabled, and promotional credit all remove a route from admission.
+- Account response-header limits override documented defaults and carry source, observation, expiry, remaining capacity, and reset timestamps.
+- Runtime-measured consumption remains separate in `ProviderCapacityUsage`; provider-reported remaining capacity feeds the existing quota-reset scheduler.
+- DeepSeek promotional credit remains visible for an explicit separate policy but cannot silently enter permanent free routing.
+
+## Security and privacy
+
+- Secrets are transient arguments to the vault and probe boundary only.
+- Connection JSON, compatibility evidence, test output, UI, and Jira evidence contain no keys or full account identifiers.
+- Provider bodies, prompts, complete outputs, and raw response headers are not persisted by admission.
+- Persistence uses strict schemas, private file modes, atomic replacement, and unknown-field rejection.
+- Paid use remains impossible through the default free-only cost policy.
 
 ## Verification
 
-- Full repository setup, formatting, lint, type checking, and tests pass.
-- Provider connection tests cover embedded-secret rejection, evidence freshness, capability admission, account quota projection, promotional-credit denial, billing denial, bounded canary requests, and safe rate-limit errors.
-- Studio production build passes.
-- Browser review confirms selectable provider rows, provider-specific setup evidence, live Jira/source links, and no console errors.
+- `npm run verify`: setup, formatting, lint, type checking, build, and all 128 automated tests passed.
+- `npm run studio:build`: production Studio bundle passed.
+- Automated coverage includes schema rejection, secret redaction, all four provider contracts, chat/structured/tool canaries, cancellation, timeout, account quota precedence, promotional-credit denial, stale-evidence queue preservation, restart re-probe, atomic persistence, revoke/disconnect, quota-reset deferral, circuits, and core admission holds.
+- Failed initial probes erase the newly supplied vault value and replace raw provider errors with bounded repair guidance.
+- Rendered browser acceptance confirmed:
+  - Standard setup state explains the three required admission steps.
+  - Advanced evidence expands by keyboard/click and exposes only sanitized facts.
+  - DeepSeek explicitly displays “Excluded from permanent free.”
+  - Provider dashboard, official evidence, and Jira ticket links are actionable.
+  - The rendered page has no admission-control console or navigation failure.
 
-## Remaining work before PIPE-178 can close
+## Dependency boundary
 
-- Implement the approved OS credential-vault adapter and credential lifecycle persistence.
-- Add provider-specific cost/plan and quota probes where the API exposes them.
-- Add structured-output and tool-calling canaries.
-- Add a server-side connection workflow, encrypted persistence, revoke/disconnect effects, and end-to-end recovery tests.
-- Connect the resulting admitted candidates to the production scheduler rather than the Studio fixture.
+PIPE-178 consumes the credential-vault contract. Native macOS Keychain, Windows Credential Manager, Linux Secret Service, and encrypted-fallback implementations remain owned by PIPE-43; no provider adapter can bypass that boundary.

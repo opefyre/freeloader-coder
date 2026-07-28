@@ -1,7 +1,9 @@
 import {
   providerConnectionSchema,
   type ProviderCanaryEvidence,
-  type ProviderConnection
+  type ProviderConnection,
+  type ProviderCostEvidence,
+  type ProviderQuotaEvidence
 } from "../../schemas/src/index.js";
 import { catalogProvider } from "./catalog.js";
 import type {
@@ -21,6 +23,7 @@ export type ProviderAdmissionReason =
   | "credential-revoked"
   | "endpoint-mismatch"
   | "model-mismatch"
+  | "model-capacity-mismatch"
   | "not-permanent-free"
   | "billing-enabled"
   | "cost-evidence-stale"
@@ -66,6 +69,16 @@ export function evaluateProviderAdmission(input: {
     return denied("model-mismatch", "The selected model is not in the verified catalog.", null);
   }
   if (
+    connection.contextWindowTokens !== model.contextWindowTokens ||
+    connection.maxOutputTokens !== model.maxOutputTokens
+  ) {
+    return denied(
+      "model-capacity-mismatch",
+      "The connection model limits do not match the verified catalog.",
+      null
+    );
+  }
+  if (
     !provider.zeroCostEligible ||
     !["permanent_free", "account_limited_free"].includes(connection.cost.access) ||
     !connection.cost.zeroCost
@@ -100,7 +113,7 @@ export function evaluateProviderAdmission(input: {
   if (connection.canary.status !== "passed") {
     return denied(
       "canary-failed",
-      "The latest live provider canary failed.",
+      canaryRepairGuidance(connection.canary.failureCode),
       null
     );
   }
@@ -154,17 +167,17 @@ export function createAdmittedProviderCandidate(input: {
     modelId: input.connection.modelId,
     priority: input.priority,
     configured: true,
-    privacy: "training_eligible",
+    privacy: input.connection.privacyClass,
     location: "external",
     paid: false,
     costClass: "free",
     billingMode: "free_tier",
     providerConnectionId: input.connection.id,
-    roles: ["planner", "implementer", "reviewer"],
+    roles: input.connection.capabilityRoles,
     kinds: ["plan", "code", "review"],
     dataClasses: ["public_test", "non_personal_test", "source_code"],
-    contextWindowTokens: model.contextWindowTokens,
-    maxOutputTokens: model.maxOutputTokens,
+    contextWindowTokens: input.connection.contextWindowTokens,
+    maxOutputTokens: input.connection.maxOutputTokens,
     capacity: {
       unit: "provider_reported",
       maxConcurrentRequests: 1,
@@ -293,12 +306,163 @@ export async function runOpenAiCompatibleChatCanary(input: {
   }
 }
 
+export async function runOpenAiCompatibleCapabilityCanary(input: {
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly apiKey: string;
+  readonly now: number;
+  readonly capabilities: readonly ProviderCapability[];
+  readonly ttlMs?: number | undefined;
+  readonly timeoutMs?: number | undefined;
+  readonly transport: CanaryTransport;
+}): Promise<ProviderCanaryEvidence> {
+  const uniqueCapabilities = [...new Set(input.capabilities)];
+  if (uniqueCapabilities.length === 0 || uniqueCapabilities.includes("long_context")) {
+    throw new ProviderCanaryError("unsupported-canary");
+  }
+  const provider = catalogProvider(input.providerId);
+  if (provider.protocol !== "openai_compatible") {
+    throw new ProviderCanaryError("unsupported-protocol");
+  }
+  if (!provider.models.some((model) => model.id === input.modelId)) {
+    throw new ProviderCanaryError("unverified-model");
+  }
+  if (input.apiKey.trim().length < 8) {
+    throw new ProviderCanaryError("invalid-credential");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    input.timeoutMs ?? 20_000
+  );
+  let inputTokens = 0;
+  let outputTokens = 0;
+  try {
+    for (const capability of uniqueCapabilities) {
+      const response = await input.transport(
+        `${normalizeUrl(provider.apiBaseUrl)}/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${input.apiKey}`,
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(capabilityRequest(input.modelId, capability)),
+          signal: controller.signal
+        }
+      );
+      if (!response.ok) throw new ProviderCanaryError(statusCode(response.status));
+      const payload = await response.json();
+      const usage = validateCapabilityPayload(payload, capability);
+      inputTokens += usage.inputTokens;
+      outputTokens += usage.outputTokens;
+    }
+    return {
+      status: "passed",
+      observedAt: input.now,
+      expiresAt: input.now + (input.ttlMs ?? 86_400_000),
+      modelId: input.modelId,
+      capabilities: uniqueCapabilities,
+      inputTokens,
+      outputTokens,
+      failureCode: null
+    };
+  } catch (error) {
+    if (error instanceof ProviderCanaryError) throw error;
+    if (controller.signal.aborted) throw new ProviderCanaryError("timeout");
+    throw new ProviderCanaryError("transport-failure");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export function quotaEvidenceFromHeaders(input: {
+  readonly headers: Readonly<Record<string, string | undefined>>;
+  readonly now: number;
+  readonly documented?: {
+    readonly requestsPerMinute?: number | undefined;
+    readonly requestsPerDay?: number | undefined;
+    readonly tokensPerMinute?: number | undefined;
+    readonly tokensPerDay?: number | undefined;
+  } | undefined;
+  readonly ttlMs?: number | undefined;
+}): ProviderQuotaEvidence {
+  const headers = Object.fromEntries(
+    Object.entries(input.headers).map(([key, value]) => [key.toLowerCase(), value])
+  );
+  const account = {
+    requestsPerMinute: positiveInteger(headers["x-ratelimit-limit-requests"]),
+    requestsPerDay: positiveInteger(headers["x-ratelimit-limit-requests-day"]),
+    tokensPerMinute: positiveInteger(headers["x-ratelimit-limit-tokens"]),
+    tokensPerDay: positiveInteger(headers["x-ratelimit-limit-tokens-day"]),
+    remainingRequests: nonnegativeInteger(headers["x-ratelimit-remaining-requests"]),
+    remainingTokens: nonnegativeInteger(headers["x-ratelimit-remaining-tokens"]),
+    resetAt: epochMilliseconds(headers["x-ratelimit-reset-at"])
+  };
+  const observed = Object.values(account).some((value) => value !== null);
+  return {
+    source: observed ? "response_headers" : "conservative_default",
+    observedAt: input.now,
+    expiresAt: input.now + (input.ttlMs ?? (observed ? 900_000 : 300_000)),
+    requestsPerMinute:
+      account.requestsPerMinute ?? input.documented?.requestsPerMinute ?? null,
+    requestsPerDay: account.requestsPerDay ?? input.documented?.requestsPerDay ?? null,
+    tokensPerMinute: account.tokensPerMinute ?? input.documented?.tokensPerMinute ?? null,
+    tokensPerDay: account.tokensPerDay ?? input.documented?.tokensPerDay ?? null,
+    remainingRequests: account.remainingRequests,
+    remainingTokens: account.remainingTokens,
+    resetAt: account.resetAt
+  };
+}
+
+export function costEvidenceFromAccount(input: {
+  readonly providerId: string;
+  readonly plan: string;
+  readonly billingEnabled: boolean;
+  readonly now: number;
+  readonly source: "account_api" | "user_attestation";
+  readonly ttlMs?: number | undefined;
+}): ProviderCostEvidence {
+  const provider = catalogProvider(input.providerId);
+  const access = provider.freeAccess === "permanent"
+    ? "permanent_free"
+    : provider.freeAccess === "account_limited"
+      ? "account_limited_free"
+      : provider.freeAccess === "promotional_credit"
+        ? "promotional_credit"
+        : "unknown";
+  return {
+    access,
+    plan: input.plan.trim() || "Unknown",
+    zeroCost: provider.zeroCostEligible && !input.billingEnabled,
+    billingEnabled: input.billingEnabled,
+    observedAt: input.now,
+    expiresAt: input.now + (input.ttlMs ?? 3_600_000),
+    source: input.source
+  };
+}
+
 function denied(
   reason: Exclude<ProviderAdmissionReason, "ready">,
   detail: string,
   retryAt: number | null
 ): ProviderAdmissionDecision {
   return { admitted: false, reason, detail, retryAt };
+}
+
+function canaryRepairGuidance(code: string | null): string {
+  const guidance: Readonly<Record<string, string>> = {
+    "authentication-denied": "The key was rejected. Create or copy a valid key and re-probe.",
+    "wrong-project": "The key belongs to a different project. Select the intended project and create a matching key.",
+    "wrong-region": "The endpoint and account region do not match. Select the account region shown by the provider.",
+    "model-or-endpoint-unavailable": "The selected model or endpoint is unavailable. Choose a verified replacement model.",
+    "schema-unproven": "Structured output did not match the required schema. Choose a compatible model or disable that capability.",
+    "tool-call-unproven": "Tool calling could not be proven. Choose a compatible model or disable that capability.",
+    "credit-unavailable": "The account has no eligible free balance. Permanent free routing remains disabled."
+  };
+  return code ? guidance[code] ?? "The latest live provider canary failed. Re-probe the connection." :
+    "The latest live provider canary failed. Re-probe the connection.";
 }
 
 function normalizeUrl(url: string): string {
@@ -334,6 +498,136 @@ function parseCanaryPayload(input: unknown): {
     inputTokens: integerOrZero(usage.prompt_tokens),
     outputTokens: integerOrZero(usage.completion_tokens)
   };
+}
+
+function capabilityRequest(modelId: string, capability: ProviderCapability): object {
+  const base = {
+    model: modelId,
+    messages: [{
+      role: "user",
+      content: capability === "tool_calling"
+        ? "Call the pipeline_canary tool with status ready."
+        : "Return the requested canary value."
+    }],
+    max_tokens: 32,
+    temperature: 0
+  };
+  if (capability === "structured_output") {
+    return {
+      ...base,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "pipeline_canary",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { status: { const: "PIPELINE_STUDIO_CANARY" } },
+            required: ["status"],
+            additionalProperties: false
+          }
+        }
+      }
+    };
+  }
+  if (capability === "tool_calling") {
+    return {
+      ...base,
+      tools: [{
+        type: "function",
+        function: {
+          name: "pipeline_canary",
+          description: "Proves bounded tool calling.",
+          parameters: {
+            type: "object",
+            properties: { status: { const: "ready" } },
+            required: ["status"],
+            additionalProperties: false
+          }
+        }
+      }],
+      tool_choice: {
+        type: "function",
+        function: { name: "pipeline_canary" }
+      }
+    };
+  }
+  return {
+    ...base,
+    messages: [{
+      role: "user",
+      content: "Reply with exactly: PIPELINE_STUDIO_CANARY"
+    }]
+  };
+}
+
+function validateCapabilityPayload(
+  input: unknown,
+  capability: ProviderCapability
+): { readonly inputTokens: number; readonly outputTokens: number } {
+  if (!isRecord(input) || !Array.isArray(input.choices) || !isRecord(input.choices[0])) {
+    throw new ProviderCanaryError("malformed-response");
+  }
+  const message = input.choices[0].message;
+  if (!isRecord(message)) throw new ProviderCanaryError("malformed-response");
+  if (capability === "tool_calling") {
+    const calls = message.tool_calls;
+    if (!Array.isArray(calls) || !isRecord(calls[0]) || !isRecord(calls[0].function)) {
+      throw new ProviderCanaryError("tool-call-unproven");
+    }
+    if (calls[0].function.name !== "pipeline_canary") {
+      throw new ProviderCanaryError("tool-call-unproven");
+    }
+    try {
+      const argumentsValue: unknown = JSON.parse(String(calls[0].function.arguments));
+      if (!isRecord(argumentsValue) || argumentsValue.status !== "ready") {
+        throw new ProviderCanaryError("tool-call-unproven");
+      }
+    } catch (error) {
+      if (error instanceof ProviderCanaryError) throw error;
+      throw new ProviderCanaryError("tool-call-unproven");
+    }
+  } else {
+    if (typeof message.content !== "string" || !message.content.trim()) {
+      throw new ProviderCanaryError("empty-response");
+    }
+    if (capability === "structured_output") {
+      try {
+        const value: unknown = JSON.parse(message.content);
+        if (!isRecord(value) || value.status !== "PIPELINE_STUDIO_CANARY") {
+          throw new ProviderCanaryError("schema-unproven");
+        }
+      } catch (error) {
+        if (error instanceof ProviderCanaryError) throw error;
+        throw new ProviderCanaryError("schema-unproven");
+      }
+    } else if (message.content.trim() !== "PIPELINE_STUDIO_CANARY") {
+      throw new ProviderCanaryError("chat-unproven");
+    }
+  }
+  const usage = isRecord(input.usage) ? input.usage : {};
+  return {
+    inputTokens: integerOrZero(usage.prompt_tokens),
+    outputTokens: integerOrZero(usage.completion_tokens)
+  };
+}
+
+function positiveInteger(input: string | undefined): number | null {
+  if (input === undefined || !/^\d+$/.test(input)) return null;
+  const value = Number(input);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function nonnegativeInteger(input: string | undefined): number | null {
+  if (input === undefined || !/^\d+$/.test(input)) return null;
+  const value = Number(input);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function epochMilliseconds(input: string | undefined): number | null {
+  const value = nonnegativeInteger(input);
+  if (value === null) return null;
+  return value < 10_000_000_000 ? value * 1_000 : value;
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {

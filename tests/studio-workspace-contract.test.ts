@@ -82,6 +82,9 @@ test("provider setup exposes verified sources, implementation work, and honest a
   assert.match(workspace, /Run a bounded live canary/);
   assert.match(workspace, /Prove free status and account limits/);
   assert.match(workspace, /Promotional credit requires a separate balance-safe policy/);
+  assert.match(workspace, /Advanced · sanitized admission evidence/);
+  assert.match(workspace, /Required before dispatch/);
+  assert.match(workspace, /Excluded from permanent free/);
   assert.match(workspace, /onClick=\{onSelect\}/);
 });
 
