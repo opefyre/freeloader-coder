@@ -34,6 +34,7 @@ import {
 } from "../../../packages/ui/src/content.js";
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
+import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
 import { Button, buttonVariants } from "./components/ui/button.js";
 import {
   Card,
@@ -1091,6 +1092,9 @@ function WorkspaceSurface({
   if (view === "work") {
     return (
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="xl:col-span-2">
+          <ExecutionSafetyPanel />
+        </div>
         <div className="min-w-0 space-y-4">
           <Card className="min-w-0">
             <CardHeader className="flex flex-col items-start justify-between gap-4 sm:flex-row">
