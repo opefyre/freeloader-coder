@@ -24,6 +24,18 @@ test("Studio imports shadcn tokens, Geist, and the approved Phosphor package", a
   assert.doesNotMatch(source, /https?:\/\//);
 });
 
+test("Studio ships persistent system, light, and dark themes plus an original vector mark", async () => {
+  const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  const theme = await readFile("apps/studio/src/theme.ts", "utf8");
+  const mark = await readFile("apps/studio/public/pipeline-studio-mark.svg", "utf8");
+  assert.match(source, /aria-label="Color theme"/);
+  assert.match(theme, /"system", "light", "dark"/);
+  assert.match(theme, /pipeline-studio-theme/);
+  assert.match(theme, /prefers-color-scheme: dark/);
+  assert.match(mark, /<svg/);
+  assert.match(mark, /stroke-linecap="round"/);
+});
+
 test("Studio contains explicit wide, tablet, and mobile reflow rules", async () => {
   const css = await readFile("apps/studio/src/globals.css", "utf8");
   const source = await readFile("apps/studio/src/App.tsx", "utf8");

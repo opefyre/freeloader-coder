@@ -5,6 +5,41 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --background: oklch(0.975 0.009 258);
+  --foreground: oklch(0.19 0.025 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.025 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.025 264);
+  --primary: oklch(0.64 0.17 247);
+  --primary-foreground: oklch(0.99 0.004 250);
+  --secondary: oklch(0.93 0.018 260);
+  --secondary-foreground: oklch(0.24 0.033 264);
+  --muted: oklch(0.94 0.014 260);
+  --muted-foreground: oklch(0.51 0.03 260);
+  --accent: oklch(0.91 0.035 251);
+  --accent-foreground: oklch(0.25 0.05 257);
+  --destructive: oklch(0.61 0.2 25);
+  --border: oklch(0.84 0.02 260 / 65%);
+  --input: oklch(0.88 0.02 260);
+  --ring: oklch(0.64 0.17 247);
+  --chart-1: oklch(0.67 0.16 212);
+  --chart-2: oklch(0.62 0.18 255);
+  --chart-3: oklch(0.65 0.17 294);
+  --chart-4: oklch(0.62 0.15 159);
+  --chart-5: oklch(0.7 0.16 74);
+  --radius: 0.875rem;
+  --sidebar: oklch(0.945 0.017 260);
+  --sidebar-foreground: oklch(0.23 0.03 264);
+  --sidebar-primary: oklch(0.64 0.17 247);
+  --sidebar-primary-foreground: oklch(0.99 0.004 250);
+  --sidebar-accent: oklch(0.89 0.03 257);
+  --sidebar-accent-foreground: oklch(0.22 0.04 260);
+  --sidebar-border: oklch(0.82 0.025 260 / 60%);
+  --sidebar-ring: oklch(0.64 0.17 247);
+}
+
+.dark {
   --background: oklch(0.15 0.018 266);
   --foreground: oklch(0.97 0.008 255);
   --card: oklch(0.205 0.022 265);
@@ -28,7 +63,6 @@
   --chart-3: oklch(0.72 0.14 291);
   --chart-4: oklch(0.75 0.14 164);
   --chart-5: oklch(0.79 0.15 77);
-  --radius: 0.875rem;
   --sidebar: oklch(0.175 0.02 266);
   --sidebar-foreground: oklch(0.94 0.01 255);
   --sidebar-primary: oklch(0.76 0.14 238);
@@ -89,7 +123,7 @@
 
   html {
     background: var(--background);
-    color-scheme: dark;
+    color-scheme: light;
     font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
   }
 
@@ -102,6 +136,10 @@
       var(--background);
     color: var(--foreground);
     text-rendering: optimizeLegibility;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   button,

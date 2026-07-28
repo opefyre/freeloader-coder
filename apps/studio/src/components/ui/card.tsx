@@ -7,7 +7,7 @@ function Card({ className, ...props }: React.ComponentProps<"section">) {
     <section
       data-slot="card"
       className={cn(
-        "overflow-hidden rounded-4xl bg-card text-card-foreground shadow-[0_18px_50px_rgba(0,0,0,.18)] ring-1 ring-white/[.055]",
+        "overflow-hidden rounded-4xl bg-card text-card-foreground shadow-[0_18px_50px_rgba(35,45,75,.10)] ring-1 ring-foreground/[.055] dark:shadow-[0_18px_50px_rgba(0,0,0,.18)]",
         className
       )}
       {...props}

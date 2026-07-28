@@ -12,9 +12,14 @@ effects.
 ## Locked choices
 
 - Typeface: Geist only, with system fallback while the local font loads.
+- Themes: system preference by default, with persistent explicit light and dark
+  choices. Both themes are release-blocking visual QA targets.
 - Components: React, Base UI, Tailwind v4, and shadcn component patterns.
 - Icons: Phosphor only. Meaningful icons require an accessible name; decorative
   icons are hidden from assistive technology.
+- Brand: the original Pipeline Studio mark combines a flowing P-shaped route,
+  pipeline nodes, and a verified completion gesture. Generic library icons must
+  not replace the product mark.
 - Color: semantic design tokens only. Feature code must not introduce raw
   color literals.
 - Surfaces: rounded shadcn cards, tokenized elevation, subtle rings, and muted

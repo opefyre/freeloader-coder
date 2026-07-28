@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 96" role="img" aria-labelledby="title description">
+  <title id="title">Pipeline Studio logo</title>
+  <desc id="description">A flowing P-shaped pipeline with verified completion nodes beside the Pipeline Studio wordmark.</desc>
+  <rect x="8" y="8" width="80" height="80" rx="25" fill="#6ea8ff"/>
+  <path d="M32 69V31c0-2 1.6-3.6 3.6-3.6H50c9.6 0 17 6.5 17 14.5s-7.4 14.5-17 14.5H32" fill="none" stroke="#101a2c" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="69" r="4.8" fill="#101a2c"/>
+  <circle cx="32" cy="27.4" r="4.8" fill="#101a2c"/>
+  <circle cx="67" cy="41.9" r="4.8" fill="#101a2c"/>
+  <path d="m51 69 5 5 10-11" fill="none" stroke="#101a2c" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+  <g fill="#10131b" font-family="Geist, Inter, sans-serif">
+    <text x="112" y="47" font-size="34" font-weight="650" letter-spacing="-1.2">Pipeline</text>
+    <text x="112" y="73" font-size="22" font-weight="480" letter-spacing="2.2" opacity=".66">STUDIO</text>
+  </g>
+</svg>

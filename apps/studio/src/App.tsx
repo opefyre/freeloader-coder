@@ -7,8 +7,8 @@ import { Check } from "@phosphor-icons/react/Check";
 import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
 import { ClockCountdown } from "@phosphor-icons/react/ClockCountdown";
 import { Code } from "@phosphor-icons/react/Code";
-import { Command } from "@phosphor-icons/react/Command";
 import { Cpu } from "@phosphor-icons/react/Cpu";
+import { Desktop } from "@phosphor-icons/react/Desktop";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { Gauge } from "@phosphor-icons/react/Gauge";
 import { Gear } from "@phosphor-icons/react/Gear";
@@ -16,15 +16,18 @@ import { GitBranch } from "@phosphor-icons/react/GitBranch";
 import { Lightning } from "@phosphor-icons/react/Lightning";
 import { ListChecks } from "@phosphor-icons/react/ListChecks";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
+import { Moon } from "@phosphor-icons/react/Moon";
 import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { Pause } from "@phosphor-icons/react/Pause";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Sparkle } from "@phosphor-icons/react/Sparkle";
+import { Sun } from "@phosphor-icons/react/Sun";
 import { Warning } from "@phosphor-icons/react/Warning";
 import { useMemo, useState } from "react";
 
 import { Badge } from "./components/ui/badge.js";
+import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { Button } from "./components/ui/button.js";
 import {
   Card,
@@ -41,6 +44,7 @@ import {
   routeEvidenceSummary,
   successfulProviderCalls,
 } from "./runtime-fixture.js";
+import { useTheme, type ThemeMode } from "./theme.js";
 
 const navItems = [
   { label: "Overview", icon: Gauge, active: true },
@@ -66,6 +70,7 @@ const providerColor: Record<string, string> = {
 };
 
 function App() {
+  const theme = useTheme();
   const [selectedProvider, setSelectedProvider] = useState(
     providerTelemetry[0]?.providerId ?? ""
   );
@@ -99,7 +104,7 @@ function App() {
       <aside className="hidden min-h-screen bg-sidebar px-4 py-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="flex items-center gap-3 px-2">
           <span className="grid size-10 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/10">
-            <Command size={20} weight="bold" />
+            <PipelineMark className="size-7" title="Pipeline Studio mark" />
           </span>
           <div>
             <strong className="block text-sm font-semibold">Pipeline Studio</strong>
@@ -175,7 +180,7 @@ function App() {
         <header className="sticky top-0 z-30 flex h-18 items-center justify-between bg-background/88 px-4 backdrop-blur-xl sm:px-7 lg:px-9">
           <div className="flex items-center gap-3 lg:hidden">
             <span className="grid size-9 place-items-center rounded-2xl bg-primary text-primary-foreground">
-              <Command size={18} weight="bold" />
+              <PipelineMark className="size-6" title="Pipeline Studio mark" />
             </span>
             <strong className="text-sm">Pipeline Studio</strong>
           </div>
@@ -192,6 +197,23 @@ function App() {
               <span className="size-1.5 rounded-full bg-emerald-300" />
               Pipeline online
             </Badge>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="sm:hidden"
+              aria-label={`Theme: ${theme.mode}. Change theme`}
+              title={`Theme: ${theme.mode}`}
+              onClick={theme.cycleMode}
+            >
+              {theme.mode === "light" ? (
+                <Sun weight="fill" />
+              ) : theme.mode === "dark" ? (
+                <Moon weight="fill" />
+              ) : (
+                <Desktop weight="fill" />
+              )}
+            </Button>
+            <ThemeControl mode={theme.mode} setMode={theme.setMode} />
             <Button variant="ghost" size="icon" aria-label="Notifications">
               <Bell />
             </Button>
@@ -621,7 +643,7 @@ function App() {
       </main>
 
       <nav
-        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-white/[.07] backdrop-blur-xl lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
         aria-label="Mobile workspace"
       >
         {navItems.map((item) => (
@@ -689,7 +711,7 @@ function Choice({ label, note }: { label: string; note: string }) {
       type="button"
       className="flex w-full items-center gap-3 rounded-2xl bg-muted/65 p-3 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
     >
-      <span className="size-4 rounded-full bg-background ring-1 ring-white/15" />
+      <span className="size-4 rounded-full bg-background ring-1 ring-foreground/15" />
       <span>
         <strong className="block text-sm">{label}</strong>
         <span className="text-xs text-muted-foreground">{note}</span>
@@ -713,6 +735,49 @@ function Evidence({ label, value }: { label: string; value: string }) {
       <ShieldCheck className="text-primary" size={20} weight="duotone" />
       <span className="mt-4 block text-xs text-muted-foreground">{label}</span>
       <strong className="mt-1 block capitalize">{value}</strong>
+    </div>
+  );
+}
+
+const themeOptions: readonly {
+  mode: ThemeMode;
+  label: string;
+  icon: typeof Sun;
+}[] = [
+  { mode: "light", label: "Light theme", icon: Sun },
+  { mode: "system", label: "System theme", icon: Desktop },
+  { mode: "dark", label: "Dark theme", icon: Moon },
+];
+
+function ThemeControl({
+  mode,
+  setMode,
+}: {
+  mode: ThemeMode;
+  setMode: (mode: ThemeMode) => void;
+}) {
+  return (
+    <div
+      className="hidden items-center rounded-full bg-muted p-1 sm:flex"
+      role="group"
+      aria-label="Color theme"
+    >
+      {themeOptions.map((option) => (
+        <button
+          key={option.mode}
+          type="button"
+          title={option.label}
+          aria-label={option.label}
+          aria-pressed={mode === option.mode}
+          onClick={() => setMode(option.mode)}
+          className={cn(
+            "grid size-7 place-items-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
+            mode === option.mode && "bg-background text-foreground shadow-sm"
+          )}
+        >
+          <option.icon size={14} weight={mode === option.mode ? "fill" : "regular"} />
+        </button>
+      ))}
     </div>
   );
 }
