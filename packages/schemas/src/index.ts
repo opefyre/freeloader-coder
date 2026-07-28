@@ -276,6 +276,126 @@ export const approvalSchema = z.strictObject({
   expiresAt: timestamp.nullable()
 });
 
+export const effectCategorySchema = z.enum([
+  "read_only",
+  "local_reversible",
+  "local_consequential",
+  "external_reversible",
+  "external_consequential",
+  "credential",
+  "permission_expanding",
+  "destructive",
+  "paid"
+]);
+
+export const effectDescriptorSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id,
+  projectId: id,
+  planDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  action: z.string().trim().min(1).max(240),
+  target: z.strictObject({
+    kind: z.enum(["project_folder", "provider", "connector", "tool", "external_service"]),
+    reference: z.string().trim().min(1).max(500),
+    display: z.string().trim().min(1).max(200),
+    sensitivity: z.enum(["public", "masked"])
+  }),
+  category: effectCategorySchema,
+  permissions: z.array(z.string().trim().min(1).max(160)).max(40),
+  reversibility: z.enum(["none_needed", "reversible", "compensatable", "irreversible"]),
+  cost: z.strictObject({
+    mode: z.enum(["free", "paid", "unknown"]),
+    currency: z.enum(["USD", "EUR", "GBP"]).nullable(),
+    maximumMinor: z.number().int().nonnegative().nullable(),
+    explanation: z.string().trim().min(1).max(300)
+  }),
+  evidenceRequirement: z.string().trim().min(1).max(500),
+  undoOrCompensation: z.string().trim().min(1).max(500),
+  idempotencyKey: z.string().trim().min(1).max(200),
+  timeoutMs: z.number().int().min(1_000).max(3_600_000),
+  retry: z.enum(["never", "bounded_transient"]),
+  postcondition: z.string().trim().min(1).max(500),
+  auditEvent: id,
+  redaction: z.array(z.string().trim().min(1).max(160)).min(1).max(40)
+}).superRefine((value, context) => {
+  if (value.category === "paid" && value.cost.mode !== "paid") {
+    context.addIssue({
+      code: "custom",
+      message: "Paid effects require an explicit paid cost declaration.",
+      path: ["cost", "mode"]
+    });
+  }
+  if (value.cost.mode === "paid" && (value.cost.maximumMinor === null || value.cost.currency === null)) {
+    context.addIssue({
+      code: "custom",
+      message: "Paid effects require a currency and maximum charge.",
+      path: ["cost"]
+    });
+  }
+});
+
+export const capabilityGrantSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id,
+  projectId: id,
+  issuedBy: z.enum(["user", "system_policy"]),
+  issuerId: id,
+  targetKinds: z.array(z.enum([
+    "project_folder",
+    "provider",
+    "connector",
+    "tool",
+    "external_service"
+  ])).min(1),
+  effectCategories: z.array(effectCategorySchema).min(1),
+  grantedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive().nullable(),
+  revokedAt: z.number().int().nonnegative().nullable()
+}).superRefine((value, context) => {
+  if (value.expiresAt !== null && value.expiresAt <= value.grantedAt) {
+    context.addIssue({
+      code: "custom",
+      message: "Capability expiry must be later than grant time.",
+      path: ["expiresAt"]
+    });
+  }
+  if (value.revokedAt !== null && value.revokedAt < value.grantedAt) {
+    context.addIssue({
+      code: "custom",
+      message: "Capability revocation cannot predate the grant.",
+      path: ["revokedAt"]
+    });
+  }
+});
+
+export const effectApprovalSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id,
+  projectId: id,
+  effectId: id,
+  effectDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  approvedBy: id,
+  approvedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive(),
+  revokedAt: z.number().int().nonnegative().nullable()
+}).refine(
+  (value) => value.expiresAt > value.approvedAt,
+  "Effect approval expiry must be later than approval."
+);
+
+export const effectPolicySchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  projectId: id,
+  preset: z.enum(["guided", "balanced", "autonomous"]),
+  overrides: z.array(z.strictObject({
+    category: effectCategorySchema,
+    decision: z.enum(["auto_allow", "ask", "deny"])
+  }))
+}).refine(
+  (value) => new Set(value.overrides.map((override) => override.category)).size === value.overrides.length,
+  "Effect policy cannot contain duplicate category overrides."
+);
+
 export const paidUseGrantSchema = z.strictObject({
   schemaVersion: version,
   authorizationId: id,
@@ -379,6 +499,7 @@ export const approvalContentSchema = z.strictObject({
   whatChanges: contentList,
   where: contentList,
   externalEffects: z.array(contentText).max(12),
+  evidenceRequirement: contentText,
   cost: z.strictObject({
     mode: z.enum(["free", "paid", "unknown"]),
     explanation: contentText,
@@ -993,6 +1114,11 @@ export type ProviderAdapterManifest = z.infer<typeof providerAdapterManifestSche
 export type ProviderAdapterError = z.infer<typeof providerAdapterErrorSchema>;
 export type ProviderAdapterUsage = z.infer<typeof providerAdapterUsageSchema>;
 export type ProviderAdapterResponse = z.infer<typeof providerAdapterResponseSchema>;
+export type EffectCategory = z.infer<typeof effectCategorySchema>;
+export type EffectDescriptor = z.infer<typeof effectDescriptorSchema>;
+export type CapabilityGrant = z.infer<typeof capabilityGrantSchema>;
+export type EffectApproval = z.infer<typeof effectApprovalSchema>;
+export type EffectPolicy = z.infer<typeof effectPolicySchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationJournalEvent = z.infer<typeof conversationJournalEventSchema>;
 export type ConversationJournal = z.infer<typeof conversationJournalSchema>;

@@ -67,8 +67,8 @@ export function approvalFacts(pattern: ApprovalContent): readonly {
   value: string;
 }[] {
   return [
-    { label: "What changes", value: pattern.whatChanges.join("; ") },
-    { label: "Where", value: pattern.where.join("; ") },
+    { label: "Effect", value: pattern.whatChanges.join("; ") },
+    { label: "Target", value: pattern.where.join("; ") },
     {
       label: "Cost",
       value:
@@ -76,7 +76,8 @@ export function approvalFacts(pattern: ApprovalContent): readonly {
           ? `${pattern.cost.explanation} Maximum ${pattern.cost.maximum}.`
           : pattern.cost.explanation
     },
-    { label: "How to undo", value: pattern.undo.explanation }
+    { label: "Evidence", value: pattern.evidenceRequirement },
+    { label: "Undo or compensation", value: pattern.undo.explanation }
   ];
 }
 
@@ -176,6 +177,8 @@ export const contentPatternExamples: {
     whatChanges: ["Add the activity timeline UI", "Add contract tests and evidence"],
     where: ["Pipeline Studio repository", "Local feature branch"],
     externalEffects: [],
+    evidenceRequirement:
+      "Show the changed files, validation results, and the resulting local commit before completion.",
     cost: {
       mode: "free",
       explanation: "No paid provider or billable infrastructure will be used.",

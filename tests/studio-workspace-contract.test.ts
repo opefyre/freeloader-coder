@@ -56,7 +56,7 @@ test("workspace renders the shared approval pattern with all required decision f
   assert.match(source, /contentPatternExamples\.approval/);
   assert.match(source, /approvalFacts\(approval\)/);
   assert.match(source, /Before I act/);
-  assert.match(source, /Every approval uses the same four decision facts/);
+  assert.match(source, /Every approval uses the same five decision facts/);
   assert.match(source, /No local or external effect is connected/);
 });
 
@@ -108,4 +108,30 @@ test("workspace has explicit responsive, focus, motion, and contrast contracts",
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(source, /focus-visible:ring-3/);
   assert.match(styles, /@media \(forced-colors: active\)/);
+});
+
+test("settings explains, masks, expires, resets, and revokes canonical permissions", async () => {
+  const workspace = await readFile("apps/studio/src/App.tsx", "utf8");
+  const fixture = await readFile("apps/studio/src/permission-fixture.ts", "utf8");
+  const combined = `${workspace}\n${fixture}`;
+  for (const label of [
+    "Project permission posture",
+    "Who can access what",
+    "Project folder",
+    "Provider",
+    "Connector",
+    "Tool",
+    "External effect",
+    "Paid action",
+    "Recent use"
+  ]) {
+    assert.match(combined, new RegExp(label));
+  }
+  assert.match(workspace, /Mask for screen sharing/);
+  assert.match(workspace, /Advanced · technical scopes/);
+  assert.match(workspace, /Expire in 24 hours/);
+  assert.match(workspace, /Reset to recommended/);
+  assert.match(workspace, /Revoke now/);
+  assert.match(workspace, /aria-live="polite"/);
+  assert.match(workspace, /Models and plugins cannot grant themselves access/);
 });

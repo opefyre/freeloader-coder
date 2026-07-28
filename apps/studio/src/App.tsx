@@ -53,6 +53,13 @@ import {
   verifiedProviderSnapshot,
 } from "./runtime-fixture.js";
 import { useTheme, type ThemeMode } from "./theme.js";
+import {
+  applyPermissionAction,
+  recommendedPermissionProfiles,
+  visiblePermissionTarget,
+  type PermissionAction,
+  type PermissionProfile,
+} from "./permission-fixture.js";
 
 const studioViews = [
   "overview",
@@ -1387,58 +1394,307 @@ function WorkspaceSurface({
   }
 
   return (
-    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider connections</CardTitle>
-          <CardDescription>
-            Keys stay local and are never placed in prompts, logs, or exports.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="mt-6 space-y-2">
-          {connectionProfiles.map((connection) => (
-            <ConnectionRow
-              key={connection.id}
-              name={connection.name}
-              state={connection.state}
-              selected={selectedConnection === connection.id}
-              onSelect={() => setSelectedConnection(connection.id)}
-            />
-          ))}
-        </CardContent>
-      </Card>
-      <div className="space-y-4">
-        <ConnectionSetup providerId={selectedConnection} />
-        <Card>
-          <CardHeader>
-            <CardTitle>Denial of wallet</CardTitle>
-            <CardDescription>
-              Free-only is enforced as policy, not presented as a promise.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="mt-6">
-            <div className="rounded-3xl bg-emerald-400/[.07] p-6">
-              <span className="text-xs text-muted-foreground">
-                Maximum automatic spend
-              </span>
-              <strong className="mt-2 block text-4xl tracking-tight">$0.00</strong>
-              <Badge tone="positive" className="mt-5">
-                Enforced
-              </Badge>
-            </div>
-            <ul className="mt-5 space-y-3 text-sm text-muted-foreground">
-              {costSafetySummary.safeguards.map((safeguard) => (
-                <li key={safeguard} className="flex items-center gap-2">
-                  <Check className="text-emerald-600 dark:text-emerald-300" weight="bold" />
-                  {safeguard}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+    <SettingsWorkspace
+      selectedConnection={selectedConnection}
+      setSelectedConnection={setSelectedConnection}
+    />
+  );
+}
+
+function SettingsWorkspace({
+  selectedConnection,
+  setSelectedConnection,
+}: {
+  selectedConnection: string;
+  setSelectedConnection: (provider: string) => void;
+}) {
+  const [permissions, setPermissions] = useState<readonly PermissionProfile[]>(
+    recommendedPermissionProfiles
+  );
+  const [selectedPermissionId, setSelectedPermissionId] = useState("project-folder");
+  const [privacyScreen, setPrivacyScreen] = useState(false);
+  const [preset, setPreset] = useState<"Guided" | "Balanced" | "Autonomous">("Balanced");
+  const [permissionNotice, setPermissionNotice] = useState(
+    "Permissions are scoped to Main project."
+  );
+  const selectedPermission =
+    permissions.find((permission) => permission.id === selectedPermissionId) ??
+    permissions[0]!;
+
+  const applyAction = (action: PermissionAction) => {
+    const result = applyPermissionAction(selectedPermission, action);
+    setPermissions((current) =>
+      current.map((permission) =>
+        permission.id === result.profile.id ? result.profile : permission
+      )
+    );
+    setPermissionNotice(result.notice);
+  };
+
+  return (
+    <Tabs defaultValue="permissions">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TabsList aria-label="Settings sections">
+          <TabsTrigger value="permissions">Permissions</TabsTrigger>
+          <TabsTrigger value="connections">Connections</TabsTrigger>
+        </TabsList>
+        <Button
+          variant={privacyScreen ? "default" : "secondary"}
+          size="sm"
+          aria-pressed={privacyScreen}
+          onClick={() => setPrivacyScreen((current) => !current)}
+        >
+          <ShieldCheck />
+          {privacyScreen ? "Privacy screen on" : "Mask for screen sharing"}
+        </Button>
       </div>
+
+      <TabsContent value="permissions">
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Project permission posture</CardTitle>
+                <CardDescription>
+                  One canonical policy controls models, plugins, tools, and connected services.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="mt-6">
+                <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label="Approval preset">
+                  {(["Guided", "Balanced", "Autonomous"] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={preset === option}
+                      onClick={() => {
+                        setPreset(option);
+                        setPermissionNotice(
+                          `${option} is now the project preset. Credential, destructive, permission-expanding, and paid safeguards remain enforced.`
+                        );
+                      }}
+                      className={cn(
+                        "rounded-2xl bg-muted/50 p-4 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
+                        preset === option && "bg-primary/[.09]"
+                      )}
+                    >
+                      <strong className="block text-sm">{option}</strong>
+                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                        {
+                          {
+                            Guided: "Ask before every change.",
+                            Balanced: "Automate safe local work.",
+                            Autonomous: "Automate reversible work within grants.",
+                          }[option]
+                        }
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                  Models and plugins cannot grant themselves access. Project overrides can tighten
+                  policy but cannot auto-approve credentials, destructive changes, or paid use.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Who can access what</CardTitle>
+                <CardDescription>
+                  Review project folders, providers, connectors, tools, external effects, and paid permissions.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="mt-6 grid gap-2 md:grid-cols-2">
+                {permissions.map((permission) => (
+                  <button
+                    key={permission.id}
+                    type="button"
+                    aria-pressed={selectedPermission.id === permission.id}
+                    onClick={() => setSelectedPermissionId(permission.id)}
+                    className={cn(
+                      "rounded-3xl bg-muted/45 p-5 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
+                      selectedPermission.id === permission.id && "bg-primary/[.09]"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        {permission.kind}
+                      </span>
+                      <Badge tone={permissionTone(permission.state)}>{permission.state}</Badge>
+                    </div>
+                    <strong className="mt-3 block text-sm">{permission.name}</strong>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      {permission.summary}
+                    </span>
+                    <span className="mt-4 block truncate text-xs font-semibold">
+                      {visiblePermissionTarget(permission, privacyScreen)}
+                    </span>
+                  </button>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle>{selectedPermission.name}</CardTitle>
+                  <Badge tone={permissionTone(selectedPermission.state)}>
+                    {selectedPermission.state}
+                  </Badge>
+                </div>
+                <CardDescription>{selectedPermission.summary}</CardDescription>
+              </CardHeader>
+              <CardContent className="mt-6 space-y-4">
+                <PermissionFact
+                  label="Project"
+                  value={privacyScreen ? "Project · ••••" : selectedPermission.project}
+                />
+                <PermissionFact
+                  label="Target"
+                  value={visiblePermissionTarget(selectedPermission, privacyScreen)}
+                />
+                <PermissionFact label="Allowed effect" value={selectedPermission.access} />
+                <PermissionFact
+                  label="Expiry"
+                  value={selectedPermission.expiresAt ?? "No automatic expiry"}
+                />
+                <details className="rounded-2xl bg-muted/45 p-4">
+                  <summary className="cursor-pointer text-xs font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/30">
+                    Advanced · technical scopes
+                  </summary>
+                  <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
+                    {selectedPermission.technicalScopes.map((scope) => (
+                      <li key={scope}>{scope}</li>
+                    ))}
+                  </ul>
+                </details>
+                <div className="grid gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => applyAction("expire")}
+                  >
+                    Expire in 24 hours
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => applyAction("reset")}
+                  >
+                    Reset to recommended
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => applyAction("revoke")}
+                    disabled={selectedPermission.state === "Revoked"}
+                  >
+                    Revoke now
+                  </Button>
+                </div>
+                <p
+                  className="rounded-2xl bg-primary/[.07] p-3 text-xs leading-5"
+                  aria-live="polite"
+                >
+                  {permissionNotice}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent use</CardTitle>
+                <CardDescription>
+                  Privacy-safe activity for this permission.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="mt-5">
+                <p className="text-xs leading-5">{selectedPermission.recentUse}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {selectedPermission.activeWork > 0
+                    ? `${selectedPermission.activeWork} active task will pause after its current safe step if revoked.`
+                    : "No active work requires reconciliation."}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="connections">
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <Card>
+            <CardHeader>
+              <CardTitle>Provider connections</CardTitle>
+              <CardDescription>
+                Keys stay local and are never placed in prompts, logs, or exports.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="mt-6 space-y-2">
+              {connectionProfiles.map((connection) => (
+                <ConnectionRow
+                  key={connection.id}
+                  name={connection.name}
+                  state={connection.state}
+                  selected={selectedConnection === connection.id}
+                  onSelect={() => setSelectedConnection(connection.id)}
+                />
+              ))}
+            </CardContent>
+          </Card>
+          <div className="space-y-4">
+            <ConnectionSetup providerId={selectedConnection} />
+            <Card>
+              <CardHeader>
+                <CardTitle>Denial of wallet</CardTitle>
+                <CardDescription>
+                  Free-only is enforced as policy, not presented as a promise.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="mt-6">
+                <div className="rounded-3xl bg-emerald-400/[.07] p-6">
+                  <span className="text-xs text-muted-foreground">
+                    Maximum automatic spend
+                  </span>
+                  <strong className="mt-2 block text-4xl tracking-tight">$0.00</strong>
+                  <Badge tone="positive" className="mt-5">
+                    Enforced
+                  </Badge>
+                </div>
+                <ul className="mt-5 space-y-3 text-sm text-muted-foreground">
+                  {costSafetySummary.safeguards.map((safeguard) => (
+                    <li key={safeguard} className="flex items-center gap-2">
+                      <Check className="text-emerald-600 dark:text-emerald-300" weight="bold" />
+                      {safeguard}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function PermissionFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-2xl bg-muted/45 p-3">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <strong className="max-w-[65%] text-right text-xs">{value}</strong>
     </div>
   );
+}
+
+function permissionTone(
+  state: PermissionProfile["state"]
+): "positive" | "caution" | "neutral" {
+  if (state === "Active") return "positive";
+  if (state === "Expires soon") return "caution";
+  return "neutral";
 }
 
 function CommandPalette({
@@ -1532,7 +1788,7 @@ function ApprovalPreview() {
         </div>
         <CardTitle className="mt-4">{approval.title}</CardTitle>
         <CardDescription>
-          Every approval uses the same four decision facts.
+          Every approval uses the same five decision facts.
         </CardDescription>
       </CardHeader>
       <CardContent className="mt-5 space-y-3">

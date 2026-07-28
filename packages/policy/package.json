@@ -1,1 +1,10 @@
-{"name":"@pipeline-studio/policy","version":"0.0.0","private":true,"type":"module","exports":"./src/index.ts"}
+{
+  "name": "@pipeline-studio/policy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./effect-policy": "./src/effect-policy.ts"
+  }
+}

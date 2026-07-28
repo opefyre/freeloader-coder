@@ -15,13 +15,14 @@ import {
   standardVisibleCopy
 } from "../packages/ui/src/index.js";
 
-test("approval content always explains change, location, cost, and undo", () => {
+test("approval content always explains effect, target, cost, evidence, and undo", () => {
   const approval = approvalContentSchema.parse(contentPatternExamples.approval);
   const facts = new Map(approvalFacts(approval).map((fact) => [fact.label, fact.value]));
-  assert.ok(facts.get("What changes")?.includes("activity timeline"));
-  assert.ok(facts.get("Where")?.includes("Pipeline Studio repository"));
+  assert.ok(facts.get("Effect")?.includes("activity timeline"));
+  assert.ok(facts.get("Target")?.includes("Pipeline Studio repository"));
   assert.match(facts.get("Cost") ?? "", /No paid provider/);
-  assert.match(facts.get("How to undo") ?? "", /restore the saved checkpoint/);
+  assert.match(facts.get("Evidence") ?? "", /validation results/);
+  assert.match(facts.get("Undo or compensation") ?? "", /restore the saved checkpoint/);
   assert.equal(primaryAction(approval), "Approve local changes");
 });
 
