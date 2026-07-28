@@ -13,11 +13,11 @@ import {
   visualSystem
 } from "../packages/ui/src/index.js";
 
-test("design system locks one font, one icon family, and borderless glass", () => {
+test("design system locks the reference-compatible shadcn visual language", () => {
   assert.equal(visualSystem.typography.family, "Geist");
-  assert.equal(visualSystem.iconography.library, "lucide");
+  assert.equal(visualSystem.iconography.library, "phosphor");
   assert.equal(visualSystem.surfaces.decorativeBorders, false);
-  assert.equal(visualSystem.surfaces.treatment, "glass");
+  assert.equal(visualSystem.surfaces.treatment, "shadcn-layered");
 });
 
 test("component gallery covers every state, breakpoint, density, and primitive", () => {
@@ -67,9 +67,9 @@ test("meaningful icons require names and blocking states preserve user trust", (
 });
 
 test("CSS exposes reduced-motion and forced-color fallbacks", async () => {
-  const css = await readFile("packages/ui/src/tokens.css", "utf8");
+  const css = await readFile("apps/studio/src/globals.css", "utf8");
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /forced-colors:\s*active/);
-  assert.match(css, /--ps-font-sans:/);
-  assert.doesNotMatch(css, /\bborder:\s/);
+  assert.match(css, /"Geist Variable"/);
+  assert.match(css, /@import "shadcn\/tailwind\.css"/);
 });

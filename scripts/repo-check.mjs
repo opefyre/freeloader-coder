@@ -3,7 +3,7 @@ import { extname, join } from "node:path";
 
 const mode = process.argv[2];
 const roots = ["apps", "packages", "fixtures", "scripts", "tests"];
-const textExtensions = new Set([".ts", ".mjs", ".json", ".md", ".css"]);
+const textExtensions = new Set([".ts", ".tsx", ".mjs", ".json", ".md", ".css"]);
 const forbidden = [
   ["house", "hold"].join(""),
   ["tail", "scale"].join(""),
@@ -12,9 +12,18 @@ const forbidden = [
   ["100", ".119"].join("")
 ];
 const failures = [];
-const approvedFontTokens = new Set(["packages/ui/src/tokens.css"]);
-const approvedColorTokens = new Set(["packages/ui/src/tokens.css"]);
-const approvedForcedColorFallbacks = new Set(["packages/ui/src/tokens.css"]);
+const approvedFontTokens = new Set([
+  "packages/ui/src/tokens.css",
+  "apps/studio/src/globals.css"
+]);
+const approvedColorTokens = new Set([
+  "packages/ui/src/tokens.css",
+  "apps/studio/src/globals.css"
+]);
+const approvedForcedColorFallbacks = new Set([
+  "packages/ui/src/tokens.css",
+  "apps/studio/src/globals.css"
+]);
 
 async function walk(path) {
   for (const entry of await readdir(path, { withFileTypes: true })) {
@@ -66,11 +75,11 @@ async function inspect(path) {
       failures.push(`${path}: decorative borders are prohibited`);
     }
     if (
-      /from\s+["'](?:react-icons|@heroicons|@phosphor-icons|fortawesome|@fortawesome)\b/.test(
+      /from\s+["'](?:react-icons|@heroicons|lucide|fortawesome|@fortawesome)\b/.test(
         content
       )
     ) {
-      failures.push(`${path}: use the approved Lucide icon family`);
+      failures.push(`${path}: use the approved Phosphor icon family`);
     }
   }
 }

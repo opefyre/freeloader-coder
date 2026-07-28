@@ -2,22 +2,26 @@
 
 ## Direction
 
-Pipeline Studio uses one calm, high-contrast dark language. Depth comes from
-light, blur, tone, and spacing—not decorative border grids. Glass is used to
-clarify hierarchy, never to reduce legibility.
+Pipeline Studio uses the same calm shadcn component language as the Household
+reference application so both products feel deliberate and familiar. It is not
+a clone: Pipeline Studio uses a restrained indigo/cyan identity, denser
+operational layouts, and data-first content. Depth comes from semantic surface
+tones, soft elevation, and spacing rather than decorative grids or sci-fi
+effects.
 
 ## Locked choices
 
 - Typeface: Geist only, with system fallback while the local font loads.
-- Icons: Lucide only. Meaningful icons require an accessible name; decorative
+- Components: React, Base UI, Tailwind v4, and shadcn component patterns.
+- Icons: Phosphor only. Meaningful icons require an accessible name; decorative
   icons are hidden from assistive technology.
 - Color: semantic design tokens only. Feature code must not introduce raw
   color literals.
-- Surfaces: tokenized glass and elevation. Feature code must not add decorative
-  borders.
+- Surfaces: rounded shadcn cards, tokenized elevation, subtle rings, and muted
+  nested layers. Large glass panels and ornamental border grids are prohibited.
 - Motion: three duration tokens and a zero-motion equivalent.
-- Density: Guided and Advanced use the same components and meaning. Only
-  spacing, control height, and information disclosure change.
+- Density: compact by default, with progressive disclosure for evidence and
+  technical details.
 
 ## Operational truth
 
@@ -45,5 +49,6 @@ contracts rather than maintained as disconnected mockups.
 ## Review policy
 
 Repository checks reject unapproved font declarations, icon packages, raw color
-literals, and decorative borders in feature CSS. Token definitions and explicit
-forced-color accessibility fallbacks are the only reviewed exceptions.
+literals, and decorative borders in feature CSS. The Studio theme and explicit
+forced-color accessibility fallbacks are reviewed exceptions. Visual changes
+must preserve the shadcn vocabulary and be checked at desktop and mobile sizes.

@@ -23,7 +23,12 @@
     "verify": "npm run setup:check && npm run format:check && npm run lint && npm run typecheck && npm test"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "24.1.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.4",
+    "tailwindcss": "4.3.3",
     "typescript": "5.9.2",
     "vite": "8.1.5"
   }

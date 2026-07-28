@@ -2,28 +2,33 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("Studio gallery has a landmark, skip link, and labeled control groups", async () => {
+test("Studio uses a React landmark, skip link, and labeled shadcn tabs", async () => {
   const html = await readFile("apps/studio/index.html", "utf8");
-  const source = await readFile("apps/studio/src/main.ts", "utf8");
-  assert.match(html, /class="skip-link"/);
-  assert.match(source, /<main class="shell">/);
-  assert.match(source, /role="tablist"/);
-  assert.match(source, /aria-label="Information density"/);
-  assert.match(source, /aria-label="Preview breakpoint"/);
-  assert.match(source, /primitive\.recommendedAction/);
+  const entry = await readFile("apps/studio/src/main.tsx", "utf8");
+  const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  assert.match(html, /src="\/src\/main\.tsx"/);
+  assert.match(entry, /createRoot/);
+  assert.match(source, /href="#workspace"/);
+  assert.match(source, /<main id="workspace"/);
+  assert.match(source, /aria-label="Control center views"/);
+  assert.match(source, /TabsTrigger value="overview"/);
 });
 
-test("Studio gallery imports the local font and approved Lucide package", async () => {
-  const source = await readFile("apps/studio/src/main.ts", "utf8");
-  assert.match(source, /@fontsource-variable\/geist/);
-  assert.match(source, /from "lucide"/);
+test("Studio imports shadcn tokens, Geist, and the approved Phosphor package", async () => {
+  const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  const css = await readFile("apps/studio/src/globals.css", "utf8");
+  assert.match(css, /@fontsource-variable\/geist/);
+  assert.match(css, /@import "shadcn\/tailwind\.css"/);
+  assert.match(source, /@phosphor-icons\/react/);
+  assert.doesNotMatch(source, /lucide/);
   assert.doesNotMatch(source, /https?:\/\//);
 });
 
-test("Studio gallery contains explicit tablet and mobile reflow rules", async () => {
-  const css = await readFile("apps/studio/src/styles.css", "utf8");
-  assert.match(css, /@media \(max-width: 54rem\)/);
-  assert.match(css, /@media \(max-width: 38rem\)/);
-  assert.match(css, /\.rail\s*\{[\s\S]*?inset: auto 0 0;/);
-  assert.match(css, /\.metrics,\s*\n\s*\.primitive-grid\s*\{\s*\n\s*grid-template-columns: 1fr;/);
+test("Studio contains explicit wide, tablet, and mobile reflow rules", async () => {
+  const css = await readFile("apps/studio/src/globals.css", "utf8");
+  const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  assert.match(css, /@media \(max-width: 76rem\)/);
+  assert.match(css, /@media \(max-width: 48rem\)/);
+  assert.match(source, /lg:grid-cols-\[15\.5rem_minmax\(0,1fr\)\]/);
+  assert.match(source, /sm:grid-cols-5/);
 });

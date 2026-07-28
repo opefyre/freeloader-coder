@@ -37,15 +37,15 @@ export const visualSystem = {
     weights: [400, 500, 600, 700]
   },
   iconography: {
-    library: "lucide",
-    strokeWidth: 1.75,
+    library: "phosphor",
+    strokeWidth: 1.5,
     decorativeIconAriaHidden: true,
     meaningfulIconRequiresName: true
   },
   surfaces: {
     decorativeBorders: false,
-    treatment: "glass",
-    blurSteps: [12, 20, 32],
+    treatment: "shadcn-layered",
+    blurSteps: [0],
     radiusSteps: [12, 16, 24, 32]
   },
   motion: {
