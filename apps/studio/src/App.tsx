@@ -36,6 +36,7 @@ import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
+import { EvidenceCenter } from "./components/quality/evidence-center.js";
 import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
 import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
 import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
@@ -1135,72 +1136,7 @@ function WorkspaceSurface({
   }
 
   if (view === "evidence") {
-    return (
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Card className="min-w-0">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Verification timeline</CardTitle>
-              <CardDescription>
-                Every completion claim must trace to an observed postcondition.
-              </CardDescription>
-            </div>
-            <Badge tone="positive">Fresh</Badge>
-          </CardHeader>
-          <CardContent className="mt-7 space-y-3">
-            <Checkpoint
-              time="12:25"
-              title="Typography runtime verified"
-              note="Onest 400/600 loaded in both themes; browser console clean."
-              status="Passed"
-            />
-            <Checkpoint
-              time="12:24"
-              title="Production build completed"
-              note="Bundled application and local font assets generated successfully."
-              status="Passed"
-            />
-            <Checkpoint
-              time="12:24"
-              title="Automated validation completed"
-              note="87 tests, formatting, lint, type checking, and setup checks passed."
-              status="Passed"
-            />
-            <Checkpoint
-              time="12:22"
-              title="Repository checkpoint created"
-              note="Verified source state preserved before the next workspace increment."
-              status="Saved"
-            />
-          </CardContent>
-        </Card>
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Current proof</CardTitle>
-              <CardDescription>Bounded to this demo repository.</CardDescription>
-            </CardHeader>
-            <CardContent className="mt-5 grid gap-3">
-              <Evidence label="Automated checks" value="87 / 87 passed" />
-              <Evidence label="Paid routes produced" value="0" />
-              <Evidence label="Provider routes observed" value="4" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Recovery</CardTitle>
-              <CardDescription>The last verified checkpoint is restorable.</CardDescription>
-            </CardHeader>
-            <CardContent className="mt-5">
-              <Button variant="secondary" className="w-full">
-                <ShieldCheck />
-                Review restore point
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
+    return <EvidenceCenter />;
   }
 
   return (
