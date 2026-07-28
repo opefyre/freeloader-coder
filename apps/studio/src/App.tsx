@@ -73,17 +73,11 @@ import {
   starterPlan,
   type OnboardingStage,
 } from "./onboarding-fixture.js";
-
-const studioViews = [
-  "overview",
-  "projects",
-  "conversation",
-  "work",
-  "providers",
-  "evidence",
-  "settings",
-] as const;
-type StudioView = (typeof studioViews)[number];
+import {
+  canonicalStudioUrl,
+  viewFromLocation,
+  type StudioView,
+} from "./routing.js";
 
 const navItems = [
   { id: "overview", label: "Overview", note: "Pipeline health and decisions", icon: Gauge },
@@ -141,10 +135,7 @@ const viewCopy: Record<
 };
 
 function initialView(): StudioView {
-  const candidate = new URLSearchParams(window.location.search).get("view");
-  return studioViews.includes(candidate as StudioView)
-    ? (candidate as StudioView)
-    : "overview";
+  return viewFromLocation(window.location);
 }
 
 const stages = [
@@ -288,18 +279,20 @@ function App() {
     setActiveView(view);
     setCommandOpen(false);
     setCommandQuery("");
-    const url = new URL(window.location.href);
+    const url = canonicalStudioUrl(new URL(window.location.href), view);
     url.hash = "";
-    if (view === "overview") {
-      url.searchParams.delete("view");
-    } else {
-      url.searchParams.set("view", view);
-    }
     window.history[replace ? "replaceState" : "pushState"]({}, "", url);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   useEffect(() => {
+    const canonicalUrl = canonicalStudioUrl(
+      new URL(window.location.href),
+      initialView()
+    );
+    if (canonicalUrl.href !== window.location.href) {
+      window.history.replaceState({}, "", canonicalUrl);
+    }
     const onPopState = () => setActiveView(initialView());
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
