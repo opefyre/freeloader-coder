@@ -112,6 +112,9 @@ export async function executeProviderTask(input: {
         estimatedInputTokens: input.routeRequest.estimatedInputTokens,
         requestedOutputTokens: input.routeRequest.requestedOutputTokens,
         allowPaid: input.routeRequest.allowPaid,
+        ...(input.routeRequest.allowPromotionalCredit !== undefined
+          ? { allowPromotionalCredit: input.routeRequest.allowPromotionalCredit }
+          : {}),
         ...(input.routeRequest.costPolicy
           ? {
               costPolicy: {

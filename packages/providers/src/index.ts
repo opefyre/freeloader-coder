@@ -22,6 +22,7 @@ export * from "./adapter.js";
 export * from "./catalog.js";
 export * from "./circuit.js";
 export * from "./connection.js";
+export * from "./expanded-mesh.js";
 export * from "./lifecycle.js";
 export * from "./router.js";
 export * from "./telemetry.js";

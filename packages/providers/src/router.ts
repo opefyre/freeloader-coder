@@ -8,8 +8,8 @@ import {
 export type PrivacyLevel = "training_eligible" | "no_training" | "zero_retention" | "local";
 export type DataClass = "public_test" | "non_personal_test" | "source_code" | "personal" | "credential";
 export type CapacityUnit = "requests" | "tokens" | "neurons" | "provider_reported" | "unmetered";
-export type CostClass = "free" | "paid" | "unknown";
-export type BillingMode = "free_tier" | "billing_enabled" | "unknown";
+export type CostClass = "free" | "promotional_credit" | "paid" | "unknown";
+export type BillingMode = "free_tier" | "promotional_credit" | "billing_enabled" | "unknown";
 export type ProviderLifecycle = "active" | "retiring" | "retired";
 
 export interface ProviderCapacityPolicy {
@@ -59,6 +59,14 @@ export interface ProviderCandidate {
   readonly providerConnectionId?: string | undefined;
   readonly projectId?: string | undefined;
   readonly estimatedCostMinor?: number | undefined;
+  readonly estimatedCreditMicros?: number | undefined;
+  readonly promotionalCredit?: {
+    readonly grantedBalanceMicros: number;
+    readonly toppedUpBalanceMicros: number;
+    readonly reserveMicros: number;
+    readonly expiresAt: number | null;
+    readonly fundSeparationProven: boolean;
+  } | undefined;
   readonly lifecycle?: ProviderLifecycle | undefined;
   readonly retiresAt?: number | null | undefined;
   readonly replacementProviderIds?: readonly string[] | undefined;
@@ -81,6 +89,7 @@ export interface RouteRequest {
   readonly estimatedInputTokens: number;
   readonly requestedOutputTokens: number;
   readonly allowPaid: boolean;
+  readonly allowPromotionalCredit?: boolean | undefined;
   readonly costPolicy?: CostPolicy | undefined;
   readonly paidConfirmationDigest?: string | undefined;
   readonly now: number;
@@ -103,6 +112,10 @@ export type RouteRejectionReason =
   | "paid-route-not-approved"
   | "paid-confirmation-invalid"
   | "paid-budget-exceeded"
+  | "promotional-credit-disabled"
+  | "promotional-credit-unproven"
+  | "promotional-credit-exhausted"
+  | "promotional-credit-expired"
   | "role-not-allowed"
   | "kind-not-allowed"
   | "data-class-not-allowed"
@@ -387,6 +400,44 @@ function costRejectionFor(
   const costClass = candidate.costClass ?? (candidate.paid ? "paid" : "unknown");
   const billingMode = candidate.billingMode ?? "unknown";
   const policy = request.costPolicy ?? createDefaultCostPolicy();
+
+  if (costClass === "promotional_credit") {
+    if (!request.allowPromotionalCredit) {
+      return {
+        reason: "promotional-credit-disabled",
+        detail: "Temporary promotional credit requires a separate explicit routing mode."
+      };
+    }
+    const credit = candidate.promotionalCredit;
+    if (
+      candidate.billingMode !== "promotional_credit"
+      || !credit
+      || !credit.fundSeparationProven
+    ) {
+      return {
+        reason: "promotional-credit-unproven",
+        detail: "Granted and topped-up funds cannot be separated safely."
+      };
+    }
+    if (credit.expiresAt !== null && credit.expiresAt <= request.now) {
+      return {
+        reason: "promotional-credit-expired",
+        detail: "The granted promotional balance expired."
+      };
+    }
+    const projected = candidate.estimatedCreditMicros;
+    if (
+      projected === undefined
+      || projected < 0
+      || credit.grantedBalanceMicros - credit.reserveMicros < projected
+    ) {
+      return {
+        reason: "promotional-credit-exhausted",
+        detail: "The safe granted-credit balance cannot cover this request."
+      };
+    }
+    return null;
+  }
 
   if (costClass === "unknown") {
     return {

@@ -4,6 +4,11 @@ export type ProviderWizardId =
   | "openrouter"
   | "cloudflare"
   | "github-models"
+  | "cerebras"
+  | "mistral"
+  | "zhipu"
+  | "sambanova"
+  | "deepseek"
   | "local-model-runtime";
 
 export type ProviderAuthMode =
@@ -112,6 +117,86 @@ export const providerConnectionGuides: readonly ProviderConnectionGuide[] = [
       "Verify account limits and run a bounded canary."
     ],
     revocation: "Revoke the authorization in GitHub and disconnect locally."
+  },
+  {
+    id: "cerebras",
+    label: "Cerebras",
+    authMode: "guided_key",
+    dashboardUrl: "https://cloud.cerebras.ai/",
+    freeStatus: "Free account · live account limits required",
+    dataUse: "External processing under the connected Cerebras account policy",
+    minimumPermission: "Inference key for one free account",
+    steps: [
+      "Open the Cerebras dashboard and create an inference key.",
+      "Return and use secure entry; the key is immediately masked.",
+      "Probe the account model list and current request/token limits.",
+      "Run chat, structured-output, and selected capability canaries."
+    ],
+    revocation: "Delete the key in Cerebras and remove its local vault reference."
+  },
+  {
+    id: "mistral",
+    label: "Mistral Experiment",
+    authMode: "guided_key",
+    dashboardUrl: "https://console.mistral.ai/",
+    freeStatus: "Experiment workspace only · Scale or unknown plans denied",
+    dataUse: "External processing under the selected Mistral workspace policy",
+    minimumPermission: "Inference key for one Experiment workspace",
+    steps: [
+      "Open Mistral and confirm the workspace is in Experiment mode.",
+      "Create an inference key and return to secure entry.",
+      "Resolve the selected model alias and capture only observed limits.",
+      "Canary chat, structured output, and tool calling separately."
+    ],
+    revocation: "Delete the key in Mistral and disconnect the local reference."
+  },
+  {
+    id: "zhipu",
+    label: "Zhipu GLM",
+    authMode: "guided_key",
+    dashboardUrl: "https://open.bigmodel.cn/",
+    freeStatus: "Exact explicitly-free GLM model only · region checked",
+    dataUse: "External regional processing is explained before connection",
+    minimumPermission: "Inference key for the selected free GLM model",
+    steps: [
+      "Review regional availability and data transfer.",
+      "Create a key for the eligible account and return to secure entry.",
+      "Verify the exact GLM model is still explicitly documented free.",
+      "Canary context limits, structured output, tools, and coding compatibility."
+    ],
+    revocation: "Revoke the key in Zhipu and remove its local vault reference."
+  },
+  {
+    id: "sambanova",
+    label: "SambaNova",
+    authMode: "guided_key",
+    dashboardUrl: "https://cloud.sambanova.ai/",
+    freeStatus: "No-payment-method free account · scarce daily allowance",
+    dataUse: "External processing under the connected SambaNova account policy",
+    minimumPermission: "Inference key for one free account",
+    steps: [
+      "Open SambaNova and confirm no payment method is attached.",
+      "Create an inference key and return to secure entry.",
+      "Probe the exact model and current daily request/token limits.",
+      "Reserve review and recovery capacity before enabling routing."
+    ],
+    revocation: "Delete the key in SambaNova and remove the local vault reference."
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek credit",
+    authMode: "guided_key",
+    dashboardUrl: "https://platform.deepseek.com/",
+    freeStatus: "Temporary promotional credit · never permanent free",
+    dataUse: "External processing only after explicit credit-only enablement",
+    minimumPermission: "Balance read and inference with topped-up funds isolated",
+    steps: [
+      "Enable promotional-credit mode explicitly; it is off by default.",
+      "Create a key and verify granted and topped-up balances separately.",
+      "Prove topped-up funds cannot be consumed and record credit expiry.",
+      "Set a hard reserve and canary the exact model before limited routing."
+    ],
+    revocation: "Delete the key in DeepSeek; no top-up or billing action is ever available."
   },
   {
     id: "local-model-runtime",
@@ -241,4 +326,3 @@ function maskFingerprint(value: string | undefined): string {
   }
   return `vault:•••• · ${value.slice(-4)}`;
 }
-

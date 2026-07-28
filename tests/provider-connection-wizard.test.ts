@@ -13,7 +13,19 @@ import {
 test("every supported provider has exact setup, free-status, data-use, and revocation guidance", () => {
   assert.deepEqual(
     providerConnectionGuides.map((guide) => guide.id),
-    ["groq", "gemini", "openrouter", "cloudflare", "github-models", "local-model-runtime"]
+    [
+      "groq",
+      "gemini",
+      "openrouter",
+      "cloudflare",
+      "github-models",
+      "cerebras",
+      "mistral",
+      "zhipu",
+      "sambanova",
+      "deepseek",
+      "local-model-runtime"
+    ]
   );
   for (const guide of providerConnectionGuides) {
     assert.match(guide.dashboardUrl, /^https?:\/\/127\.0\.0\.1|^https:\/\//);
@@ -78,4 +90,3 @@ test("revocation removes the masked reference and returns to setup", () => {
   assert.equal(revoked.maskedCredential, null);
   assert.equal(revoked.stage, "instructions");
 });
-

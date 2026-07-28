@@ -42,6 +42,7 @@ import { ControlCenter } from "./components/control-center/control-center.js";
 import { ResilienceCenter } from "./components/resilience/resilience-center.js";
 import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
 import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
+import { ExpandedProviderMesh } from "./components/providers/expanded-provider-mesh.js";
 import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
 import { Button, buttonVariants } from "./components/ui/button.js";
 import {
@@ -1008,6 +1009,7 @@ function WorkspaceSurface({
     );
     return (
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <ExpandedProviderMesh />
         <Card className="min-w-0 xl:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>

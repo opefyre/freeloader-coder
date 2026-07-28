@@ -650,6 +650,7 @@ export const providerAttemptRecordSchema = z.strictObject({
 
 const providerCapacityPolicySchema = z.strictObject({
   unit: z.enum(["requests", "tokens", "neurons", "provider_reported", "unmetered"]),
+  maxConcurrentRequests: z.number().int().positive().optional(),
   requestsPerMinute: z.number().positive().optional(),
   requestsPerDay: z.number().positive().optional(),
   tokensPerMinute: z.number().positive().optional(),
@@ -659,7 +660,15 @@ const providerCapacityPolicySchema = z.strictObject({
   outputUnitsPerMillion: z.number().positive().optional()
 });
 
+const providerCapacityReservationSchema = z.strictObject({
+  kinds: z.array(id).readonly(),
+  requestsPerDay: z.number().positive().optional(),
+  tokensPerDay: z.number().positive().optional(),
+  freeUnitsPerDay: z.number().positive().optional()
+});
+
 const providerCapacityUsageSchema = z.strictObject({
+  activeRequests: z.number().int().nonnegative().optional(),
   requestsToday: z.number().int().nonnegative(),
   tokensToday: z.number().int().nonnegative(),
   inputTokensToday: z.number().int().nonnegative(),
@@ -684,11 +693,19 @@ export const recordedProviderCandidateSchema = z.strictObject({
   privacy: z.enum(["training_eligible", "no_training", "zero_retention", "local"]),
   location: z.enum(["local", "external"]),
   paid: z.boolean(),
-  costClass: z.enum(["free", "paid", "unknown"]).optional(),
-  billingMode: z.enum(["free_tier", "billing_enabled", "unknown"]).optional(),
+  costClass: z.enum(["free", "promotional_credit", "paid", "unknown"]).optional(),
+  billingMode: z.enum(["free_tier", "promotional_credit", "billing_enabled", "unknown"]).optional(),
   providerConnectionId: id.optional(),
   projectId: id.optional(),
   estimatedCostMinor: z.number().int().nonnegative().optional(),
+  estimatedCreditMicros: z.number().int().nonnegative().optional(),
+  promotionalCredit: z.strictObject({
+    grantedBalanceMicros: z.number().int().nonnegative(),
+    toppedUpBalanceMicros: z.number().int().nonnegative(),
+    reserveMicros: z.number().int().nonnegative(),
+    expiresAt: z.number().int().nonnegative().nullable(),
+    fundSeparationProven: z.boolean()
+  }).optional(),
   lifecycle: z.enum(["active", "retiring", "retired"]).optional(),
   retiresAt: z.number().int().nonnegative().nullable().optional(),
   replacementProviderIds: z.array(id).readonly().optional(),
@@ -704,6 +721,7 @@ export const recordedProviderCandidateSchema = z.strictObject({
   contextWindowTokens: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
   capacity: providerCapacityPolicySchema,
+  reservation: providerCapacityReservationSchema.optional(),
   usage: providerCapacityUsageSchema,
   circuitOpenUntil: z.number().int().nonnegative()
 });
@@ -722,6 +740,7 @@ export const recordedRouteRequestSchema = z.strictObject({
   estimatedInputTokens: z.number().int().nonnegative(),
   requestedOutputTokens: z.number().int().positive(),
   allowPaid: z.boolean(),
+  allowPromotionalCredit: z.boolean().optional(),
   costPolicy: costPolicySchema.optional(),
   paidConfirmationDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   now: z.number().int().nonnegative(),
