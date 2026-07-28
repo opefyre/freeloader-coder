@@ -25,6 +25,8 @@ const base: ProviderCandidate = {
   privacy: "training_eligible",
   location: "external",
   paid: false,
+  costClass: "free",
+  billingMode: "free_tier",
   roles: ["implementer"],
   kinds: ["code"],
   dataClasses: ["public_test", "non_personal_test", "source_code"],
@@ -147,7 +149,15 @@ test("router enforces output limit and ignores stale minute-window samples", () 
 });
 
 test("paid providers and external sensitive-data routes remain ineligible", () => {
-  const paid = routeProviders([{ ...base, paid: true }], request);
+  const paid = routeProviders([{
+    ...base,
+    paid: true,
+    costClass: "paid",
+    billingMode: "billing_enabled",
+    providerConnectionId: "groq-paid-connection",
+    projectId: "groq-paid-project",
+    estimatedCostMinor: 1
+  }], request);
   assert.equal(paid.selected, null);
   assert.equal(paid.rejected[0]?.reason, "paid-disabled");
 
@@ -180,4 +190,25 @@ test("route validation rejects ambiguous duplicate provider-model identities", (
     () => validateRouteCandidates([base, { ...base, id: "duplicate" }]),
     /Duplicate provider-model/
   );
+});
+
+test("retired routes are never selected and name configured alternatives", () => {
+  const retired = {
+    ...base,
+    id: "retired-route",
+    lifecycle: "retired" as const,
+    retiresAt: now - 1,
+    replacementProviderIds: ["cloudflare", "gemini"]
+  };
+  const active = {
+    ...base,
+    id: "active-route",
+    providerId: "cloudflare",
+    modelId: "qwen",
+    priority: 20
+  };
+  const result = routeProviders([retired, active], request);
+  assert.equal(result.selected?.id, "active-route");
+  assert.equal(result.rejected[0]?.reason, "provider-retired");
+  assert.match(result.rejected[0]?.detail ?? "", /cloudflare, gemini/);
 });

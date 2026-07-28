@@ -103,6 +103,44 @@ export const approvalSchema = z.strictObject({
   expiresAt: timestamp.nullable()
 });
 
+export const paidUseGrantSchema = z.strictObject({
+  schemaVersion: version,
+  authorizationId: id,
+  providerConnectionId: id,
+  providerId: id,
+  modelId: id,
+  projectId: id,
+  currency: z.enum(["USD", "EUR", "GBP"]),
+  maximumSpendMinor: z.number().int().positive(),
+  spentMinor: z.number().int().nonnegative(),
+  connectionApproved: z.literal(true),
+  routeApproved: z.literal(true),
+  finalConfirmationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  approvedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive(),
+  revokedAt: z.number().int().nonnegative().nullable()
+}).refine(
+  (value) => value.expiresAt > value.approvedAt,
+  "Paid-use authorization expiry must be later than approval."
+).refine(
+  (value) => value.spentMinor <= value.maximumSpendMinor,
+  "Recorded spend cannot exceed the hard budget."
+);
+
+export const costPolicySchema = z.strictObject({
+  schemaVersion: version,
+  mode: z.enum(["free_only", "paid_authorized"]),
+  paidUseGrants: z.array(paidUseGrantSchema)
+}).superRefine((value, context) => {
+  if (value.mode === "free_only" && value.paidUseGrants.length > 0) {
+    context.addIssue({
+      code: "custom",
+      message: "Free-only policy cannot contain paid-use grants.",
+      path: ["paidUseGrants"]
+    });
+  }
+});
+
 export const artifactSchema = z.strictObject({
   schemaVersion: version,
   id,
@@ -203,6 +241,14 @@ export const recordedProviderCandidateSchema = z.strictObject({
   privacy: z.enum(["training_eligible", "no_training", "zero_retention", "local"]),
   location: z.enum(["local", "external"]),
   paid: z.boolean(),
+  costClass: z.enum(["free", "paid", "unknown"]).optional(),
+  billingMode: z.enum(["free_tier", "billing_enabled", "unknown"]).optional(),
+  providerConnectionId: id.optional(),
+  projectId: id.optional(),
+  estimatedCostMinor: z.number().int().nonnegative().optional(),
+  lifecycle: z.enum(["active", "retiring", "retired"]).optional(),
+  retiresAt: z.number().int().nonnegative().nullable().optional(),
+  replacementProviderIds: z.array(id).readonly().optional(),
   roles: z.array(id),
   kinds: z.array(id),
   dataClasses: z.array(z.enum([
@@ -233,6 +279,8 @@ export const recordedRouteRequestSchema = z.strictObject({
   estimatedInputTokens: z.number().int().nonnegative(),
   requestedOutputTokens: z.number().int().positive(),
   allowPaid: z.boolean(),
+  costPolicy: costPolicySchema.optional(),
+  paidConfirmationDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   now: z.number().int().nonnegative(),
   preferredProviderIds: z.array(id).optional(),
   avoidedProviderIds: z.array(id).optional()

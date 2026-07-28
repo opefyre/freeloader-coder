@@ -22,6 +22,8 @@ const shared = {
   privacy: "training_eligible" as const,
   location: "external" as const,
   paid: false,
+  costClass: "free" as const,
+  billingMode: "free_tier" as const,
   roles: ["planner", "implementer", "reviewer"],
   kinds: ["plan", "code", "review"],
   dataClasses: ["public_test", "non_personal_test", "source_code"] as const,
@@ -98,6 +100,9 @@ const candidates: readonly ProviderCandidate[] = [
     contextWindowTokens: 64_000,
     maxOutputTokens: 8_000,
     capacity: { unit: "provider_reported" },
+    lifecycle: "retired",
+    retiresAt: now - 86_400_000,
+    replacementProviderIds: ["groq", "cloudflare"],
     usage: {
       ...emptyUsage,
       requestsToday: 2,
@@ -129,6 +134,22 @@ export const routeEvidenceSummary = {
     retryAt: rejection.retryAt
   })),
   paidUsageAllowed: false
+} as const;
+
+export const costSafetySummary = {
+  mode: "Free only",
+  hardCeiling: "$0.00",
+  paidRoutesProduced: 0,
+  safeguards: [
+    "Unknown-cost models denied",
+    "Billing-enabled projects denied",
+    "Exact paid grant required"
+  ],
+  alternatives: route.rejected.map((rejection) => ({
+    providerId: rejection.providerId,
+    reason: rejection.reason,
+    retryAt: rejection.retryAt
+  }))
 } as const;
 const attemptEvidence = [
   ...attemptsFor("groq", 10, 2, now - 60_000),

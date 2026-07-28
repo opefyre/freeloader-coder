@@ -19,6 +19,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Shield,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
@@ -35,6 +36,7 @@ import {
   type WorkspaceSurface
 } from "../../../packages/ui/src/index.js";
 import {
+  costSafetySummary,
   providerTelemetry,
   routeEvidenceSummary,
   successfulProviderCalls
@@ -66,6 +68,7 @@ let density: DensityMode = "guided";
 let situation: NavigationSituation = "busy";
 let selectedProductName: "pipeline-studio" | "freeloader-coder" | undefined;
 let selectedProviderId = providerTelemetry[0]?.providerId ?? "";
+let costDetailsVisible = false;
 let locationState: WorkspaceLocation = safeLocation(window.location.pathname + window.location.search);
 
 export function renderWorkspace(app: HTMLDivElement): void {
@@ -197,6 +200,7 @@ export function renderWorkspace(app: HTMLDivElement): void {
       RefreshCw,
       RotateCcw,
       Search,
+      Shield,
       ShieldCheck,
       Sparkles,
       TriangleAlert,
@@ -257,6 +261,30 @@ function renderSurface(surface: WorkspaceSurface, technicalVisible: boolean): st
         <span><i data-lucide="Check"></i> Private references excluded</span>
       </div>
       <a href="https://github.com/opefyre/freeloader-coder" target="_blank" rel="noreferrer" class="text-action ps-focusable">Open GitHub <i data-lucide="ArrowRight"></i></a>
+    </section>
+
+    <section class="cost-lock ps-surface" aria-labelledby="cost-lock-title">
+      <div class="cost-lock-visual" aria-hidden="true">
+        <span><i data-lucide="Shield"></i></span>
+        <strong>${costSafetySummary.hardCeiling}</strong>
+        <small>maximum automatic spend</small>
+      </div>
+      <div class="cost-lock-copy">
+        <p class="eyebrow">Denial-of-wallet · active</p>
+        <h2 id="cost-lock-title">Free-only is enforced in code</h2>
+        <p>A setting label is not the safeguard. Unknown-cost models, billing-enabled projects, and unapproved paid routes are rejected before any provider call exists.</p>
+        <div class="cost-proof-row">
+          <span><i data-lucide="Check"></i>${costSafetySummary.paidRoutesProduced} paid requests produced</span>
+          <span><i data-lucide="Check"></i>Hard release gate</span>
+        </div>
+        <button class="text-action ps-focusable" type="button" data-cost-details aria-expanded="${costDetailsVisible}">
+          ${costDetailsVisible ? "Hide safeguards" : "Inspect safeguards"} <i data-lucide="ArrowRight"></i>
+        </button>
+        ${costDetailsVisible ? `<div class="cost-details" aria-live="polite">
+          ${costSafetySummary.safeguards.map((item) => `<span><i data-lucide="ShieldCheck"></i>${item}</span>`).join("")}
+          <p>Paid mode requires a separate connection approval, exact route permission, hard budget, expiry, and final confirmation. This demo does not enable it.</p>
+        </div>` : ""}
+      </div>
     </section>
 
     <section class="queue-card ps-surface">
@@ -384,6 +412,10 @@ function bindWorkspace(app: HTMLDivElement): void {
       selectedProviderId = button.dataset.providerId ?? selectedProviderId;
       renderWorkspace(app);
     });
+  });
+  app.querySelector<HTMLButtonElement>("[data-cost-details]")?.addEventListener("click", () => {
+    costDetailsVisible = !costDetailsVisible;
+    renderWorkspace(app);
   });
 
   const palette = app.querySelector<HTMLElement>("[data-command-palette]");

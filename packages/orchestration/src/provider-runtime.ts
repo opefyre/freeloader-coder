@@ -112,6 +112,19 @@ export async function executeProviderTask(input: {
         estimatedInputTokens: input.routeRequest.estimatedInputTokens,
         requestedOutputTokens: input.routeRequest.requestedOutputTokens,
         allowPaid: input.routeRequest.allowPaid,
+        ...(input.routeRequest.costPolicy
+          ? {
+              costPolicy: {
+                ...input.routeRequest.costPolicy,
+                paidUseGrants: input.routeRequest.costPolicy.paidUseGrants.map((grant) => ({
+                  ...grant
+                }))
+              }
+            }
+          : {}),
+        ...(input.routeRequest.paidConfirmationDigest
+          ? { paidConfirmationDigest: input.routeRequest.paidConfirmationDigest }
+          : {}),
         now: input.routeRequest.now,
         ...(input.routeRequest.preferredProviderIds
           ? { preferredProviderIds: [...input.routeRequest.preferredProviderIds] }
@@ -125,6 +138,9 @@ export async function executeProviderTask(input: {
         roles: [...candidate.roles],
         kinds: [...candidate.kinds],
         dataClasses: [...candidate.dataClasses],
+        ...(candidate.replacementProviderIds
+          ? { replacementProviderIds: [...candidate.replacementProviderIds] }
+          : {}),
         usage: {
           ...candidate.usage,
           requestTimestamps: [...candidate.usage.requestTimestamps],
@@ -323,6 +339,26 @@ function explainUnavailableRoute(
   }
   if (route.rejected.every((rejection) => rejection.reason === "paid-disabled")) {
     return "Only paid providers are eligible and paid usage is disabled.";
+  }
+  if (route.rejected.some((rejection) =>
+    [
+      "unknown-cost",
+      "billing-enabled-project",
+      "paid-authorization-missing",
+      "paid-authorization-mismatch",
+      "paid-authorization-expired",
+      "paid-authorization-revoked",
+      "paid-connection-not-approved",
+      "paid-route-not-approved",
+      "paid-confirmation-invalid",
+      "paid-budget-exceeded"
+    ].includes(rejection.reason)
+  )) {
+    return "Cost safeguards denied every available route. Free-only remains active; inspect provider billing state or create a bounded paid-use authorization.";
+  }
+  const retired = route.rejected.filter((rejection) => rejection.reason === "provider-retired");
+  if (retired.length === route.rejected.length && retired.length > 0) {
+    return retired.map((rejection) => rejection.detail).join(" ");
   }
   return "No eligible provider is configured for this work.";
 }

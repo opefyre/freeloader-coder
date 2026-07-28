@@ -1,6 +1,16 @@
+import {
+  createDefaultCostPolicy,
+  evaluatePaidUse,
+  type CostPolicy,
+  type PaidUseDenial
+} from "../../policy/src/index.js";
+
 export type PrivacyLevel = "training_eligible" | "no_training" | "zero_retention" | "local";
 export type DataClass = "public_test" | "non_personal_test" | "source_code" | "personal" | "credential";
 export type CapacityUnit = "requests" | "tokens" | "neurons" | "provider_reported" | "unmetered";
+export type CostClass = "free" | "paid" | "unknown";
+export type BillingMode = "free_tier" | "billing_enabled" | "unknown";
+export type ProviderLifecycle = "active" | "retiring" | "retired";
 
 export interface ProviderCapacityPolicy {
   readonly unit: CapacityUnit;
@@ -35,6 +45,14 @@ export interface ProviderCandidate {
   readonly privacy: PrivacyLevel;
   readonly location: "local" | "external";
   readonly paid: boolean;
+  readonly costClass?: CostClass | undefined;
+  readonly billingMode?: BillingMode | undefined;
+  readonly providerConnectionId?: string | undefined;
+  readonly projectId?: string | undefined;
+  readonly estimatedCostMinor?: number | undefined;
+  readonly lifecycle?: ProviderLifecycle | undefined;
+  readonly retiresAt?: number | null | undefined;
+  readonly replacementProviderIds?: readonly string[] | undefined;
   readonly roles: readonly string[];
   readonly kinds: readonly string[];
   readonly dataClasses: readonly DataClass[];
@@ -53,6 +71,8 @@ export interface RouteRequest {
   readonly estimatedInputTokens: number;
   readonly requestedOutputTokens: number;
   readonly allowPaid: boolean;
+  readonly costPolicy?: CostPolicy | undefined;
+  readonly paidConfirmationDigest?: string | undefined;
   readonly now: number;
   readonly preferredProviderIds?: readonly string[] | undefined;
   readonly avoidedProviderIds?: readonly string[] | undefined;
@@ -60,8 +80,19 @@ export interface RouteRequest {
 
 export type RouteRejectionReason =
   | "provider-not-configured"
+  | "provider-retired"
   | "avoided"
   | "paid-disabled"
+  | "unknown-cost"
+  | "billing-enabled-project"
+  | "paid-authorization-missing"
+  | "paid-authorization-mismatch"
+  | "paid-authorization-expired"
+  | "paid-authorization-revoked"
+  | "paid-connection-not-approved"
+  | "paid-route-not-approved"
+  | "paid-confirmation-invalid"
+  | "paid-budget-exceeded"
   | "role-not-allowed"
   | "kind-not-allowed"
   | "data-class-not-allowed"
@@ -119,6 +150,7 @@ export function validateRouteCandidates(candidates: readonly ProviderCandidate[]
       throw new Error(`Candidate ${candidate.id} has no usable input context.`);
     }
     validateCapacityPolicy(candidate.capacity, candidate.id);
+    validateCostDeclaration(candidate);
   }
 }
 
@@ -259,7 +291,17 @@ function rejectionFor(
   });
   if (!candidate.configured) return reject("provider-not-configured", "Provider credentials are not configured.");
   if (avoided.has(candidate.providerId)) return reject("avoided", "Provider was excluded for this request.");
-  if (candidate.paid && !request.allowPaid) return reject("paid-disabled", "Paid usage is disabled.");
+  if (candidate.lifecycle === "retired") {
+    const alternatives = candidate.replacementProviderIds?.length
+      ? ` Available alternatives: ${candidate.replacementProviderIds.join(", ")}.`
+      : "";
+    return reject(
+      "provider-retired",
+      `This provider route has retired and will not receive new work.${alternatives}`
+    );
+  }
+  const costRejection = costRejectionFor(candidate, request);
+  if (costRejection) return reject(costRejection.reason, costRejection.detail);
   if (!candidate.roles.includes(request.role)) return reject("role-not-allowed", `Role ${request.role} is unsupported.`);
   if (!candidate.kinds.includes(request.kind)) return reject("kind-not-allowed", `Kind ${request.kind} is unsupported.`);
   if (!candidate.dataClasses.includes(request.dataClass)) {
@@ -291,6 +333,69 @@ function rejectionFor(
   return capacity.allowed
     ? null
     : reject(capacity.reason as RouteRejectionReason, capacityDetail(candidate, capacity), capacity.retryAt);
+}
+
+function costRejectionFor(
+  candidate: ProviderCandidate,
+  request: RouteRequest
+): { readonly reason: RouteRejectionReason; readonly detail: string } | null {
+  const costClass = candidate.costClass ?? (candidate.paid ? "paid" : "unknown");
+  const billingMode = candidate.billingMode ?? "unknown";
+  const policy = request.costPolicy ?? createDefaultCostPolicy();
+
+  if (costClass === "unknown") {
+    return {
+      reason: "unknown-cost",
+      detail: "This model has no verified free or paid cost classification."
+    };
+  }
+  if (policy.mode === "free_only" || !request.allowPaid) {
+    if (costClass === "paid" || candidate.paid) {
+      return { reason: "paid-disabled", detail: "Paid usage is disabled." };
+    }
+    if (billingMode === "billing_enabled") {
+      return {
+        reason: "billing-enabled-project",
+        detail: "Billing is enabled for this provider project, so it cannot run in free-only mode."
+      };
+    }
+    if (billingMode === "unknown") {
+      return {
+        reason: "unknown-cost",
+        detail: "The provider project's billing state is unknown."
+      };
+    }
+    return null;
+  }
+  if (costClass === "free" && billingMode === "free_tier") return null;
+  const paidDecision = evaluatePaidUse(policy, {
+    providerConnectionId: candidate.providerConnectionId ?? "",
+    providerId: candidate.providerId,
+    modelId: candidate.modelId,
+    projectId: candidate.projectId ?? "",
+    estimatedCostMinor: candidate.estimatedCostMinor ?? 0,
+    finalConfirmationDigest: request.paidConfirmationDigest ?? ""
+  }, request.now);
+  if (paidDecision.allowed) return null;
+  return {
+    reason: paidDenialReason(paidDecision.reason),
+    detail: paidDecision.detail
+  };
+}
+
+function paidDenialReason(reason: PaidUseDenial): RouteRejectionReason {
+  const reasons: Record<PaidUseDenial, RouteRejectionReason> = {
+    "free-only": "paid-disabled",
+    "authorization-missing": "paid-authorization-missing",
+    "authorization-mismatch": "paid-authorization-mismatch",
+    "authorization-expired": "paid-authorization-expired",
+    "authorization-revoked": "paid-authorization-revoked",
+    "connection-not-approved": "paid-connection-not-approved",
+    "route-not-approved": "paid-route-not-approved",
+    "confirmation-invalid": "paid-confirmation-invalid",
+    "budget-exceeded": "paid-budget-exceeded"
+  };
+  return reasons[reason];
 }
 
 function capacityDetail(candidate: ProviderCandidate, decision: CapacityDecision): string {
@@ -355,6 +460,29 @@ function validateCapacityPolicy(capacity: ProviderCapacityPolicy, candidateId: s
       !capacity.outputUnitsPerMillion)
   ) {
     throw new Error(`Candidate ${candidateId} requires complete neuron pricing.`);
+  }
+}
+
+function validateCostDeclaration(candidate: ProviderCandidate): void {
+  if (candidate.paid && candidate.costClass === "free") {
+    throw new Error(`Candidate ${candidate.id} has a contradictory cost declaration.`);
+  }
+  if (
+    candidate.costClass === "paid" &&
+    (candidate.estimatedCostMinor === undefined ||
+      candidate.estimatedCostMinor < 1 ||
+      !candidate.providerConnectionId ||
+      !candidate.projectId)
+  ) {
+    throw new Error(`Paid candidate ${candidate.id} requires connection, project, and cost bounds.`);
+  }
+  if (
+    candidate.lifecycle === "retired" &&
+    candidate.retiresAt !== undefined &&
+    candidate.retiresAt !== null &&
+    candidate.retiresAt < 0
+  ) {
+    throw new Error(`Candidate ${candidate.id} has an invalid retirement timestamp.`);
   }
 }
 

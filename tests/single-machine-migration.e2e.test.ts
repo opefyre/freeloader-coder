@@ -50,6 +50,8 @@ test("one-machine migration journey preserves scope, evidence, effects, and comp
     privacy: "local",
     location: "local",
     paid: false,
+    costClass: "free",
+    billingMode: "free_tier",
     roles: ["implementer"],
     kinds: ["code"],
     dataClasses: ["source_code"],

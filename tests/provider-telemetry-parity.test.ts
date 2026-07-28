@@ -16,6 +16,8 @@ const candidate: ProviderCandidate = {
   privacy: "training_eligible",
   location: "external",
   paid: false,
+  costClass: "free",
+  billingMode: "free_tier",
   roles: ["implementer"],
   kinds: ["code"],
   dataClasses: ["source_code"],

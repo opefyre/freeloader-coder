@@ -43,6 +43,18 @@ test("workspace renders provider evidence as interactive, explicitly demo-scoped
   assert.doesNotMatch(fixture, /from "\.\.\/\.\.\/\.\.\/packages\/providers\/src\/index\.js"/);
 });
 
+test("workspace exposes an interactive denial-of-wallet proof instead of a cost promise", async () => {
+  const workspace = await readFile("apps/studio/src/workspace.ts", "utf8");
+  const fixture = await readFile("apps/studio/src/runtime-fixture.ts", "utf8");
+  assert.match(workspace, /Denial-of-wallet · active/);
+  assert.match(workspace, /maximum automatic spend/);
+  assert.match(workspace, /data-cost-details/);
+  assert.match(workspace, /Paid mode requires a separate connection approval/);
+  assert.match(fixture, /paidRoutesProduced: 0/);
+  assert.match(fixture, /Billing-enabled projects denied/);
+  assert.match(fixture, /lifecycle: "retired"/);
+});
+
 test("workspace has explicit responsive, focus, motion, and contrast contracts", async () => {
   const styles = await readFile("apps/studio/src/styles.css", "utf8");
   const tokens = await readFile("packages/ui/src/tokens.css", "utf8");

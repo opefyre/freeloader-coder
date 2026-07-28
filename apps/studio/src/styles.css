@@ -998,6 +998,104 @@ h1 {
   gap: 22px;
 }
 
+.cost-lock {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.72fr) minmax(0, 1.28fr);
+  gap: 22px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--ps-positive) 22%, transparent), transparent 14rem),
+    color-mix(in srgb, var(--ps-surface-glass) 94%, transparent);
+}
+
+.cost-lock-visual {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-height: 15rem;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--ps-bg-deep) 52%, transparent);
+  text-align: center;
+}
+
+.cost-lock-visual span {
+  display: grid;
+  width: 4.25rem;
+  height: 4.25rem;
+  place-items: center;
+  margin-bottom: 16px;
+  border-radius: 1.4rem;
+  background: color-mix(in srgb, var(--ps-positive) 16%, transparent);
+  color: var(--ps-positive);
+  box-shadow: 0 0 44px color-mix(in srgb, var(--ps-positive) 24%, transparent);
+}
+
+.cost-lock-visual span svg {
+  width: 2.1rem;
+  height: 2.1rem;
+}
+
+.cost-lock-visual strong {
+  font-size: clamp(2rem, 4vw, 3.6rem);
+  letter-spacing: -0.07em;
+}
+
+.cost-lock-visual small {
+  color: var(--ps-text-muted);
+}
+
+.cost-lock-copy {
+  align-self: center;
+}
+
+.cost-lock-copy h2 {
+  margin-bottom: 10px;
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+}
+
+.cost-lock-copy > p:not(.eyebrow),
+.cost-details p {
+  color: var(--ps-text-muted);
+  line-height: 1.6;
+}
+
+.cost-proof-row,
+.cost-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cost-proof-row {
+  margin: 18px 0 10px;
+}
+
+.cost-proof-row span,
+.cost-details span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ps-positive) 10%, transparent);
+  color: var(--ps-positive);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.cost-details {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--ps-surface-raised) 72%, transparent);
+}
+
+.cost-details p {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+}
+
 .provider-share {
   display: grid;
   gap: 12px;
@@ -1871,7 +1969,8 @@ h1 {
   }
 
   .control-grid,
-  .command-hero {
+  .command-hero,
+  .cost-lock {
     grid-template-columns: 1fr;
   }
 
@@ -1952,6 +2051,7 @@ h1 {
 
   .decision-card,
   .proof-card,
+  .cost-lock,
   .queue-card,
   .technical-card {
     margin-top: var(--ps-space-4);
