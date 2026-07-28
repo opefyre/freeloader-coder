@@ -37,6 +37,7 @@ import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
+import { ControlCenter } from "./components/control-center/control-center.js";
 import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
 import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
 import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
@@ -487,6 +488,8 @@ function App() {
 
           {activeView === "overview" ? (
             <>
+          <ControlCenter navigate={navigate} />
+          <div className="hidden" aria-hidden="true">
           <section className="metric-grid grid gap-3" aria-label="Pipeline summary">
             <Metric
               icon={Lightning}
@@ -891,6 +894,7 @@ function App() {
               </Card>
             </TabsContent>
           </Tabs>
+          </div>
             </>
           ) : (
             <WorkspaceSurface
