@@ -180,6 +180,23 @@ const rawArticles: readonly HelpArticle[] = [
     jiraKey: "PIPE-98"
   }),
   article({
+    id: "inspect-trust-and-data-use",
+    title: "Inspect trust and data use",
+    summary: "Trace project governance, release safeguards, data destinations, consent, and responsible-AI rules back to versioned source.",
+    category: "safety",
+    journeys: [],
+    keywords: ["trust", "governance", "privacy", "telemetry", "training", "supply chain"],
+    steps: [
+      "Open Trust and choose Governance, Supply chain, or Data & AI.",
+      "Follow a material decision to its versioned repository record and linked release.",
+      "Inspect the release firewall and use the mismatch simulation to confirm required evidence fails closed.",
+      "Review every declared data flow before changing a consent choice; paid usage remains separate and locked off."
+    ],
+    safeAlternative: "Keep optional data flows disabled and inspect the repository policy when a destination or retention rule is unclear.",
+    sourcePath: "docs/governance/privacy-data-ai.md",
+    jiraKey: "PIPE-108"
+  }),
+  article({
     id: "share-a-safe-support-report",
     title: "Share a safe support report",
     summary: "Create a reproducible report without credentials, source code, personal paths, or private account data.",

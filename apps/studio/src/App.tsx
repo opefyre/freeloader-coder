@@ -22,6 +22,7 @@ import { Pause } from "@phosphor-icons/react/Pause";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
 import { Question } from "@phosphor-icons/react/Question";
 import { RocketLaunch } from "@phosphor-icons/react/RocketLaunch";
+import { Scales } from "@phosphor-icons/react/Scales";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Sparkle } from "@phosphor-icons/react/Sparkle";
 import { Sun } from "@phosphor-icons/react/Sun";
@@ -42,6 +43,7 @@ import { IntegrationWorkbench } from "./components/integrations/integration-work
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
 import { ReleaseCenter } from "./components/releases/release-center.js";
+import { TrustCenter } from "./components/governance/trust-center.js";
 import { ControlCenter } from "./components/control-center/control-center.js";
 import { ResilienceCenter } from "./components/resilience/resilience-center.js";
 import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
@@ -153,6 +155,11 @@ const viewCopy: Record<
     eyebrow: "Candidate 0.8.0-beta.2 · Local verification",
     title: "Releases you can prove and undo",
     description: "Inspect artifacts, compatibility, updates, rollout gates, and incident recovery before publishing.",
+  },
+  trust: {
+    eyebrow: "Open source · Inspectable · No legal claim",
+    title: "Trust that links back to source",
+    description: "Inspect governance, release safeguards, data journeys, and responsible-AI choices in one place.",
   },
   settings: {
     eyebrow: "Local-first configuration",
@@ -295,6 +302,12 @@ function App() {
         icon: RocketLaunch,
       },
       {
+        id: "trust" as const,
+        label: "Trust",
+        note: "Governance, supply chain, and data use",
+        icon: Scales,
+      },
+      {
         id: "settings" as const,
         label: "Settings",
         note: "Connections, privacy, and safeguards",
@@ -435,6 +448,20 @@ function App() {
         >
           <RocketLaunch size={18} />
           Releases
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigate("trust")}
+          aria-current={activeView === "trust" ? "page" : undefined}
+          className={cn(
+            "mt-1 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+            activeView === "trust" &&
+              "bg-sidebar-accent text-sidebar-accent-foreground"
+          )}
+        >
+          <Scales size={18} />
+          Trust
         </button>
 
         <button
@@ -1211,6 +1238,10 @@ function WorkspaceSurface({
 
   if (view === "releases") {
     return <ReleaseCenter />;
+  }
+
+  if (view === "trust") {
+    return <TrustCenter />;
   }
 
   return (

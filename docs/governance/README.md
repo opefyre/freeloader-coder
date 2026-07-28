@@ -62,4 +62,9 @@ gap and cannot invent a policy to continue.
 - Standard and Advanced views must project the same canonical state.
 
 See [approval-matrix.md](approval-matrix.md) and
-[release-gates.md](release-gates.md).
+[release-gates.md](release-gates.md). The public operating policies are:
+
+- [project governance](project-governance.md);
+- [supply-chain policy](supply-chain.md);
+- [privacy, telemetry, data use, and responsible AI](privacy-data-ai.md);
+- [current disclosures](disclosures.md).

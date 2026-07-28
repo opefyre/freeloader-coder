@@ -48,6 +48,11 @@ The local [Release Center](docs/architecture/release-lifecycle.md) at
 updates, rollout gates, incidents, and rollback. It does not enable CI/CD or
 deployment automation.
 
+The local [Trust Center](docs/governance/README.md) at `/trust` connects
+governance decisions, supply-chain gates, privacy choices, data journeys, and
+responsible-AI rules to their versioned sources. It makes no legal approval
+claim and performs no external action.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.
