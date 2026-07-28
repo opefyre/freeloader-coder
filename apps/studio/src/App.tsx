@@ -35,6 +35,7 @@ import {
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
+import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
 import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
 import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
@@ -977,111 +978,9 @@ function WorkspaceSurface({
 
   if (view === "work") {
     return (
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="xl:col-span-2">
-          <ExecutionSafetyPanel />
-        </div>
-        <div className="min-w-0 space-y-4">
-          <Card className="min-w-0">
-            <CardHeader className="flex flex-col items-start justify-between gap-4 sm:flex-row">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Badge tone="active">Implementation</Badge>
-                  <a
-                    href="https://opefyre.atlassian.net/browse/PIPE-34"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs font-semibold text-primary hover:underline"
-                  >
-                    PIPE-34
-                  </a>
-                </div>
-                <CardTitle className="mt-4 text-xl">
-                  Reusable trust-language patterns
-                </CardTitle>
-                <CardDescription>
-                  Defining shared, versioned patterns for plans, approvals, errors,
-                  retries, recovery, and evidence.
-                </CardDescription>
-              </div>
-              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
-                <Code size={23} weight="duotone" />
-              </span>
-            </CardHeader>
-            <CardContent className="mt-7">
-              <div className="flex items-center gap-3">
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full w-[35%] rounded-full bg-primary" />
-                </div>
-                <strong className="text-sm">35%</strong>
-              </div>
-              <div className="mt-7 grid gap-2 sm:grid-cols-5">
-                {stages.map((stage, index) => (
-                  <div
-                    key={stage.label}
-                    className={cn(
-                      "rounded-2xl p-3",
-                      index < 3 ? "bg-primary/[.08]" : "bg-muted/50"
-                    )}
-                  >
-                    <span className="text-[10px] font-semibold text-muted-foreground">
-                      0{index + 1}
-                    </span>
-                    <strong className="mt-2 block text-xs">{stage.label}</strong>
-                    <span className="mt-1 block text-[10px] text-muted-foreground">
-                      {index < 2 ? "Verified" : index === 2 ? "Working" : "Waiting"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="min-w-0">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Task graph</CardTitle>
-                <CardDescription>Dependency-aware work, in execution order.</CardDescription>
-              </div>
-              <Badge>3 ready · 5 dependent</Badge>
-            </CardHeader>
-            <CardContent className="mt-5 space-y-2">
-              <TaskRow id="PIPE-34" title="Plain-language trust patterns" state="Working now" tone="active" />
-              <TaskRow id="PIPE-35" title="Trustworthy task timeline" state="Ready next" tone="positive" />
-              <TaskRow id="PIPE-36" title="Decision inbox and explanations" state="After PIPE-35" tone="neutral" />
-              <TaskRow id="PIPE-37" title="Preview and checkpoint experience" state="After PIPE-36" tone="neutral" />
-            </CardContent>
-          </Card>
-        </div>
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Live evidence</CardTitle>
-              <CardDescription>Observed during this implementation.</CardDescription>
-            </CardHeader>
-            <CardContent className="mt-5 space-y-4">
-              <EvidencePulse label="Type check" value="Passed" />
-              <EvidencePulse label="Unit tests" value="87 / 87" />
-              <EvidencePulse label="Browser console" value="Clean" />
-              <EvidencePulse label="Last observation" value="Just now" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Safe controls</CardTitle>
-              <CardDescription>Actions preserve the current checkpoint.</CardDescription>
-            </CardHeader>
-            <CardContent className="mt-5 grid gap-2">
-              <Button variant="secondary">
-                <Pause />
-                Pause after current step
-              </Button>
-              <Button variant="ghost" onClick={() => navigate("evidence")}>
-                <ShieldCheck />
-                Inspect evidence
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="min-w-0 space-y-4">
+        <ExecutionSafetyPanel />
+        <OrchestrationWorkbench />
       </div>
     );
   }

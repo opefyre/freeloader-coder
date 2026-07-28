@@ -1,8 +1,12 @@
 export const domain = "orchestration";
+export * from "./canonical-grounding.js";
+export * from "./decision-policy.js";
+export * from "./durable-scheduler.js";
 export * from "./grounding.js";
 export * from "./provider-runtime.js";
 export * from "./provider-scheduler.js";
 export * from "./readiness.js";
 export * from "./retry.js";
 export * from "./reviews.js";
+export * from "./task-planner.js";
 export * from "./workflow.js";

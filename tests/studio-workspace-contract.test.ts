@@ -37,6 +37,10 @@ test("workspace labels fixture claims and prevents inert decision controls", asy
 
 test("workspace provides dedicated interactive surfaces rather than inert anchors", async () => {
   const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  const workbench = await readFile(
+    "apps/studio/src/components/orchestration/orchestration-workbench.tsx",
+    "utf8",
+  );
   for (const title of [
     "Build through conversation",
     "Work that explains itself",
@@ -48,7 +52,7 @@ test("workspace provides dedicated interactive surfaces rather than inert anchor
   }
   assert.match(source, /onClick=\{\(\) => navigate\(item\.id\)\}/);
   assert.match(source, /onClick=\{\(\) => navigate\("conversation"\)\}/);
-  assert.match(source, /https:\/\/opefyre\.atlassian\.net\/browse\/PIPE-34/);
+  assert.match(workbench, /https:\/\/opefyre\.atlassian\.net\/browse\/PIPE-56/);
 });
 
 test("workspace renders the shared approval pattern with all required decision facts", async () => {
