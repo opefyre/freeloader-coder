@@ -40,5 +40,5 @@ test("integration actions are interactive, source-linked, and responsive", () =>
   assert.match(workbench, /opefyre\.atlassian\.net\/browse\/PIPE-72/);
   assert.match(workbench, /github\.com\/settings\/installations/);
   assert.match(workbench, /xl:grid-cols/);
-  assert.match(app, /grid-cols-7/);
+  assert.match(app, /grid-cols-8/);
 });

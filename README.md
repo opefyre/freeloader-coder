@@ -37,6 +37,12 @@ Open the URL printed by the start command. Use the Projects screen to inspect
 preflight, isolation strength, missing optional dependencies, and Resume or
 Repair actions.
 
+The offline [user guides](docs/guides/README.md) explain the first project,
+provider connections, approvals, evidence, recovery, and publishing. The
+in-product Help Center is available at `/help`. Contributors should start with
+[CONTRIBUTING.md](CONTRIBUTING.md), and security reports must use the private
+process in [SECURITY.md](SECURITY.md).
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.

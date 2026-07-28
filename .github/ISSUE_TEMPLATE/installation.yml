@@ -1,0 +1,33 @@
+name: Installation problem
+description: Get help when setup or local startup does not complete.
+title: "[Install]: "
+labels: ["installation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Run `npm run setup:check`. Share only its redacted summary; do not upload environment files or credentials."
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and architecture
+      placeholder: macOS 15, Apple silicon
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Git, Node.js, and npm versions
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Redacted setup result
+    validations:
+      required: true
+  - type: checkboxes
+    id: repair
+    attributes:
+      label: Repair attempt
+      options:
+        - label: I ran `npm run repair` and the problem remains.

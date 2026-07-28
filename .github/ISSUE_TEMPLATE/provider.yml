@@ -1,0 +1,35 @@
+name: Provider incident
+description: Report a provider connection, quota, capability, or routing issue.
+title: "[Provider]: "
+labels: ["provider", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Never paste an API key. Include the provider, model, redacted error class, and when it occurred."
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+    validations:
+      required: true
+  - type: dropdown
+    id: state
+    attributes:
+      label: Visible state
+      options: [Connection failed, Free status unverified, Quota waiting, Circuit open, Wrong capability, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Include time, error class, and correlation ID; no request content or credential.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safe disclosure
+      options:
+        - label: I removed credentials, prompts, source, personal paths, and account identifiers.
+          required: true

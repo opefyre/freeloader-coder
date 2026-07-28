@@ -20,6 +20,7 @@ import { Moon } from "@phosphor-icons/react/Moon";
 import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { Pause } from "@phosphor-icons/react/Pause";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
+import { Question } from "@phosphor-icons/react/Question";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Sparkle } from "@phosphor-icons/react/Sparkle";
 import { Sun } from "@phosphor-icons/react/Sun";
@@ -35,6 +36,7 @@ import {
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
+import { HelpCenter } from "./components/help/help-center.js";
 import { IntegrationWorkbench } from "./components/integrations/integration-workbench.js";
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
@@ -98,6 +100,7 @@ const navItems = [
   { id: "providers", label: "Providers", note: "Free routes and model health", icon: PlugsConnected },
   { id: "integrations", label: "Connect", note: "GitHub and Jira workspaces", icon: GitBranch },
   { id: "evidence", label: "Evidence", note: "Checks, checkpoints, and sources", icon: ShieldCheck },
+  { id: "help", label: "Help", note: "Guidance, recovery, and support", icon: Question },
 ] as const;
 
 const viewCopy: Record<
@@ -138,6 +141,11 @@ const viewCopy: Record<
     eyebrow: "87 checks passed",
     title: "Trust, with receipts",
     description: "Review checkpoints, validations, sources, and recoverable proof before accepting a result.",
+  },
+  help: {
+    eyebrow: "Offline · Product-aware · Safe to share",
+    title: "Help that knows the workflow",
+    description: "Learn, recover, and prepare support evidence without leaking sensitive data.",
   },
   settings: {
     eyebrow: "Local-first configuration",
@@ -923,7 +931,7 @@ function App() {
       </main>
 
       <nav
-        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-7 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-8 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
         aria-label="Mobile workspace"
       >
         {navItems.map((item) => (
@@ -941,7 +949,20 @@ function App() {
               size={18}
               weight={activeView === item.id ? "fill" : "regular"}
             />
-            <span>{item.id === "conversation" ? "Chat" : item.label}</span>
+            <span>
+              {
+                {
+                  overview: "Home",
+                  projects: "Project",
+                  conversation: "Chat",
+                  work: "Work",
+                  providers: "Models",
+                  integrations: "Connect",
+                  evidence: "Proof",
+                  help: "Help",
+                }[item.id]
+              }
+            </span>
           </button>
         ))}
       </nav>
@@ -1155,6 +1176,10 @@ function WorkspaceSurface({
 
   if (view === "evidence") {
     return <EvidenceCenter />;
+  }
+
+  if (view === "help") {
+    return <HelpCenter />;
   }
 
   return (

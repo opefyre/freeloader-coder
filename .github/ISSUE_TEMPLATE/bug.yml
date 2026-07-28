@@ -1,0 +1,42 @@
+name: Bug report
+description: Report reproducible incorrect behavior on a supported version.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not paste credentials, source code, personal paths, or private account data. Revoke any exposed credential."
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: Commit or release
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: Describe observable behavior and any redacted correlation ID.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      placeholder: "1. Open …\n2. Choose …\n3. Observe …"
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safe disclosure
+      options:
+        - label: I removed secrets, source code, personal paths, and private data.
+          required: true

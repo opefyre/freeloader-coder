@@ -1,0 +1,22 @@
+name: Feature request
+description: Propose an outcome or documented extension.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should a user be able to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current workaround
+    validations:
+      required: true
+  - type: textarea
+    id: trust
+    attributes:
+      label: Trust, privacy, cost, or recovery considerations

@@ -19,6 +19,7 @@ test("every Studio view has a stable clean route", () => {
       ["providers", "/providers"],
       ["integrations", "/integrations"],
       ["evidence", "/evidence"],
+      ["help", "/help"],
       ["settings", "/settings"]
     ]
   );
@@ -33,6 +34,7 @@ test("direct and trailing-slash routes resolve without query state", () => {
     viewFromLocation({ pathname: "/conversation/", search: "" }),
     "conversation"
   );
+  assert.equal(viewFromLocation({ pathname: "/help", search: "" }), "help");
 });
 
 test("legacy view links still resolve and canonicalize without losing safe query data", () => {
