@@ -50,6 +50,7 @@ import {
   providerTelemetry,
   routeEvidenceSummary,
   successfulProviderCalls,
+  verifiedProviderSnapshot,
 } from "./runtime-fixture.js";
 import { useTheme, type ThemeMode } from "./theme.js";
 
@@ -132,6 +133,10 @@ const providerColor: Record<string, string> = {
   cloudflare: "bg-chart-2",
   gemini: "bg-chart-3",
   openrouter: "bg-chart-5",
+  cerebras: "bg-chart-4",
+  mistral: "bg-chart-2",
+  zhipu: "bg-chart-3",
+  sambanova: "bg-chart-1",
 };
 
 const summaryMetrics = {
@@ -1235,6 +1240,7 @@ function WorkspaceSurface({
             </CardContent>
           </Card>
         </div>
+        <VerifiedProviderCatalog />
       </div>
     );
   }
@@ -1323,6 +1329,10 @@ function WorkspaceSurface({
           <ConnectionRow name="Gemini" state="Connected" />
           <ConnectionRow name="OpenRouter" state="Connected" />
           <ConnectionRow name="GitHub Models" state="Setup needed" />
+          <ConnectionRow name="Cerebras" state="Setup needed" />
+          <ConnectionRow name="Mistral" state="Setup needed" />
+          <ConnectionRow name="Zhipu AI" state="Setup needed" />
+          <ConnectionRow name="SambaNova" state="Setup needed" />
         </CardContent>
       </Card>
       <Card>
@@ -1682,6 +1692,56 @@ function Evidence({ label, value }: { label: string; value: string }) {
       <span className="mt-4 block text-xs text-muted-foreground">{label}</span>
       <strong className="mt-1 block capitalize">{value}</strong>
     </div>
+  );
+}
+
+function VerifiedProviderCatalog() {
+  return (
+    <Card className="min-w-0 xl:col-span-2">
+      <CardHeader>
+        <CardTitle>Verified connection catalog</CardTitle>
+        <CardDescription>
+          Officially checked free access. A provider remains inactive until its key and live account limits pass a canary.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="mt-7 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {verifiedProviderSnapshot.map((provider) => (
+          <div key={provider.id} className="rounded-3xl bg-muted/50 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <strong>{provider.label}</strong>
+              <Badge tone={provider.zeroCostEligible ? "positive" : "caution"}>
+                {provider.zeroCostEligible ? "Free eligible" : "Credit only"}
+              </Badge>
+            </div>
+            <p className="mt-2 truncate text-xs text-muted-foreground">{provider.modelId}</p>
+            <p className="mt-5 text-xs leading-5 text-muted-foreground">
+              {provider.zeroCostEligible
+                ? "Connect a key, probe account limits, then admit to routing."
+                : "Excluded from automatic free-only routing."}
+            </p>
+            <div className="mt-5 flex gap-2">
+              <a
+                href={provider.dashboardUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-background px-3 py-2 text-xs font-semibold hover:bg-primary/10"
+              >
+                Dashboard
+                <ArrowRight />
+              </a>
+              <a
+                href={provider.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-full bg-background px-3 py-2 text-xs font-semibold hover:bg-primary/10"
+              >
+                Source
+              </a>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

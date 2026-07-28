@@ -28,6 +28,7 @@ Source snapshot reviewed: `de77c93c4016d452bb10fa0489f4457e5c2508d2`
 | Privacy, cost, capability, quota, and circuit-aware routing | `packages/providers/src/router.ts` | `tests/provider-routing-parity.test.ts` |
 | Daily free-tier quota accounting | `packages/providers/src/circuit.ts` | `tests/validation-cache-circuit-parity.test.ts` |
 | Scheduled free-provider admission, safe concurrency, and protected QA capacity | `packages/orchestration/src/provider-scheduler.ts` | `tests/provider-scheduler.test.ts`, `tests/provider-routing-parity.test.ts` |
+| Verified free-provider catalog and permanent-free admission boundary | `packages/providers/src/catalog.ts` | `tests/provider-catalog.test.ts` |
 | Transient-failure circuit breaking | `packages/providers/src/circuit.ts` | `tests/validation-cache-circuit-parity.test.ts` |
 | Scoped, expiring, bounded, unverified result cache | `packages/providers/src/cache.ts` | `tests/validation-cache-circuit-parity.test.ts` |
 | Commit/integration only after validation and review | `packages/orchestration/src/workflow.ts` | `tests/workflow-parity.test.ts` |

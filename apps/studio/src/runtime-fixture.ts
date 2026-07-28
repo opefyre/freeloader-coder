@@ -2,6 +2,10 @@ import {
   routeProviders,
   type ProviderCandidate,
 } from "../../../packages/providers/src/router.js";
+import {
+  createFreeCatalogCandidate,
+  verifiedProviderCatalog
+} from "../../../packages/providers/src/catalog.js";
 import { planProviderSchedule } from "../../../packages/orchestration/src/provider-scheduler.js";
 import {
   buildProviderTelemetry,
@@ -118,7 +122,21 @@ const candidates: readonly ProviderCandidate[] = [
       inputTokensToday: 11_000,
       outputTokensToday: 2_000
     }
-  }
+  },
+  ...[
+    ["cerebras", "gpt-oss-120b", 50],
+    ["mistral", "mistral-small-latest", 60],
+    ["zhipu", "glm-4.7-flash", 70],
+    ["sambanova", "DeepSeek-V3.1", 80]
+  ].map(([providerId, modelId, priority]) =>
+    createFreeCatalogCandidate({
+      providerId: String(providerId),
+      modelId: String(modelId),
+      configured: false,
+      priority: Number(priority),
+      usage: emptyUsage
+    })
+  )
 ];
 
 const route = routeProviders(candidates, {
@@ -224,6 +242,17 @@ export const costSafetySummary = {
     retryAt: rejection.retryAt
   }))
 } as const;
+
+export const verifiedProviderSnapshot = verifiedProviderCatalog.map((provider) => ({
+  id: provider.id,
+  label: provider.label,
+  dashboardUrl: provider.dashboardUrl,
+  sourceUrl: provider.sourceUrls[0]!,
+  modelId: provider.models[0]!.id,
+  zeroCostEligible: provider.zeroCostEligible,
+  freeAccess: provider.freeAccess,
+  requiresAccountLimitProbe: provider.requiresAccountLimitProbe
+}));
 const attemptEvidence = [
   ...attemptsFor("groq", 10, 2, now - 60_000),
   ...attemptsFor("cloudflare", 7, 1, now - 240_000),
