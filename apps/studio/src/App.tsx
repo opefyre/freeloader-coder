@@ -38,6 +38,7 @@ import { ExecutionSafetyPanel } from "./components/execution/execution-safety-pa
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
 import { ControlCenter } from "./components/control-center/control-center.js";
+import { ResilienceCenter } from "./components/resilience/resilience-center.js";
 import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
 import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
 import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
@@ -1666,6 +1667,8 @@ function SettingsWorkspace({
   };
 
   return (
+    <>
+    <ResilienceCenter />
     <Tabs defaultValue="permissions">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsList aria-label="Settings sections">
@@ -1914,6 +1917,7 @@ function SettingsWorkspace({
         </div>
       </TabsContent>
     </Tabs>
+    </>
   );
 }
 
