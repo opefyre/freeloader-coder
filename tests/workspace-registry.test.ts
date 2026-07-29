@@ -48,7 +48,8 @@ test("duplicate paths and incomplete copy fail registry validation", () => {
 });
 
 test("demo-sensitive registry copy never presents synthetic counts or connections as live", () => {
-  assert.match(workspaceDefinitions.overview.description, /synthetic/);
+  assert.match(workspaceDefinitions.overview.description, /Live projects/);
+  assert.doesNotMatch(workspaceDefinitions.overview.description, /synthetic/);
   assert.match(workspaceDefinitions.work.eyebrow, /Demo:/);
   assert.match(workspaceDefinitions.integrations.eyebrow, /Demo connection/);
   assert.match(workspaceDefinitions.evidence.eyebrow, /Demo:/);

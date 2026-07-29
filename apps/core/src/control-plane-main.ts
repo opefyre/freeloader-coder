@@ -18,6 +18,7 @@ import {
   OperatingSystemCredentialVault,
   ProviderCredentialVaultBridge,
 } from "../../../packages/vault/src/vault.js";
+import { buildLiveOperationsSnapshot } from "./live-operations.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -162,6 +163,12 @@ const controlPlane = createControlPlaneServer({
       ],
     };
   },
+  liveOperations: async () =>
+    buildLiveOperationsSnapshot({
+      projects: await localProjects.list(),
+      requests: await localRequests.list(),
+      providers: await providerConnectionService.list(),
+    }),
   providerConnections: {
     list: () => providerConnectionService.list(),
     connect: (input) => providerConnectionService.connect(input),

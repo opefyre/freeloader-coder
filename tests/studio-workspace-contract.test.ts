@@ -30,7 +30,8 @@ test("workspace labels fixture claims and prevents inert decision controls", asy
     readFile("apps/studio/src/App.tsx", "utf8"),
     readFile("apps/studio/src/routing.ts", "utf8"),
   ]);
-  assert.match(routing, /Demo data/);
+  assert.match(routing, /Local operations/);
+  assert.match(routing, /Demo:/);
   assert.match(source, /Choose the public product name/);
   assert.match(source, /Demo message received locally\. No task was created\./);
   assert.match(source, /Demo choice recorded locally\. No project data was changed\./);

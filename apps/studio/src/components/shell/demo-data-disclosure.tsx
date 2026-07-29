@@ -12,6 +12,7 @@ const demoProvenance: PresentationProvenance = {
   mode: "synthetic_fixture",
   generatedAt: "2026-07-29T09:00:00.000Z",
   sourceClasses: [
+    "Live local projects, requests, provider connections, and operations",
     "Synthetic tasks and pipeline events",
     "Synthetic provider health and quota observations",
     "Local product fixtures and release evidence",
@@ -46,7 +47,7 @@ export function DemoModeButton({
       type="button"
       onClick={open}
       className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-      aria-label={`${label}. Feature data is demo data. Inspect provenance`}
+      aria-label={`${label}. Live and simulated surfaces are labelled. Inspect provenance`}
     >
       <Badge tone={setupReady ? "positive" : "caution"}>
         <Database weight="fill" />
@@ -103,9 +104,10 @@ export function DemoDataDisclosure({
         </div>
 
         <p className="mt-5 text-sm leading-6 text-muted-foreground">
-          Feature workspaces demonstrate real product behavior with synthetic
-          records. The local runtime observation below never turns those fixtures
-          into live tasks, providers, or connected accounts.
+          Overview, registered projects, local requests, and configured provider
+          connections use validated local runtime state. Workspaces that are not
+          connected yet remain explicitly labelled simulations and never turn
+          fixture records into live tasks, providers, or accounts.
         </p>
 
         <RuntimeObservation connection={connection} endpoint={endpoint} />
@@ -123,10 +125,10 @@ export function DemoDataDisclosure({
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <DisclosureFact label="Live claim" value="Not permitted" />
-          <DisclosureFact label="External verification" value="None" />
-          <DisclosureFact label="Provider calls" value="None" />
-          <DisclosureFact label="Writes or deployment" value="None" />
+          <DisclosureFact label="Live claim" value="Local sources only" />
+          <DisclosureFact label="Simulations" value="Labelled per workspace" />
+          <DisclosureFact label="Automatic spend" value="$0 maximum" />
+          <DisclosureFact label="External effects" value="Approval gated" />
         </div>
 
         <div className="mt-6 grid gap-2 sm:grid-cols-3">

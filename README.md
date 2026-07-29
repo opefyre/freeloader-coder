@@ -12,8 +12,12 @@ can ship.
 
 ## Current phase
 
-Foundation: product contract, architecture, trust boundaries, durable data,
-security, open-source governance, and design-system decisions.
+Local beta integration: the product contract, architecture, trust boundaries,
+durable state, security, governance, and design system are implemented. Project
+registration, request planning, isolated changes, free-provider connections,
+proposal generation, and the main operations dashboard now use the local
+control plane. Remaining feature screens that are simulations identify
+themselves explicitly.
 
 ## Clone and run
 
@@ -51,8 +55,17 @@ npm start
 Use the Projects screen to inspect preflight, isolation strength, missing
 optional dependencies, and Resume or Repair actions. The global runtime
 indicator distinguishes a live, stale, or offline local control plane. Feature
-screens still use clearly labelled synthetic fixtures; a live runtime indicator
-does not imply that providers, connectors, or external actions are enabled.
+screens that are not connected yet still use clearly labelled synthetic
+fixtures; a live runtime indicator does not imply that every connector or
+external action is enabled.
+
+The Overview route is live when the control plane is available. It aggregates
+registered projects, durable local requests, request stages, restart-safe
+events, and configured free-provider readiness. It shows explicit loading,
+offline, stale, empty, idle, and attention states and never substitutes demo
+metrics for missing runtime data. The response remains loopback-only,
+schema-validated, bounded, privacy-redacted, and fixed at a zero-dollar
+automatic spend limit.
 
 Projects can now register an existing local Git worktree through the loopback
 control plane. Registration performs a deterministic, bounded metadata scan and

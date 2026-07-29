@@ -4,26 +4,40 @@ import test from "node:test";
 
 const source = readFileSync("apps/studio/src/components/control-center/control-center.tsx", "utf8");
 const app = readFileSync("apps/studio/src/App.tsx", "utf8");
+const client = readFileSync("apps/studio/src/live-operations-client.ts", "utf8");
 
-test("Overview mounts the source-backed Control Center", () => {
-  assert.match(app, /<ControlCenter navigate=\{navigate\} \/>/);
-  for (const heading of ["The whole system, with receipts", "Pipeline velocity", "Provider execution share", "Safe operator action", "Local doctor and support bundle"]) {
+test("Overview mounts the endpoint-backed live Control Center", () => {
+  assert.match(app, /<ControlCenter endpoint=\{controlPlane\.endpoint\} navigate=\{navigate\} \/>/);
+  for (const heading of ["Live operations", "Work distribution", "Recent operational evidence", "Free-provider readiness"]) {
     assert.match(source, new RegExp(heading));
   }
+  assert.doesNotMatch(source, /control-center-fixture|controlCenterMetric|providerShare|throughputPoints/);
 });
 
-test("visual elements expose exact work and provider sources", () => {
-  assert.match(source, /setSelectedTask/);
-  assert.match(source, /Open exact Jira task/);
-  assert.match(source, /provider\.dashboard/);
+test("live visual elements expose freshness, provenance, and drill-down", () => {
+  assert.match(source, /snapshot\.provenance/);
+  assert.match(source, /snapshot\.observedAt/);
+  assert.match(source, /setSelectedEventId/);
   assert.match(source, /navigate\("evidence"\)/);
   assert.match(source, /navigate\("work"\)/);
+  assert.match(source, /navigate\("providers"\)/);
+  assert.match(source, /navigate\("projects"\)/);
 });
 
-test("operator actions and diagnostics require previews with truthful effects", () => {
-  assert.match(source, /Preview pause/);
-  assert.match(source, /checkpoint preserved/);
-  assert.match(source, /Preview support bundle/);
-  assert.match(source, /Excluded: source code, prompts, credentials, user paths/);
+test("offline, stale, empty, and accessible states remain truthful", () => {
+  assert.match(source, /Local control plane is offline/);
+  assert.match(source, /Preserved stale data/);
+  assert.match(source, /No activity yet/);
+  assert.match(source, /No provider connected/);
   assert.match(source, /aria-live="polite"/);
+  assert.match(source, /role="img"/);
+  assert.match(source, /focus-visible:ring/);
+});
+
+test("client is loopback-only, bounded, abortable, and schema validated", () => {
+  assert.match(client, /validateEndpoint/);
+  assert.match(client, /MAX_RESPONSE_BYTES/);
+  assert.match(client, /credentials: "omit"/);
+  assert.match(client, /signal/);
+  assert.match(client, /validateLiveOperationsSnapshot/);
 });

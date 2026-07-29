@@ -201,7 +201,7 @@ const navItems = studioViews
     id,
     ...workspaceDefinitions[id],
     icon: workspaceIcons[id],
-    count: id === "work" ? "8" : undefined,
+    count: undefined,
   }));
 
 const secondaryNavItems = studioViews
@@ -349,7 +349,7 @@ function App() {
             <span>
               <span className="block text-xs font-semibold">Main project</span>
               <span className="block text-[11px] font-normal text-muted-foreground">
-                1 active run
+                Open local workspace
               </span>
             </span>
           </span>
@@ -485,10 +485,12 @@ function App() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary">
-                <Pause />
-                Pause after step
-              </Button>
+              {activeView !== "overview" && (
+                <Button variant="secondary">
+                  <Pause />
+                  Pause after step
+                </Button>
+              )}
               <Button onClick={() => navigate("conversation")}>
                 <ChatCircleDots weight="fill" />
                 Ask the pipeline
@@ -498,7 +500,7 @@ function App() {
 
           {activeView === "overview" ? (
             <>
-          <ControlCenter navigate={navigate} />
+          <ControlCenter endpoint={controlPlane.endpoint} navigate={navigate} />
           <div className="hidden" aria-hidden="true">
           <section className="metric-grid grid gap-3" aria-label="Pipeline summary">
             <Metric

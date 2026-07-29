@@ -52,12 +52,13 @@ test("demo provenance is globally inspectable and forbids ambiguous live claims"
   assert.doesNotMatch(app, />Pipeline online</);
   for (const phrase of [
     "Runtime truth and demo data",
-    "demonstrate real product behavior",
-    "never turns those fixtures",
+    "Overview, registered projects, local requests",
+    "never turn",
     "Live claim",
-    "Not permitted",
-    "Provider calls",
-    "Writes or deployment",
+    "Local sources only",
+    "Simulations",
+    "$0 maximum",
+    "Approval gated",
     "Preview safe failure",
   ]) {
     assert.equal(disclosure.includes(phrase), true, `Missing provenance contract: ${phrase}`);

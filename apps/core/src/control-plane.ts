@@ -48,6 +48,10 @@ import {
 } from "../../../packages/runtime/src/provider-connections.js";
 import { ProviderConnectionLifecycleError } from "../../../packages/providers/src/lifecycle.js";
 import { ProviderConnectionServiceError } from "./provider-connection-service.js";
+import {
+  liveOperationsSnapshotSchema,
+  type LiveOperationsSnapshot,
+} from "../../../packages/runtime/src/live-operations.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -59,6 +63,7 @@ export type ControlPlaneServerOptions = {
   allowedOrigins: readonly string[];
   health: () => ControlPlaneHealth | Promise<ControlPlaneHealth>;
   snapshot: () => ControlPlaneSnapshot | Promise<ControlPlaneSnapshot>;
+  liveOperations?: () => LiveOperationsSnapshot | Promise<LiveOperationsSnapshot>;
   providerConnections?: {
     list: () => PublicProviderConnectionCollection | Promise<PublicProviderConnectionCollection>;
     connect: (input: unknown) => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>;
@@ -257,6 +262,29 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         request.method !== "GET"
       ) {
         sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        url.pathname === "/api/v1/live-operations" &&
+        request.method !== "GET"
+      ) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/live-operations" &&
+        options.liveOperations
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(
+          response,
+          200,
+          liveOperationsSnapshotSchema.parse(await options.liveOperations())
+        );
         return;
       }
       if (
