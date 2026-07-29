@@ -1,6 +1,7 @@
 export * from "./contracts.js";
 export * from "./activity.js";
 export * from "./autonomy.js";
+export * from "./decisions.js";
 export * from "./control-plane.js";
 export * from "./local-projects.js";
 export * from "./local-requests.js";

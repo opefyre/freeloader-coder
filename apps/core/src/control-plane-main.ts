@@ -21,6 +21,7 @@ import {
 import { buildLiveOperationsSnapshot } from "./live-operations.js";
 import { LocalAutonomyService } from "./local-autonomy-service.js";
 import { buildActivitySnapshot } from "./activity-explorer.js";
+import { buildDecisionSnapshot } from "./decision-inbox.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -194,6 +195,16 @@ const controlPlane = createControlPlaneServer({
     }),
   activity: async (query) =>
     buildActivitySnapshot({
+      live: buildLiveOperationsSnapshot({
+        projects: await localProjects.list(),
+        requests: await localRequests.list(),
+        providers: await providerConnectionService.list(),
+      }),
+      autonomy: await autonomy.snapshot(),
+      query,
+    }),
+  decisions: async (query) =>
+    buildDecisionSnapshot({
       live: buildLiveOperationsSnapshot({
         projects: await localProjects.list(),
         requests: await localRequests.list(),

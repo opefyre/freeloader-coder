@@ -57,6 +57,17 @@ export const workspaceDefinitions = {
     group: "primary",
     mobile: true,
   },
+  decisions: {
+    path: "/decisions",
+    label: "Decisions",
+    mobileLabel: "Decide",
+    note: "Approvals, blockers, and recovery choices",
+    eyebrow: "Live local queue · Human authority preserved",
+    title: "Know exactly what needs you",
+    description: "Review approvals, missing input, failures, provider waits, and recovery choices in priority order.",
+    group: "primary",
+    mobile: true,
+  },
   activity: {
     path: "/activity",
     label: "Activity",

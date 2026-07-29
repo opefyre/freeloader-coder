@@ -70,6 +70,16 @@ import {
   type ActivityQuery,
   type ActivitySnapshot,
 } from "../../../packages/runtime/src/activity.js";
+import {
+  decisionAgeSchema,
+  decisionCategorySchema,
+  decisionOwnerSchema,
+  decisionPrioritySchema,
+  decisionQuerySchema,
+  decisionSnapshotSchema,
+  type DecisionQuery,
+  type DecisionSnapshot,
+} from "../../../packages/runtime/src/decisions.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -83,6 +93,7 @@ export type ControlPlaneServerOptions = {
   snapshot: () => ControlPlaneSnapshot | Promise<ControlPlaneSnapshot>;
   liveOperations?: () => LiveOperationsSnapshot | Promise<LiveOperationsSnapshot>;
   activity?: (query: ActivityQuery) => ActivitySnapshot | Promise<ActivitySnapshot>;
+  decisions?: (query: DecisionQuery) => DecisionSnapshot | Promise<DecisionSnapshot>;
   autonomy?: {
     snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
     setProjectMode: (projectId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
@@ -352,6 +363,37 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       }
       if (url.pathname === "/api/v1/activity" && request.method !== "GET") {
         sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (url.pathname === "/api/v1/decisions" && request.method !== "GET") {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/decisions" &&
+        options.decisions
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const allowed = new Set(["range", "category", "priority", "owner", "age", "project", "provider", "search"]);
+        if ([...url.searchParams.keys()].some((key) => !allowed.has(key))) {
+          sendJson(response, 400, { error: "Unknown decision query parameter." });
+          return;
+        }
+        const query = decisionQuerySchema.parse({
+          range: url.searchParams.get("range") ?? "7d",
+          categories: parseFacet(url.searchParams.getAll("category"), decisionCategorySchema),
+          priorities: parseFacet(url.searchParams.getAll("priority"), decisionPrioritySchema),
+          owners: parseFacet(url.searchParams.getAll("owner"), decisionOwnerSchema),
+          ages: parseFacet(url.searchParams.getAll("age"), decisionAgeSchema),
+          projectId: url.searchParams.get("project"),
+          providerId: url.searchParams.get("provider"),
+          search: url.searchParams.get("search") ?? "",
+        });
+        sendJson(response, 200, decisionSnapshotSchema.parse(await options.decisions(query)));
         return;
       }
       if (

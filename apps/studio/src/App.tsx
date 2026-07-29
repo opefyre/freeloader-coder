@@ -114,6 +114,11 @@ const ActivityExplorer = lazy(() =>
     default: module.ActivityExplorer,
   }))
 );
+const DecisionInbox = lazy(() =>
+  import("./components/decisions/decision-inbox.js").then((module) => ({
+    default: module.DecisionInbox,
+  }))
+);
 const HelpCenter = lazy(() =>
   import("./components/help/help-center.js").then((module) => ({
     default: module.HelpCenter,
@@ -185,6 +190,7 @@ const workspaceIcons: Record<StudioView, typeof Gauge> = {
   projects: FolderOpen,
   conversation: ChatCircleDots,
   work: ListChecks,
+  decisions: Bell,
   activity: Pulse,
   providers: PlugsConnected,
   integrations: GitBranch,
@@ -459,7 +465,7 @@ function App() {
               )}
             </Button>
             <ThemeControl mode={theme.mode} setMode={theme.setMode} />
-            <Button variant="ghost" size="icon" aria-label="Notifications">
+            <Button variant="ghost" size="icon" aria-label="Open decisions" onClick={() => navigate("decisions")}>
               <Bell />
             </Button>
             <button
@@ -487,7 +493,7 @@ function App() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {activeView !== "overview" && activeView !== "work" && activeView !== "activity" && (
+              {activeView !== "overview" && activeView !== "work" && activeView !== "decisions" && activeView !== "activity" && (
                 <Button variant="secondary">
                   <Pause />
                   Pause after step
@@ -1043,6 +1049,10 @@ function WorkspaceSurface({
 
   if (view === "activity") {
     return <ActivityExplorer endpoint={controlPlaneEndpoint} />;
+  }
+
+  if (view === "decisions") {
+    return <DecisionInbox endpoint={controlPlaneEndpoint} />;
   }
 
   if (view === "integrations") {

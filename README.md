@@ -84,6 +84,14 @@ inventing progress. Local JSON exports contain only the displayed redacted
 records and explicitly exclude credentials, personal paths, prompts, source
 content, and provider response bodies.
 
+The Decisions route turns canonical blockers and authority boundaries into one
+prioritized local inbox. It combines required input, approvals, validation
+failures, interrupted work, provider waits, project warnings, expired leases,
+and coordinator recommendations without broadening execution authority.
+Priority, aging, ownership, cost, reversibility, evidence, and the safe next
+surface are deterministic and inspectable. The inbox is read-only, privacy
+redacted, bounded to current observations, and keeps automatic spend at zero.
+
 Projects can now register an existing local Git worktree through the loopback
 control plane. Registration performs a deterministic, bounded metadata scan and
 stores the canonical path only in the private ignored local state directory.
