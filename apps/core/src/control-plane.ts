@@ -44,6 +44,11 @@ export type ControlPlaneServerOptions = {
     list: () => LocalRequestCollection | Promise<LocalRequestCollection>;
     create: (input: unknown, idempotencyKey: string) => LocalRequest | Promise<LocalRequest>;
     cancel: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    approve?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    claim?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    checkpoint?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    release?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    reconcile?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -140,8 +145,46 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      const requestActions = {
+        approve: options.requests?.approve,
+        claim: options.requests?.claim,
+        checkpoint: options.requests?.checkpoint,
+        release: options.requests?.release,
+        reconcile: options.requests?.reconcile,
+      } as const;
+      const lifecycleAction = requestRoute?.[2] as keyof typeof requestActions | undefined;
+      if (
+        request.method === "POST" &&
+        lifecycleAction &&
+        requestActions[lifecycleAction] &&
+        options.requests
+      ) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const changed = await requestActions[lifecycleAction]!(requestRoute?.[1] ?? "");
+        sendJson(
+          response,
+          200,
+          localRequestMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome:
+              ({
+                approve: "approved",
+                claim: "claimed",
+                checkpoint: "checkpointed",
+                release: "released",
+                reconcile: "reconciled",
+              } as const)[lifecycleAction],
+            request: changed,
+          })
+        );
+        return;
+      }
       if (
         request.method === "POST" &&
         requestRoute?.[2] === "cancel" &&
@@ -302,7 +345,9 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             ? 404
             : error.code === "idempotency_conflict" ||
                 error.code === "invalid_transition" ||
-                error.code === "capacity"
+                error.code === "capacity" ||
+                error.code === "lease_expired" ||
+                error.code === "lease_active"
               ? 409
               : 400;
         sendJson(response, status, { error: error.message, code: error.code });

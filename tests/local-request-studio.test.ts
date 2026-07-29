@@ -13,6 +13,11 @@ test("Studio separates real request state from guided orchestration examples", a
     "No AI · no source changes",
     "No worker or provider activity is implied",
     "Time passing never becomes invented progress",
+    "Approve zero-effect contract",
+    "Claim proof lease",
+    "Record zero-effect checkpoint",
+    "Release proof lease",
+    "Maximum cost",
   ]) {
     assert.equal(panel.includes(phrase), true, `Missing truthful UI contract: ${phrase}`);
   }

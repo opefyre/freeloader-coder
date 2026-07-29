@@ -32,6 +32,7 @@ const request = {
     checks: ["Run repository validation"],
     estimatedMinutes: 45,
   },
+  run: null,
 } as const;
 
 test("local request contracts preserve truthful bounded public state", () => {

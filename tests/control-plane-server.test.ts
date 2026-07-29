@@ -241,6 +241,7 @@ test("request endpoints expose only durable queue metadata with guarded mutation
       checks: ["Run tests"],
       estimatedMinutes: 45,
     },
+    run: null,
   };
   const calls: string[] = [];
   const controlPlane = createControlPlaneServer({
@@ -264,6 +265,10 @@ test("request endpoints expose only durable queue metadata with guarded mutation
         calls.push(`cancel:${id}`);
         return { ...queued, state: "cancelled" as const };
       },
+      approve: (id) => {
+        calls.push(`approve:${id}`);
+        return queued;
+      },
       archive: (id) => {
         calls.push(`archive:${id}`);
       },
@@ -274,6 +279,15 @@ test("request endpoints expose only durable queue metadata with guarded mutation
   const headers = { Origin: "http://127.0.0.1:4310" };
   try {
     assert.equal((await fetch(`${base}/api/v1/requests`, { headers })).status, 200);
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/requests/${queued.id}/approve`, {
+          method: "POST",
+          headers: { ...headers, "Idempotency-Key": "approve:01234567" },
+        })
+      ).status,
+      200
+    );
     assert.equal(
       (
         await fetch(`${base}/api/v1/requests`, {
@@ -324,7 +338,7 @@ test("request endpoints expose only durable queue metadata with guarded mutation
       ).status,
       200
     );
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
   } finally {
     await controlPlane.close();
   }

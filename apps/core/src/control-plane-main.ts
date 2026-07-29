@@ -98,6 +98,11 @@ const controlPlane = createControlPlaneServer({
     list: () => localRequests.list(),
     create: (input, idempotencyKey) => localRequests.create(input, idempotencyKey),
     cancel: (requestId) => localRequests.cancel(requestId),
+    approve: (requestId) => localRequests.approve(requestId),
+    claim: (requestId) => localRequests.claim(requestId),
+    checkpoint: (requestId) => localRequests.checkpoint(requestId),
+    release: (requestId) => localRequests.release(requestId),
+    reconcile: (requestId) => localRequests.reconcile(requestId),
     archive: (requestId) => localRequests.archive(requestId),
   },
 });

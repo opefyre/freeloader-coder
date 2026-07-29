@@ -54,6 +54,25 @@ export async function cancelLocalRequest(input: {
   );
 }
 
+export async function advanceLocalRequest(input: {
+  endpoint: string;
+  requestId: string;
+  action: "approve" | "claim" | "checkpoint" | "release" | "reconcile";
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/requests/${input.requestId}/${input.action}`,
+      method: "POST",
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
 export async function archiveLocalRequest(input: {
   endpoint: string;
   requestId: string;

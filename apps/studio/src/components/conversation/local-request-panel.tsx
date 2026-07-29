@@ -1,7 +1,9 @@
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
+import { Fingerprint } from "@phosphor-icons/react/Fingerprint";
 import { HourglassMedium } from "@phosphor-icons/react/HourglassMedium";
+import { Play } from "@phosphor-icons/react/Play";
 import { Stop } from "@phosphor-icons/react/Stop";
 import { Trash } from "@phosphor-icons/react/Trash";
 import { Warning } from "@phosphor-icons/react/Warning";
@@ -12,6 +14,7 @@ import type { LocalRequest } from "../../../../../packages/runtime/src/local-req
 import { listLocalProjects } from "../../local-project-client.js";
 import {
   archiveLocalRequest,
+  advanceLocalRequest,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
@@ -128,6 +131,32 @@ export function LocalRequestPanel(props: {
     }
   }
 
+  async function advance(
+    request: LocalRequest,
+    action: "approve" | "claim" | "checkpoint" | "release" | "reconcile"
+  ) {
+    setStatus("working");
+    try {
+      await advanceLocalRequest({
+        endpoint,
+        requestId: request.id,
+        action,
+        idempotencyKey: `${action}:${request.id}`,
+      });
+      await refresh();
+      setNotice({
+        approve: "Zero-effect contract approved. No work has started.",
+        claim: "Local coordinator lease claimed. No command or provider was invoked.",
+        checkpoint: "Zero external effects observed and checkpoint evidence recorded.",
+        release: "Lease released. The zero-effect lifecycle proof is complete.",
+        reconcile: "Expired lease reconciled to interrupted for explicit review.",
+      }[action]);
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Lifecycle action failed safely.");
+    }
+  }
+
   const projectNames = new Map(projects.map((project) => [project.id, project.displayName]));
   return (
     <section className="space-y-4" aria-labelledby={`local-request-${props.mode}-title`}>
@@ -236,6 +265,32 @@ export function LocalRequestPanel(props: {
                     <p className="mt-2 text-xs leading-5 text-muted-foreground">
                       {request.workPreview?.checks.join(" · ") ?? "Needs user input"}
                     </p>
+                    {request.run && (
+                      <div className="mt-4 rounded-2xl bg-muted/50 p-3">
+                        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                          <Fingerprint className="text-primary" />
+                          Contract {request.run.contract.digest.slice(0, 12)}
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <DecisionFact label="Effects" value="None" />
+                          <DecisionFact label="Maximum cost" value="$0.00" />
+                          <DecisionFact label="Undo" value="Release lease" />
+                        </div>
+                        <ol className="mt-3 space-y-2" aria-label="Durable run events">
+                          {request.run.events.map((event) => (
+                            <li key={event.sequence} className="flex gap-3 text-[11px] leading-5">
+                              <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary/12 font-semibold text-primary">
+                                {event.sequence}
+                              </span>
+                              <span>
+                                <strong>{event.type.replaceAll("_", " ")}</strong>
+                                <span className="block text-muted-foreground">{event.detail}</span>
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
                   </div>
                   <span className="text-[10px] text-muted-foreground">
                     {new Date(request.createdAt).toLocaleTimeString([], {
@@ -248,17 +303,38 @@ export function LocalRequestPanel(props: {
                   <span className="text-[10px] uppercase tracking-[.15em] text-muted-foreground">
                     {request.workPreview?.provenance.replaceAll("_", " ") ?? request.provenance}
                   </span>
-                  {request.state === "queued" ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void mutate(request, "cancel")}
-                      disabled={status === "working"}
-                    >
-                      <Stop />
-                      Cancel safely
+                  <div className="flex flex-wrap gap-2">
+                  {request.state === "queued" && (
+                    <>
+                      <Button size="sm" onClick={() => void advance(request, "approve")} disabled={status === "working"}>
+                        <CheckCircle />
+                        Approve zero-effect contract
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => void mutate(request, "cancel")} disabled={status === "working"}>
+                        <Stop />
+                        Cancel safely
+                      </Button>
+                    </>
+                  )}
+                  {request.state === "approved" && (
+                    <Button size="sm" onClick={() => void advance(request, "claim")} disabled={status === "working"}>
+                      <Play />
+                      Claim proof lease
                     </Button>
-                  ) : (
+                  )}
+                  {request.state === "claimed" && (
+                    <Button size="sm" onClick={() => void advance(request, "checkpoint")} disabled={status === "working"}>
+                      <CheckCircle />
+                      Record zero-effect checkpoint
+                    </Button>
+                  )}
+                  {request.state === "checkpointed" && (
+                    <Button size="sm" onClick={() => void advance(request, "release")} disabled={status === "working"}>
+                      <CheckCircle />
+                      Release proof lease
+                    </Button>
+                  )}
+                  {["completed", "interrupted", "cancelled"].includes(request.state) && (
                     <Button
                       size="sm"
                       variant="secondary"
@@ -269,6 +345,7 @@ export function LocalRequestPanel(props: {
                       Archive
                     </Button>
                   )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -289,5 +366,16 @@ export function LocalRequestPanel(props: {
         </div>
       )}
     </section>
+  );
+}
+
+function DecisionFact({ label, value }: { label: string; value: string }) {
+  return (
+    <span>
+      <span className="block text-[9px] uppercase tracking-[.13em] text-muted-foreground">
+        {label}
+      </span>
+      <strong className="mt-1 block text-[11px]">{value}</strong>
+    </span>
   );
 }

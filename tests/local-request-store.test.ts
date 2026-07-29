@@ -32,6 +32,33 @@ test("request store persists idempotently, serializes mutations, and archives te
     await store.archive(first.id);
     assert.equal((await store.list()).requests.length, 0);
 
+    const lifecycle = await store.create(
+      { schemaVersion: 1, projectId, outcome: "Prove a zero-effect execution handoff." },
+      "request:lifecycle1"
+    );
+    const approved = await store.approve(lifecycle.id);
+    assert.equal(approved.state, "approved");
+    assert.equal(approved.run?.contract.allowedEffects.length, 0);
+    assert.equal(approved.run?.contract.maximumCostUsd, 0);
+    assert.equal((await store.approve(lifecycle.id)).run?.contract.digest, approved.run?.contract.digest);
+    const claimed = await store.claim(lifecycle.id);
+    assert.equal(claimed.state, "claimed");
+    assert.equal(claimed.run?.lease?.owner, "local_zero_effect_coordinator");
+    assert.equal((await store.claim(lifecycle.id)).run?.lease?.id, claimed.run?.lease?.id);
+    const checkpointed = await store.checkpoint(lifecycle.id);
+    assert.equal(checkpointed.state, "checkpointed");
+    assert.equal((await store.checkpoint(lifecycle.id)).run?.events.length, 3);
+    const completed = await store.release(lifecycle.id);
+    assert.equal(completed.state, "completed");
+    assert.equal((await store.release(lifecycle.id)).run?.events.length, 4);
+    assert.equal(completed.run?.lease, null);
+    assert.deepEqual(
+      completed.run?.events.map((event) => event.sequence),
+      [1, 2, 3, 4]
+    );
+    await store.archive(lifecycle.id);
+    assert.equal((await store.list()).requests.length, 0);
+
     const directoryMode = (await stat(root)).mode & 0o777;
     const fileMode = (await stat(join(root, "local-requests.json"))).mode & 0o777;
     assert.equal(directoryMode, 0o700);

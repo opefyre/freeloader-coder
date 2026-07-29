@@ -27,6 +27,7 @@ const request = {
     checks: ["Run tests"],
     estimatedMinutes: 45,
   },
+  run: null,
 } as const;
 
 test("request client sends idempotent loopback mutations and validates responses", async () => {
