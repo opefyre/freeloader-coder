@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "start": "npm run studio:dev",
+    "start": "node scripts/start.mjs",
+    "control-plane": "npm run build && node dist/apps/core/src/control-plane-main.js",
     "repair": "node scripts/setup.mjs --repair",
     "studio:dev": "vite --config apps/studio/vite.config.ts",
     "studio:build": "vite build --config apps/studio/vite.config.ts",

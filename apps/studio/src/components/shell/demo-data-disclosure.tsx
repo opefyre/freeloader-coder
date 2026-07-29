@@ -3,10 +3,8 @@ import { Info } from "@phosphor-icons/react/Info";
 import { Warning } from "@phosphor-icons/react/Warning";
 import { X } from "@phosphor-icons/react/X";
 
-import {
-  assessPresentationProvenance,
-  type PresentationProvenance,
-} from "../../../../../packages/ui/src/provenance.js";
+import type { PresentationProvenance } from "../../../../../packages/ui/src/provenance.js";
+import type { ControlPlaneConnectionState } from "../../control-plane-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 
@@ -21,22 +19,38 @@ const demoProvenance: PresentationProvenance = {
   externallyVerifiedAt: null,
 };
 
-const assessment = assessPresentationProvenance(
-  demoProvenance,
-  new Date("2026-07-29T09:00:00.000Z")
-);
-
-export function DemoModeButton({ open }: { open: () => void }) {
+export function DemoModeButton({
+  open,
+  connection,
+}: {
+  open: () => void;
+  connection: ControlPlaneConnectionState;
+}) {
+  const label =
+    connection.status === "connecting"
+      ? "Checking runtime"
+      : connection.status === "live"
+        ? "Local runtime"
+        : connection.status === "stale"
+          ? "Snapshot stale"
+          : "Runtime offline";
+  const setupReady =
+    connection.status === "live" &&
+    connection.snapshot.setup.state === "ready" &&
+    connection.snapshot.services.some(
+      (service) =>
+        service.id === "control_plane" && service.state === "available"
+    );
   return (
     <button
       type="button"
       onClick={open}
       className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-      aria-label="Demo workspace. Inspect data provenance"
+      aria-label={`${label}. Feature data is demo data. Inspect provenance`}
     >
-      <Badge tone="caution">
+      <Badge tone={setupReady ? "positive" : "caution"}>
         <Database weight="fill" />
-        {assessment.label}
+        {label}
       </Badge>
     </button>
   );
@@ -45,9 +59,15 @@ export function DemoModeButton({ open }: { open: () => void }) {
 export function DemoDataDisclosure({
   close,
   simulateRouteFailure,
+  connection,
+  endpoint,
+  refresh,
 }: {
   close: () => void;
   simulateRouteFailure: () => void;
+  connection: ControlPlaneConnectionState;
+  endpoint: string;
+  refresh: () => Promise<void>;
 }) {
   return (
     <div
@@ -73,7 +93,7 @@ export function DemoDataDisclosure({
                 Data provenance
               </p>
               <h2 id="data-provenance-title" className="mt-1 text-xl font-semibold">
-                This is a demo workspace
+                Runtime truth and demo data
               </h2>
             </div>
           </div>
@@ -83,9 +103,12 @@ export function DemoDataDisclosure({
         </div>
 
         <p className="mt-5 text-sm leading-6 text-muted-foreground">
-          The interface demonstrates real product behavior with synthetic records.
-          It is not reporting a running pipeline or connected provider accounts.
+          Feature workspaces demonstrate real product behavior with synthetic
+          records. The local runtime observation below never turns those fixtures
+          into live tasks, providers, or connected accounts.
         </p>
+
+        <RuntimeObservation connection={connection} endpoint={endpoint} />
 
         <div className="mt-5 rounded-3xl bg-muted/70 p-5">
           <strong className="text-sm">Sources represented</strong>
@@ -106,7 +129,10 @@ export function DemoDataDisclosure({
           <DisclosureFact label="Writes or deployment" value="None" />
         </div>
 
-        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <div className="mt-6 grid gap-2 sm:grid-cols-3">
+          <Button variant="secondary" onClick={() => void refresh()}>
+            Refresh runtime
+          </Button>
           <Button variant="secondary" onClick={simulateRouteFailure}>
             <Warning />
             Preview safe failure
@@ -114,6 +140,46 @@ export function DemoDataDisclosure({
           <Button onClick={close}>I understand</Button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function RuntimeObservation({
+  connection,
+  endpoint,
+}: {
+  connection: ControlPlaneConnectionState;
+  endpoint: string;
+}) {
+  const label =
+    connection.status === "connecting"
+      ? "Checking local runtime"
+      : connection.status === "live"
+        ? "Current local observation"
+        : connection.status === "stale"
+          ? "Last observation is stale"
+          : "Local runtime unavailable";
+  const summary =
+    connection.snapshot === null
+      ? "No validated runtime snapshot is available."
+      : `${connection.snapshot.services.length} bounded service observation · setup ${connection.snapshot.setup.state.replace("_", " ")}`;
+  return (
+    <div className="mt-5 rounded-3xl bg-primary/[.07] p-5" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong className="text-sm">{label}</strong>
+        <Badge tone={connection.status === "live" ? "positive" : "caution"}>
+          {connection.status}
+        </Badge>
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">{summary}</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Read-only loopback origin: {new URL(endpoint).origin}
+      </p>
+      {connection.observedAt !== null && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Last observed {new Date(connection.observedAt).toLocaleTimeString()}
+        </p>
+      )}
     </div>
   );
 }

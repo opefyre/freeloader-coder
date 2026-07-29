@@ -33,9 +33,30 @@ ignored runtime state. It does not store credentials in the repository. Repeat
 `npm run setup` safely after fixing a requirement, or run `npm run repair` to
 reconcile routine local-runtime issues without deleting projects or secrets.
 
-Open the URL printed by the start command. Use the Projects screen to inspect
-preflight, isolation strength, missing optional dependencies, and Resume or
-Repair actions.
+`npm start` builds the workspace, starts the read-only local control plane on
+`127.0.0.1:4312`, and starts Studio on `127.0.0.1:4310`. Open the Studio URL
+printed by the command. Stopping the command stops both processes. If either
+process cannot start, its peer is stopped too so a partial runtime is not left
+behind.
+
+Use `PIPELINE_STUDIO_STUDIO_PORT` and `PIPELINE_STUDIO_CONTROL_PORT` to choose
+different loopback ports:
+
+```sh
+PIPELINE_STUDIO_STUDIO_PORT=4390 \
+PIPELINE_STUDIO_CONTROL_PORT=4392 \
+npm start
+```
+
+Use the Projects screen to inspect preflight, isolation strength, missing
+optional dependencies, and Resume or Repair actions. The global runtime
+indicator distinguishes a live, stale, or offline local control plane. Feature
+screens still use clearly labelled synthetic fixtures; a live runtime indicator
+does not imply that providers, connectors, or external actions are enabled.
+
+For UI-only development, `npm run studio:dev` starts Vite without the control
+plane. Studio will correctly show the runtime as offline while preserving the
+last safe observation and synthetic feature data.
 
 The offline [user guides](docs/guides/README.md) explain the first project,
 provider connections, approvals, evidence, recovery, and publishing. The

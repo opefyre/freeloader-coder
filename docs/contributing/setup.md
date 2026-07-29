@@ -25,10 +25,25 @@ Projects screen and writes only non-secret ignored state.
 `npm run verify` is the single local and CI quality gate: environment,
 formatting, repository isolation, strict typechecking, build, and offline tests.
 
-Use `npm start` for the local Studio and `npm run repair` to re-run preflight
-and reconcile routine stopped-service, stale-lock, or port-conflict conditions.
-Repair never removes projects, credentials, checkpoints, or the authoritative
-journal.
+Use `npm start` for the complete local experience. It builds the workspace and
+supervises both the loopback-only control plane (`127.0.0.1:4312`) and Studio
+(`127.0.0.1:4310`). A signal or peer-process failure stops both processes.
+
+Override ports without editing source:
+
+```sh
+PIPELINE_STUDIO_STUDIO_PORT=4390 \
+PIPELINE_STUDIO_CONTROL_PORT=4392 \
+npm start
+```
+
+Use `npm run studio:dev` only when developing the interface in isolation. The
+runtime indicator will remain offline because that command intentionally does
+not start the control plane.
+
+Run `npm run repair` to re-run preflight and reconcile routine stopped-service,
+stale-lock, or port-conflict conditions. Repair never removes projects,
+credentials, checkpoints, or the authoritative journal.
 
 ## Workspace map
 

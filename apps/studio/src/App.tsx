@@ -67,6 +67,7 @@ import {
   verifiedProviderSnapshot,
 } from "./runtime-fixture.js";
 import { useTheme, type ThemeMode } from "./theme.js";
+import { useControlPlane } from "./use-control-plane.js";
 import {
   applyPermissionAction,
   recommendedPermissionProfiles,
@@ -298,6 +299,7 @@ const summaryMetrics = {
 
 function App() {
   const theme = useTheme();
+  const controlPlane = useControlPlane();
   const [activeView, setActiveView] = useState<StudioView>(initialView);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
@@ -489,7 +491,10 @@ function App() {
             <kbd className="ml-auto rounded-lg bg-background/70 px-2 py-1 text-[10px]">⌘ K</kbd>
           </button>
           <div className="flex items-center gap-2">
-            <DemoModeButton open={() => setProvenanceOpen(true)} />
+            <DemoModeButton
+              open={() => setProvenanceOpen(true)}
+              connection={controlPlane.state}
+            />
             <Button
               variant="ghost"
               size="icon"
@@ -1022,6 +1027,9 @@ function App() {
             setProvenanceOpen(false);
             setSimulateRouteFailure(true);
           }}
+          connection={controlPlane.state}
+          endpoint={controlPlane.endpoint}
+          refresh={controlPlane.refresh}
         />
       )}
     </div>

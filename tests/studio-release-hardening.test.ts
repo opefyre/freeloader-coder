@@ -51,9 +51,9 @@ test("demo provenance is globally inspectable and forbids ambiguous live claims"
   ]);
   assert.doesNotMatch(app, />Pipeline online</);
   for (const phrase of [
-    "Demo workspace",
-    "This is a demo workspace",
-    "It is not reporting a running pipeline or connected provider accounts.",
+    "Runtime truth and demo data",
+    "demonstrate real product behavior",
+    "never turns those fixtures",
     "Live claim",
     "Not permitted",
     "Provider calls",
