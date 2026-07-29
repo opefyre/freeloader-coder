@@ -23,6 +23,7 @@ import { LocalAutonomyService } from "./local-autonomy-service.js";
 import { buildActivitySnapshot } from "./activity-explorer.js";
 import { buildDecisionSnapshot } from "./decision-inbox.js";
 import { buildUniversalSearchSnapshot } from "./universal-search.js";
+import { LocalAttentionService } from "./attention-center.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -120,6 +121,18 @@ const autonomy = new LocalAutonomyService(
     reconcile_expired_lease: (requestId) => localRequests.reconcile(requestId),
   }
 );
+const attention = new LocalAttentionService(stateDirectory);
+
+async function attentionInputs() {
+  const live = buildLiveOperationsSnapshot({
+    projects: await localProjects.list(),
+    requests: await localRequests.list(),
+    providers: await providerConnectionService.list(),
+  });
+  const autonomySnapshot = await autonomy.snapshot();
+  const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } });
+  return { live, decisions };
+}
 
 async function setupObservation() {
   try {
@@ -221,12 +234,33 @@ const controlPlane = createControlPlaneServer({
       providers: await providerConnectionService.list(),
     });
     const autonomySnapshot = await autonomy.snapshot();
+    const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } });
     return buildUniversalSearchSnapshot({
       live,
       activity: buildActivitySnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } }),
-      decisions: buildDecisionSnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } }),
+      decisions,
+      attention: await attention.snapshot(decisions, live, {}),
       query,
     });
+  },
+  attention: {
+    snapshot: async (query) => {
+      const input = await attentionInputs();
+      return attention.snapshot(input.decisions, input.live, query);
+    },
+    preview: async (body) => {
+      const input = await attentionInputs();
+      return attention.preview(body, input.decisions, input.live);
+    },
+    apply: async (body, idempotencyKey) => {
+      const input = await attentionInputs();
+      return attention.apply(body, idempotencyKey, input.decisions, input.live);
+    },
+    previewQuietHours: (body) => attention.previewQuietHours(body),
+    setQuietHours: async (body, expectedRevision, idempotencyKey) => {
+      const input = await attentionInputs();
+      return attention.setQuietHours(body, expectedRevision, idempotencyKey, input.decisions, input.live);
+    },
   },
   autonomy: {
     snapshot: () => autonomy.snapshot(),

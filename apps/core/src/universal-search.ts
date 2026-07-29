@@ -11,6 +11,7 @@ import {
 import type { ActivitySnapshot } from "../../../packages/runtime/src/activity.js";
 import type { DecisionSnapshot } from "../../../packages/runtime/src/decisions.js";
 import type { LiveOperationsSnapshot } from "../../../packages/runtime/src/live-operations.js";
+import type { AttentionSnapshot } from "../../../packages/runtime/src/attention.js";
 
 type Candidate = Omit<SearchResult, "id" | "score" | "matchReason" | "highlights"> & { seed: string; keywords: string };
 type IndexedCandidate = Omit<Candidate, "seed"> & { id: string };
@@ -21,6 +22,7 @@ const destinations: readonly Candidate[] = [
   destination("conversation", "Conversation", "Ask, clarify, and guide grounded project work.", "/conversation", "Open conversation", "chat prompt request"),
   destination("work", "Work", "Inspect active, queued, and verified requests.", "/work", "Open work", "tasks queue execution"),
   destination("decisions", "Decision inbox", "Review approvals, blockers, waits, and recovery choices.", "/decisions", "Open decisions", "approval input failure recovery"),
+  destination("attention", "Attention Center", "Triage durable alerts, snoozes, and quiet hours.", "/attention", "Open Attention Center", "notifications alerts attention acknowledge snooze quiet hours"),
   destination("activity", "Activity explorer", "Search canonical local operational history.", "/activity", "Open activity", "events timeline validation"),
   destination("providers", "Providers", "Inspect free models, routes, health, and availability.", "/providers", "Open providers", "models quota free tier"),
   destination("integrations", "Connect", "Review GitHub, Jira, and tool connections.", "/integrations", "Open connections", "github jira integrations"),
@@ -37,6 +39,7 @@ export function buildUniversalSearchSnapshot(input: {
   live: LiveOperationsSnapshot;
   activity: ActivitySnapshot;
   decisions: DecisionSnapshot;
+  attention?: AttentionSnapshot;
   query?: Partial<SearchQuery>;
   now?: number;
 }): UniversalSearchSnapshot {
@@ -68,6 +71,17 @@ export function buildUniversalSearchSnapshot(input: {
       sourceRecordId: item.id,
       reference: item.reference,
       keywords: `${item.category} ${item.priority} ${item.owner} ${item.nextAction} ${item.providerId ?? ""}`,
+    })),
+    ...(input.attention?.items ?? []).map((item) => candidate({
+      seed: `attention:${item.id}:${item.revision}`,
+      scope: "attention",
+      title: item.title,
+      subtitle: item.reason,
+      state: `${item.severity}_${item.disposition}`,
+      observedAt: item.observedAt,
+      sourceRecordId: item.id,
+      reference: item.reference,
+      keywords: `${item.category} ${item.severity} ${item.disposition} ${item.nextAction} ${item.providerId ?? ""}`,
     })),
     ...input.activity.events.map((event) => candidate({
       seed: `activity:${event.id}`,

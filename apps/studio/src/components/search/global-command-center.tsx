@@ -19,7 +19,7 @@ import { cn } from "../../lib/utils.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 
-const scopes: readonly SearchScope[] = ["workspace", "request", "decision", "activity", "project", "provider", "evidence", "settings"];
+const scopes: readonly SearchScope[] = ["workspace", "request", "decision", "attention", "activity", "project", "provider", "evidence", "settings"];
 
 export function GlobalCommandCenter({
   endpoint,
@@ -135,7 +135,7 @@ function Status({ icon, title, detail, compact = false }: { icon: React.ReactNod
 function Fact({ label, value }: { label: string; value: string }) { return <div className="mb-3 last:mb-0"><span className="block text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span><strong className="mt-1 block text-xs">{value}</strong></div>; }
 function groupResults(results: readonly SearchResult[]): [SearchScope, { result: SearchResult; index: number }[]][] { const groups = new Map<SearchScope, { result: SearchResult; index: number }[]>(); results.forEach((result, index) => groups.set(result.scope, [...(groups.get(result.scope) ?? []), { result, index }])); return [...groups]; }
 function scopeCount(snapshot: UniversalSearchSnapshot | null, scope: SearchScope): number { return snapshot?.summary.scopes.find((item) => item.value === scope)?.count ?? 0; }
-function iconFor(scope: SearchScope) { return scope === "request" ? ListChecks : scope === "decision" ? ChatCircleDots : scope === "activity" ? Pulse : scope === "project" ? FolderOpen : scope === "provider" ? PlugsConnected : scope === "evidence" ? ShieldCheck : scope === "settings" ? Gear : Sparkle; }
+function iconFor(scope: SearchScope) { return scope === "request" ? ListChecks : scope === "decision" || scope === "attention" ? ChatCircleDots : scope === "activity" ? Pulse : scope === "project" ? FolderOpen : scope === "provider" ? PlugsConnected : scope === "evidence" ? ShieldCheck : scope === "settings" ? Gear : Sparkle; }
 function readable(value: string): string { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 function relativeAge(value: number): string { const minutes = Math.max(0, Math.floor((Date.now() - value) / 60_000)); return minutes < 1 ? "now" : minutes < 60 ? `${minutes}m` : minutes < 1_440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1_440)}d`; }
 function formatDateTime(value: number): string { return new Date(value).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); }

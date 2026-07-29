@@ -87,6 +87,22 @@ import {
   type SearchQuery,
   type UniversalSearchSnapshot,
 } from "../../../packages/runtime/src/universal-search.js";
+import {
+  attentionActionSchema,
+  attentionCategorySchema,
+  attentionDispositionSchema,
+  attentionMutationResponseSchema,
+  attentionPreviewSchema,
+  attentionQuerySchema,
+  attentionSeveritySchema,
+  attentionSnapshotSchema,
+  quietHoursUpdateSchema,
+  type AttentionMutationResponse,
+  type AttentionPreview,
+  type AttentionQuery,
+  type AttentionSnapshot,
+} from "../../../packages/runtime/src/attention.js";
+import { AttentionError } from "./attention-center.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -102,6 +118,13 @@ export type ControlPlaneServerOptions = {
   activity?: (query: ActivityQuery) => ActivitySnapshot | Promise<ActivitySnapshot>;
   decisions?: (query: DecisionQuery) => DecisionSnapshot | Promise<DecisionSnapshot>;
   search?: (query: SearchQuery) => UniversalSearchSnapshot | Promise<UniversalSearchSnapshot>;
+  attention?: {
+    snapshot: (query: AttentionQuery) => AttentionSnapshot | Promise<AttentionSnapshot>;
+    preview: (input: unknown) => AttentionPreview | Promise<AttentionPreview>;
+    apply: (input: unknown, idempotencyKey: string) => AttentionMutationResponse | Promise<AttentionMutationResponse>;
+    previewQuietHours: (input: unknown) => AttentionPreview | Promise<AttentionPreview>;
+    setQuietHours: (input: unknown, expectedRevision: number, idempotencyKey: string) => AttentionMutationResponse | Promise<AttentionMutationResponse>;
+  };
   autonomy?: {
     snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
     setProjectMode: (projectId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
@@ -379,6 +402,74 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       }
       if (url.pathname === "/api/v1/search" && request.method !== "GET") {
         sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (url.pathname === "/api/v1/attention" && request.method !== "GET") {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/attention" &&
+        options.attention
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const allowed = new Set(["severity", "category", "disposition", "project", "provider", "search", "suppressed"]);
+        if ([...url.searchParams.keys()].some((key) => !allowed.has(key))) {
+          sendJson(response, 400, { error: "Unknown attention query parameter." });
+          return;
+        }
+        const query = attentionQuerySchema.parse({
+          severities: parseFacet(url.searchParams.getAll("severity"), attentionSeveritySchema),
+          categories: parseFacet(url.searchParams.getAll("category"), attentionCategorySchema),
+          dispositions: parseFacet(url.searchParams.getAll("disposition"), attentionDispositionSchema),
+          projectId: url.searchParams.get("project"),
+          providerId: url.searchParams.get("provider"),
+          search: url.searchParams.get("search") ?? "",
+          includeSuppressed: url.searchParams.get("suppressed") !== "false",
+        });
+        sendJson(response, 200, attentionSnapshotSchema.parse(await options.attention.snapshot(query)));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/attention/preview" &&
+        options.attention
+      ) {
+        sendJson(response, 200, attentionPreviewSchema.parse(await options.attention.preview(attentionActionSchema.parse(await readJsonBody(request)))));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/attention/actions" &&
+        options.attention
+      ) {
+        sendJson(response, 200, attentionMutationResponseSchema.parse(await options.attention.apply(attentionActionSchema.parse(await readJsonBody(request)), requireIdempotencyKey(request))));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/attention/quiet-hours/preview" &&
+        options.attention
+      ) {
+        sendJson(response, 200, attentionPreviewSchema.parse(await options.attention.previewQuietHours(quietHoursUpdateSchema.parse(await readJsonBody(request)))));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/attention/quiet-hours" &&
+        options.attention
+      ) {
+        const body = await readJsonBody(request);
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new ControlPlaneRequestError("Quiet-hours request is invalid.");
+        const record = body as Record<string, unknown>;
+        if (Object.keys(record).some((key) => !["preference", "expectedRevision"].includes(key))) throw new ControlPlaneRequestError("Quiet-hours request contains an unknown field.");
+        const expectedRevision = record.expectedRevision;
+        if (!Number.isInteger(expectedRevision) || (expectedRevision as number) < 0) throw new ControlPlaneRequestError("Expected revision is invalid.");
+        sendJson(response, 200, attentionMutationResponseSchema.parse(await options.attention.setQuietHours(quietHoursUpdateSchema.parse(record.preference), expectedRevision as number, requireIdempotencyKey(request))));
         return;
       }
       if (
@@ -1006,6 +1097,9 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
               : error.code === "state_invalid"
                 ? 503
                 : 400;
+        sendJson(response, status, { error: error.message, code: error.code });
+      } else if (error instanceof AttentionError) {
+        const status = error.code === "not_found" ? 404 : ["stale_revision", "idempotency_conflict"].includes(error.code) ? 409 : 503;
         sendJson(response, status, { error: error.message, code: error.code });
       } else if (
         error instanceof ProviderConnectionLifecycleError ||

@@ -119,6 +119,16 @@ const DecisionInbox = lazy(() =>
     default: module.DecisionInbox,
   }))
 );
+const AttentionCenter = lazy(() =>
+  import("./components/attention/attention-center.js").then((module) => ({
+    default: module.AttentionCenter,
+  }))
+);
+const AttentionBell = lazy(() =>
+  import("./components/attention/attention-center.js").then((module) => ({
+    default: module.AttentionBell,
+  }))
+);
 const GlobalCommandCenter = lazy(() =>
   import("./components/search/global-command-center.js").then((module) => ({
     default: module.GlobalCommandCenter,
@@ -196,6 +206,7 @@ const workspaceIcons: Record<StudioView, typeof Gauge> = {
   conversation: ChatCircleDots,
   work: ListChecks,
   decisions: Bell,
+  attention: Bell,
   activity: Pulse,
   providers: PlugsConnected,
   integrations: GitBranch,
@@ -469,9 +480,9 @@ function App() {
               )}
             </Button>
             <ThemeControl mode={theme.mode} setMode={theme.setMode} />
-            <Button variant="ghost" size="icon" aria-label="Open decisions" onClick={() => navigate("decisions")}>
-              <Bell />
-            </Button>
+            <Suspense fallback={<Button variant="ghost" size="icon" aria-label="Loading Attention Center"><Bell /></Button>}>
+              <AttentionBell endpoint={controlPlane.endpoint} openCenter={() => navigate("attention")} activate={activateSearchResult} />
+            </Suspense>
             <button
               type="button"
               className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-bold outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
@@ -1057,6 +1068,13 @@ function WorkspaceSurface({
 
   if (view === "decisions") {
     return <DecisionInbox endpoint={controlPlaneEndpoint} />;
+  }
+
+  if (view === "attention") {
+    return <AttentionCenter endpoint={controlPlaneEndpoint} activate={(path) => {
+      const url = new URL(path, window.location.origin);
+      navigate(viewFromLocation(url));
+    }} />;
   }
 
   if (view === "integrations") {

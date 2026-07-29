@@ -68,6 +68,17 @@ export const workspaceDefinitions = {
     group: "primary",
     mobile: true,
   },
+  attention: {
+    path: "/attention",
+    label: "Attention",
+    mobileLabel: "Alerts",
+    note: "Durable alerts, snoozes, and quiet hours",
+    eyebrow: "Live local attention · Quiet-aware",
+    title: "Stay informed without the noise",
+    description: "Triage canonical alerts, acknowledge what you have seen, snooze safely, and protect focus with local quiet hours.",
+    group: "primary",
+    mobile: true,
+  },
   activity: {
     path: "/activity",
     label: "Activity",

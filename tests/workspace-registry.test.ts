@@ -10,14 +10,14 @@ import {
 
 test("workspace registry is complete, unique, and projects navigation deliberately", () => {
   assert.deepEqual(validateWorkspaceRegistry(workspaceDefinitions), []);
-  assert.equal(studioViews.length, 15);
+  assert.equal(studioViews.length, 16);
   assert.equal(
     studioViews.filter((view) => workspaceDefinitions[view].group === "primary").length,
-    10
+    11
   );
   assert.equal(
     studioViews.filter((view) => workspaceDefinitions[view].mobile).length,
-    10
+    11
   );
   assert.deepEqual(
     studioViews.filter((view) => workspaceDefinitions[view].group === "secondary"),
@@ -56,6 +56,8 @@ test("registry copy distinguishes live-backed surfaces from demo-sensitive surfa
   assert.doesNotMatch(workspaceDefinitions.activity.eyebrow, /Demo:/);
   assert.match(workspaceDefinitions.decisions.eyebrow, /Live local queue/);
   assert.doesNotMatch(workspaceDefinitions.decisions.eyebrow, /Demo:/);
+  assert.match(workspaceDefinitions.attention.eyebrow, /Live local attention/);
+  assert.doesNotMatch(workspaceDefinitions.attention.eyebrow, /Demo:/);
   assert.match(workspaceDefinitions.integrations.eyebrow, /Demo connection/);
   assert.match(workspaceDefinitions.evidence.eyebrow, /Demo:/);
 });

@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 const timestamp = z.number().int().nonnegative();
-export const searchScopeSchema = z.enum(["workspace", "request", "decision", "activity", "project", "provider", "evidence", "settings"]);
+export const searchScopeSchema = z.enum(["workspace", "request", "decision", "attention", "activity", "project", "provider", "evidence", "settings"]);
 export const searchQuerySchema = z.strictObject({
   query: z.string().normalize("NFKC").trim().max(80).default(""),
   scopes: z.array(searchScopeSchema).max(8).default([]),
   limit: z.number().int().min(5).max(50).default(24),
 });
 export const searchReferenceSchema = z.strictObject({
-  surface: z.enum(["overview", "projects", "conversation", "work", "decisions", "activity", "providers", "integrations", "evidence", "help", "launch", "releases", "trust", "accessibility", "settings"]),
-  path: z.string().regex(/^\/(?:projects|conversation|work|decisions|activity|providers|integrations|evidence|help|launch|releases|trust|accessibility|settings)?(?:\?[a-zA-Z0-9._~!$&'()*+,;=:@%/?-]*)?$/).max(400),
+  surface: z.enum(["overview", "projects", "conversation", "work", "decisions", "attention", "activity", "providers", "integrations", "evidence", "help", "launch", "releases", "trust", "accessibility", "settings"]),
+  path: z.string().regex(/^\/(?:projects|conversation|work|decisions|attention|activity|providers|integrations|evidence|help|launch|releases|trust|accessibility|settings)?(?:\?[a-zA-Z0-9._~!$&'()*+,;=:@%/?-]*)?$/).max(400),
   label: z.string().trim().min(1).max(80),
 });
 export const searchHighlightSchema = z.strictObject({

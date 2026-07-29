@@ -92,9 +92,17 @@ Priority, aging, ownership, cost, reversibility, evidence, and the safe next
 surface are deterministic and inspectable. The inbox is read-only, privacy
 redacted, bounded to current observations, and keeps automatic spend at zero.
 
+The Attention route adds durable attention management without changing task
+state. It derives stable alerts from canonical decisions and verified
+completions, redacts sensitive detail, deduplicates repeated observations, and
+persists read, acknowledgement, snooze, quiet-hours, and idempotency receipts
+in private local state. The global bell shows only the exact unsuppressed
+unread count. Critical alerts bypass quiet hours; all actions are previewed,
+revision-bound, local-only, reversible, and fixed at zero automatic spend.
+
 The global command center is a live, keyboard-first search surface opened from
 the header or with Command-K / Control-K. It deterministically ranks safe
-workspace destinations and bounded current request, decision, activity,
+workspace destinations and bounded current request, decision, attention, activity,
 project, and provider observations. Results expose provenance and navigate only
 to validated internal routes; search cannot mutate work, call a model, write to
 an external service, or enable paid use.
