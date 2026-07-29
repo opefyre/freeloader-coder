@@ -10,3 +10,4 @@ export * from "./preflight.js";
 export * from "./provider-connections.js";
 export * from "./live-operations.js";
 export * from "./sandbox.js";
+export * from "./universal-search.js";

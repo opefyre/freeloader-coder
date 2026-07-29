@@ -80,6 +80,13 @@ import {
   type DecisionQuery,
   type DecisionSnapshot,
 } from "../../../packages/runtime/src/decisions.js";
+import {
+  searchQuerySchema,
+  searchScopeSchema,
+  universalSearchSnapshotSchema,
+  type SearchQuery,
+  type UniversalSearchSnapshot,
+} from "../../../packages/runtime/src/universal-search.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -94,6 +101,7 @@ export type ControlPlaneServerOptions = {
   liveOperations?: () => LiveOperationsSnapshot | Promise<LiveOperationsSnapshot>;
   activity?: (query: ActivityQuery) => ActivitySnapshot | Promise<ActivitySnapshot>;
   decisions?: (query: DecisionQuery) => DecisionSnapshot | Promise<DecisionSnapshot>;
+  search?: (query: SearchQuery) => UniversalSearchSnapshot | Promise<UniversalSearchSnapshot>;
   autonomy?: {
     snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
     setProjectMode: (projectId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
@@ -367,6 +375,34 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       }
       if (url.pathname === "/api/v1/decisions" && request.method !== "GET") {
         sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (url.pathname === "/api/v1/search" && request.method !== "GET") {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/search" &&
+        options.search
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const allowed = new Set(["q", "scope", "limit"]);
+        if ([...url.searchParams.keys()].some((key) => !allowed.has(key))) {
+          sendJson(response, 400, { error: "Unknown search query parameter." });
+          return;
+        }
+        const limitValues = url.searchParams.getAll("limit");
+        if (limitValues.length > 1) throw new ZodError([]);
+        const query = searchQuerySchema.parse({
+          query: url.searchParams.get("q") ?? "",
+          scopes: parseFacet(url.searchParams.getAll("scope"), searchScopeSchema),
+          limit: limitValues.length ? Number(limitValues[0]) : 24,
+        });
+        sendJson(response, 200, universalSearchSnapshotSchema.parse(await options.search(query)));
         return;
       }
       if (

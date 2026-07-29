@@ -119,6 +119,11 @@ const DecisionInbox = lazy(() =>
     default: module.DecisionInbox,
   }))
 );
+const GlobalCommandCenter = lazy(() =>
+  import("./components/search/global-command-center.js").then((module) => ({
+    default: module.GlobalCommandCenter,
+  }))
+);
 const HelpCenter = lazy(() =>
   import("./components/help/help-center.js").then((module) => ({
     default: module.HelpCenter,
@@ -255,7 +260,6 @@ function App() {
   const controlPlane = useControlPlane();
   const [activeView, setActiveView] = useState<StudioView>(initialView);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [commandQuery, setCommandQuery] = useState("");
   const [selectedProvider, setSelectedProvider] = useState(
     providerTelemetry[0]?.providerId ?? ""
   );
@@ -281,23 +285,23 @@ function App() {
     return total === 0 ? 0 : Math.round((successfulProviderCalls / total) * 100);
   }, []);
   const activeCopy = workspaceDefinition(activeView);
-  const filteredCommands = useMemo(() => {
-    const query = commandQuery.trim().toLowerCase();
-    const items = [...navItems, ...secondaryNavItems];
-    return query
-      ? items.filter((item) =>
-          `${item.label} ${item.note}`.toLowerCase().includes(query)
-        )
-      : items;
-  }, [commandQuery]);
-
   function navigate(view: StudioView, replace = false) {
     setActiveView(view);
     setCommandOpen(false);
-    setCommandQuery("");
     const url = canonicalStudioUrl(new URL(window.location.href), view);
     url.hash = "";
     window.history[replace ? "replaceState" : "pushState"]({}, "", url);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function activateSearchResult(path: string) {
+    const url = new URL(path, window.location.origin);
+    if (url.origin !== window.location.origin) return;
+    const view = viewFromLocation(url);
+    if (workspaceDefinitions[view].path !== url.pathname) return;
+    setActiveView(view);
+    setCommandOpen(false);
+    window.history.pushState({}, "", `${url.pathname}${url.search}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -944,7 +948,7 @@ function App() {
       </main>
 
       <nav
-        className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-8 rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-40 flex overflow-x-auto rounded-3xl bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/[.07] backdrop-blur-xl lg:hidden"
         aria-label="Mobile workspace"
       >
         {navItems.map((item) => (
@@ -954,7 +958,7 @@ function App() {
             onClick={() => navigate(item.id)}
             aria-current={activeView === item.id ? "page" : undefined}
             className={cn(
-              "flex min-h-13 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-medium text-muted-foreground",
+              "flex min-h-13 min-w-[4.25rem] flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-medium text-muted-foreground",
               activeView === item.id && "bg-primary/12 text-primary"
             )}
           >
@@ -968,13 +972,13 @@ function App() {
       </nav>
 
       {commandOpen && (
-        <CommandPalette
-          query={commandQuery}
-          setQuery={setCommandQuery}
-          commands={filteredCommands}
-          close={() => setCommandOpen(false)}
-          navigate={navigate}
-        />
+        <Suspense fallback={null}>
+          <GlobalCommandCenter
+            endpoint={controlPlane.endpoint}
+            close={() => setCommandOpen(false)}
+            activate={activateSearchResult}
+          />
+        </Suspense>
       )}
       {provenanceOpen && (
         <DemoDataDisclosure
@@ -1985,86 +1989,6 @@ function permissionTone(
   if (state === "Active") return "positive";
   if (state === "Expires soon") return "caution";
   return "neutral";
-}
-
-function CommandPalette({
-  query,
-  setQuery,
-  commands,
-  close,
-  navigate,
-}: {
-  query: string;
-  setQuery: (query: string) => void;
-  commands: readonly {
-    id: StudioView;
-    label: string;
-    note: string;
-    icon: typeof Gear;
-  }[];
-  close: () => void;
-  navigate: (view: StudioView) => void;
-}) {
-  useEffect(() => {
-    document.querySelector<HTMLInputElement>("#command-search")?.focus();
-  }, []);
-  return (
-    <div className="fixed inset-0 z-[70] grid place-items-start bg-background/55 px-4 pt-[12vh] backdrop-blur-md">
-      <button
-        type="button"
-        className="absolute inset-0"
-        aria-label="Close command palette"
-        onClick={close}
-      />
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label="Find tasks, runs, or evidence"
-        className="relative mx-auto w-full max-w-2xl rounded-[2rem] bg-popover p-2 shadow-2xl ring-1 ring-foreground/[.08]"
-      >
-        <div className="flex items-center gap-3 px-4 py-3">
-          <MagnifyingGlass className="text-muted-foreground" />
-          <input
-            id="command-search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Jump to work, evidence, providers, or settings…"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-          />
-          <Button variant="ghost" size="icon" aria-label="Close command palette" onClick={close}>
-            <X />
-          </Button>
-        </div>
-        <div className="max-h-[26rem] space-y-1 overflow-y-auto p-2">
-          {commands.length ? (
-            commands.map((command) => (
-              <button
-                key={command.id}
-                type="button"
-                onClick={() => navigate(command.id)}
-                className="flex w-full items-center gap-3 rounded-2xl p-3 text-left outline-none hover:bg-muted focus-visible:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
-              >
-                <span className="grid size-10 place-items-center rounded-2xl bg-muted text-primary">
-                  <command.icon size={19} weight="duotone" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-sm">{command.label}</strong>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {command.note}
-                  </span>
-                </span>
-                <ArrowRight className="text-muted-foreground" />
-              </button>
-            ))
-          ) : (
-            <p className="p-6 text-center text-sm text-muted-foreground">
-              No workspace destination matches “{query}”.
-            </p>
-          )}
-        </div>
-      </section>
-    </div>
-  );
 }
 
 function ApprovalPreview() {

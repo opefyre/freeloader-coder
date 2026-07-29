@@ -92,6 +92,13 @@ Priority, aging, ownership, cost, reversibility, evidence, and the safe next
 surface are deterministic and inspectable. The inbox is read-only, privacy
 redacted, bounded to current observations, and keeps automatic spend at zero.
 
+The global command center is a live, keyboard-first search surface opened from
+the header or with Command-K / Control-K. It deterministically ranks safe
+workspace destinations and bounded current request, decision, activity,
+project, and provider observations. Results expose provenance and navigate only
+to validated internal routes; search cannot mutate work, call a model, write to
+an external service, or enable paid use.
+
 Projects can now register an existing local Git worktree through the loopback
 control plane. Registration performs a deterministic, bounded metadata scan and
 stores the canonical path only in the private ignored local state directory.

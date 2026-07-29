@@ -22,6 +22,7 @@ import { buildLiveOperationsSnapshot } from "./live-operations.js";
 import { LocalAutonomyService } from "./local-autonomy-service.js";
 import { buildActivitySnapshot } from "./activity-explorer.js";
 import { buildDecisionSnapshot } from "./decision-inbox.js";
+import { buildUniversalSearchSnapshot } from "./universal-search.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -213,6 +214,20 @@ const controlPlane = createControlPlaneServer({
       autonomy: await autonomy.snapshot(),
       query,
     }),
+  search: async (query) => {
+    const live = buildLiveOperationsSnapshot({
+      projects: await localProjects.list(),
+      requests: await localRequests.list(),
+      providers: await providerConnectionService.list(),
+    });
+    const autonomySnapshot = await autonomy.snapshot();
+    return buildUniversalSearchSnapshot({
+      live,
+      activity: buildActivitySnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } }),
+      decisions: buildDecisionSnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } }),
+      query,
+    });
+  },
   autonomy: {
     snapshot: () => autonomy.snapshot(),
     setProjectMode: (projectId, input) => autonomy.setProjectMode(projectId, input),

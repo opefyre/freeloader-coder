@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("workspace exposes trusted destinations and keyboard command semantics", async () => {
-  const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  const [source, commandCenter] = await Promise.all([
+    readFile("apps/studio/src/App.tsx", "utf8"),
+    readFile("apps/studio/src/components/search/global-command-center.tsx", "utf8"),
+  ]);
   for (const label of [
     "Overview",
     "Conversation",
@@ -20,8 +23,8 @@ test("workspace exposes trusted destinations and keyboard command semantics", as
   assert.match(source, /window\.history\[replace \? "replaceState" : "pushState"\]/);
   assert.match(source, /window\.addEventListener\("popstate"/);
   assert.match(source, /event\.key\.toLowerCase\(\) === "k"/);
-  assert.match(source, /role="dialog"/);
-  assert.match(source, /aria-modal="true"/);
+  assert.match(commandCenter, /role="dialog"/);
+  assert.match(commandCenter, /aria-modal="true"/);
   assert.match(source, /setActiveView/);
 });
 
