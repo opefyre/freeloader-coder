@@ -20,6 +20,7 @@ test("every Studio view has a stable clean route", () => {
       ["integrations", "/integrations"],
       ["evidence", "/evidence"],
       ["help", "/help"],
+      ["launch", "/launch"],
       ["releases", "/releases"],
       ["trust", "/trust"],
       ["accessibility", "/accessibility"],
@@ -38,6 +39,7 @@ test("direct and trailing-slash routes resolve without query state", () => {
     "conversation"
   );
   assert.equal(viewFromLocation({ pathname: "/help", search: "" }), "help");
+  assert.equal(viewFromLocation({ pathname: "/launch", search: "" }), "launch");
   assert.equal(
     viewFromLocation({ pathname: "/releases", search: "" }),
     "releases"

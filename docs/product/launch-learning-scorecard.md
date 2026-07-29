@@ -1,0 +1,29 @@
+# Launch learning scorecard
+
+This is the required review contract, not a claim that public launch data
+already exists.
+
+| Outcome | Baseline | Target | Owner | Cohort | Source | Cadence |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| Clone to validated preview | Local beta: 12 min | Under 15 min | Product owner | New local installs | Local event | Weekly |
+| Preview accepted or deliberately restored | Local beta: 88% | At least 85% | Product owner | First projects | Local event | Weekly |
+| Interrupted work recovered without loss | Synthetic: 94% | At least 90% | Reliability owner | Interrupted runs | Local event | Release |
+| Unauthorized paid calls | 0 | 0 | Security owner | All runs | Local event | Release |
+| Support reports with a safe reproduction | Synthetic: 81% | At least 75% | Support owner | Public issues | Support | Weekly |
+| Users confident enough to continue | Not established | At least 70% | Research owner | Opt-in interviews | Interview | Monthly |
+
+Metrics must never include prompts, source code, attachments, credentials,
+absolute paths, personal identifiers, or private Jira content. Optional
+telemetry requires consent and must preserve an entirely local path.
+
+## Review decision
+
+The current decision is **continue the local beta**. Public release evidence is
+insufficient until the product name/positioning and open-source terms are
+confirmed in the public repository and the public experience is deployed and
+tested.
+
+Every “change” or “retire” decision must create an owned experiment with a
+hypothesis, success signal, review date, and rollback. “Keep” still requires a
+future review date.
+

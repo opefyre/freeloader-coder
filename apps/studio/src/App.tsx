@@ -40,6 +40,7 @@ import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
 import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
 import { HelpCenter } from "./components/help/help-center.js";
+import { LaunchCenter } from "./components/launch/launch-center.js";
 import { IntegrationWorkbench } from "./components/integrations/integration-workbench.js";
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
@@ -153,6 +154,11 @@ const viewCopy: Record<
     eyebrow: "Offline · Product-aware · Safe to share",
     title: "Help that knows the workflow",
     description: "Learn, recover, and prepare support evidence without leaking sensitive data.",
+  },
+  launch: {
+    eyebrow: "Local launch preview · No deployment",
+    title: "Make the promise inspectable",
+    description: "Explore the product story, safe failure demo, competitive boundary, launch gates, and learning evidence.",
   },
   releases: {
     eyebrow: "Candidate 0.8.0-beta.2 · Local verification",
@@ -304,6 +310,12 @@ function App() {
     const items = [
       ...navItems,
       {
+        id: "launch" as const,
+        label: "Launch",
+        note: "Positioning, demo, operations, and learning",
+        icon: Sparkle,
+      },
+      {
         id: "releases" as const,
         label: "Releases",
         note: "Updates, compatibility, and rollout",
@@ -449,6 +461,20 @@ function App() {
             View safeguards
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => navigate("launch")}
+          aria-current={activeView === "launch" ? "page" : undefined}
+          className={cn(
+            "mt-3 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+            activeView === "launch" &&
+              "bg-sidebar-accent text-sidebar-accent-foreground"
+          )}
+        >
+          <Sparkle size={18} />
+          Launch
+        </button>
 
         <button
           type="button"
@@ -1263,6 +1289,10 @@ function WorkspaceSurface({
 
   if (view === "help") {
     return <HelpCenter />;
+  }
+
+  if (view === "launch") {
+    return <LaunchCenter />;
   }
 
   if (view === "releases") {

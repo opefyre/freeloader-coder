@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { sha256 as browserSha256 } from "../../conversation/src/sha256.js";
 
+export * from "./launch-readiness.js";
+
 const version = z.literal(1);
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const semanticVersion = z.string().regex(/^\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/);

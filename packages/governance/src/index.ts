@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export * from "./open-source.js";
+
 const version = z.literal(1);
 const isoDate = z.string().datetime();
 const identifier = z.string().regex(/^[a-z0-9][a-z0-9._-]+$/);

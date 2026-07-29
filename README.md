@@ -68,6 +68,17 @@ the [paid-provider architecture](docs/architecture/optional-paid-providers.md).
 They ship disabled and cannot execute without a later explicit credential,
 route, role, hard budget, and final approval.
 
+Pipeline Studio is available under the [Apache License 2.0](LICENSE). Public
+contributions use DCO terms and must follow the
+[contributor guide](docs/contributing/README.md), the
+[community code of conduct](CODE_OF_CONDUCT.md), and the
+[private vulnerability process](docs/support/reporting.md).
+
+The local `/launch` route explains the evidence-backed product promise,
+adjacent-product boundaries, safe failure/recovery behavior, release gates,
+support coverage, and privacy-safe learning scorecard. It creates no public
+deployment, campaign, analytics transmission, or provider request.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.

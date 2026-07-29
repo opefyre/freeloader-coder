@@ -1,30 +1,28 @@
-# Code of Conduct
+# Community code of conduct
 
-Pipeline Studio welcomes respectful, good-faith participation from people with
-different backgrounds and levels of technical experience.
+Pipeline Studio contributors must make participation safe, constructive, and
+welcoming. Harassment, threats, discrimination, sexualized attention, doxxing,
+credential disclosure, and sustained disruption are not accepted.
 
 ## Expected behavior
 
-- Be constructive, specific, and patient.
-- Critique ideas and evidence, not people.
-- Respect privacy, security disclosures, consent, and attribution.
-- Do not publish credentials, personal information, or private project data.
-- Accept moderation and appeal through the documented governance process.
-
-## Unacceptable behavior
-
-Harassment, threats, discrimination, sexualized attention, impersonation,
-doxxing, credential exposure, deliberate disruption, and retaliation are not
-accepted in project spaces.
+- Critique work and evidence, not people.
+- State uncertainty and disclose material conflicts.
+- Protect credentials, private source, personal information, and vulnerability
+  details.
+- Respect maintainer decisions, appeals, and documented project boundaries.
+- Give credit and preserve license notices.
 
 ## Reporting and enforcement
 
-Public behavior concerns may be raised with the maintainers through the
-repository’s moderation process. Security issues use the private process in
-[SECURITY.md](SECURITY.md). Reports are handled with minimum disclosure.
-Moderation may include a warning, content removal, temporary restriction, or
-permanent exclusion. An appeal is reviewed by a maintainer who did not make the
-original decision when possible.
+For ordinary conduct concerns, contact the maintainers privately through the
+repository owner's published GitHub contact channel. Security vulnerabilities
+must use GitHub private security advisories, never a public issue.
 
-This project-level policy is intentionally concise. Maintainers must record any
-material enforcement-process change in the governance history.
+Maintainers may warn, remove content, restrict participation, or ban a
+participant. Enforcement decisions must record the rule, evidence, scope,
+duration, appeal path, and conflicts. Public summaries exclude personal and
+security-sensitive detail.
+
+This project uses a concise project-specific policy for the current
+single-maintainer phase. It must be reviewed before adding delegated moderators.
