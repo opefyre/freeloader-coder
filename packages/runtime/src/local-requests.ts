@@ -74,6 +74,12 @@ export const localRunEventSchema = z.strictObject({
     "patch_applied",
     "patch_rolled_back",
     "patch_reconciled",
+    "commit_previewed",
+    "commit_approved",
+    "commit_creating",
+    "commit_created",
+    "commit_undone",
+    "commit_reconciled",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
@@ -356,6 +362,73 @@ export const localPatchSessionSchema = z.strictObject({
   rolledBackAt: z.number().int().nonnegative().nullable(),
 });
 
+export const localCommitPreviewRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedAuthorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  expectedRunDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  message: z.string().trim().min(3).max(200).refine(
+    (value) => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value),
+    "Commit message contains unsupported control characters."
+  ),
+});
+
+export const localCommitPreviewSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("bounded_isolated_commit_preview"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  authorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  runDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  patchReceiptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  parentCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+  branch: z.string().regex(/^studio\/request-[a-f0-9]{12}-[a-f0-9]{10}$/),
+  message: z.string().trim().min(3).max(200),
+  messageDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  changedPaths: z.array(relativePath).min(1).max(12),
+  insertions: z.number().int().nonnegative().max(100_000),
+  deletions: z.number().int().nonnegative().max(100_000),
+  hooksDisabled: z.literal(true),
+  signingDisabled: z.literal(true),
+  identity: z.literal("Pipeline Studio <pipeline-studio@local.invalid>"),
+  maximumCostUsd: z.literal(0),
+  previewedAt: z.number().int().nonnegative(),
+});
+
+export const localCommitApprovalRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedPreviewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const localCommitApprovalSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  approvedAt: z.number().int().nonnegative(),
+});
+
+export const localCommitReceiptSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  commit: z.string().regex(/^[a-f0-9]{40,64}$/),
+  parentCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+  branch: z.string().regex(/^studio\/request-[a-f0-9]{12}-[a-f0-9]{10}$/),
+  changedPaths: z.array(relativePath).min(1).max(12),
+  createdAt: z.number().int().nonnegative(),
+  canonicalUntouched: z.literal(true),
+  hooksDisabled: z.literal(true),
+  signingDisabled: z.literal(true),
+  pushed: z.literal(false),
+});
+
+export const localCommitSessionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  state: z.enum(["previewed", "approved", "creating", "created", "undone", "interrupted"]),
+  preview: localCommitPreviewSchema,
+  approval: localCommitApprovalSchema.nullable(),
+  receipt: localCommitReceiptSchema.nullable(),
+  undoneAt: z.number().int().nonnegative().nullable(),
+});
+
 export const localExecutionSessionSchema = z.strictObject({
   schemaVersion: z.literal(1),
   state: z.enum([
@@ -374,6 +447,7 @@ export const localExecutionSessionSchema = z.strictObject({
   workspace: localExecutionWorkspaceSchema.nullable(),
   run: localExecutionRunSchema.nullable().default(null),
   patch: localPatchSessionSchema.nullable().default(null),
+  commit: localCommitSessionSchema.nullable().default(null),
 });
 
 export const localPlanningSnapshotSchema = z.strictObject({
@@ -451,6 +525,11 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "patch_applied",
     "patch_rolled_back",
     "patch_reconciled",
+    "commit_previewed",
+    "commit_approved",
+    "commit_created",
+    "commit_undone",
+    "commit_reconciled",
     "cancelled",
     "archived",
   ]),
@@ -482,6 +561,10 @@ export type LocalPatchPreview = z.infer<typeof localPatchPreviewSchema>;
 export type LocalPatchApproval = z.infer<typeof localPatchApprovalSchema>;
 export type LocalPatchReceipt = z.infer<typeof localPatchReceiptSchema>;
 export type LocalPatchSession = z.infer<typeof localPatchSessionSchema>;
+export type LocalCommitPreview = z.infer<typeof localCommitPreviewSchema>;
+export type LocalCommitApproval = z.infer<typeof localCommitApprovalSchema>;
+export type LocalCommitReceipt = z.infer<typeof localCommitReceiptSchema>;
+export type LocalCommitSession = z.infer<typeof localCommitSessionSchema>;
 
 export function validateLocalRequestCollection(input: unknown): LocalRequestCollection {
   const collection = localRequestCollectionSchema.parse(input);
@@ -616,6 +699,43 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
         }
         if (patch.state === "rolled_back" && patch.rolledBackAt === null) {
           throw new Error("Rolled-back patch requires a verified rollback time.");
+        }
+      }
+      if (execution.commit) {
+        const commit = execution.commit;
+        if (
+          !execution.run ||
+          !execution.patch?.receipt ||
+          commit.preview.authorityDigest !== execution.authority.digest ||
+          commit.preview.runDigest !== execution.run.digest ||
+          commit.preview.patchReceiptDigest !== execution.patch.receipt.digest ||
+          commit.preview.parentCommit !== execution.workspace?.baseline ||
+          commit.preview.maximumCostUsd !== 0 ||
+          !commit.preview.hooksDisabled ||
+          !commit.preview.signingDisabled
+        ) {
+          throw new Error("Local commit preview does not match validated execution evidence.");
+        }
+        if (
+          ["approved", "creating", "created", "undone", "interrupted"].includes(commit.state) &&
+          (!commit.approval || commit.approval.previewDigest !== commit.preview.digest)
+        ) {
+          throw new Error("Local commit state requires approval of the exact preview.");
+        }
+        if (
+          ["created", "undone"].includes(commit.state) &&
+          (!commit.receipt ||
+            commit.receipt.previewDigest !== commit.preview.digest ||
+            commit.receipt.parentCommit !== commit.preview.parentCommit ||
+            commit.receipt.branch !== commit.preview.branch ||
+            commit.receipt.changedPaths.join("\0") !==
+              commit.preview.changedPaths.join("\0") ||
+            commit.receipt.pushed)
+        ) {
+          throw new Error("Local commit receipt does not match its preview.");
+        }
+        if (commit.state === "undone" && commit.undoneAt === null) {
+          throw new Error("Undone commit requires a verified undo time.");
         }
       }
     }

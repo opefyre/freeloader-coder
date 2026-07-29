@@ -4,6 +4,8 @@ import {
   localExecutionAuthorizationRequestSchema,
   localPatchApprovalRequestSchema,
   localPatchPreviewRequestSchema,
+  localCommitApprovalRequestSchema,
+  localCommitPreviewRequestSchema,
   localRequestCollectionSchema,
   localRequestMutationResponseSchema,
   type LocalRequestCollection,
@@ -214,6 +216,59 @@ export async function advanceLocalPatch(input: {
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
     })
   );
+}
+
+export async function previewLocalCommit(input: {
+  endpoint: string;
+  requestId: string;
+  proposal: unknown;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint,
+    path: `/api/v1/requests/${input.requestId}/commit-preview`,
+    method: "POST",
+    body: localCommitPreviewRequestSchema.parse(input.proposal),
+    idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function approveLocalCommit(input: {
+  endpoint: string;
+  requestId: string;
+  approval: unknown;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint,
+    path: `/api/v1/requests/${input.requestId}/commit-approve`,
+    method: "POST",
+    body: localCommitApprovalRequestSchema.parse(input.approval),
+    idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function advanceLocalCommit(input: {
+  endpoint: string;
+  requestId: string;
+  action: "create" | "undo" | "reconcile";
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint,
+    path: `/api/v1/requests/${input.requestId}/commit-${input.action}`,
+    method: "POST",
+    idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
 }
 
 export async function archiveLocalRequest(input: {

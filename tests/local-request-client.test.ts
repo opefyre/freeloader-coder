@@ -4,11 +4,14 @@ import test from "node:test";
 import {
   advanceLocalExecution,
   advanceLocalPatch,
+  advanceLocalCommit,
+  approveLocalCommit,
   approveLocalPatch,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
   previewLocalPatch,
+  previewLocalCommit,
 } from "../apps/studio/src/local-request-client.js";
 
 const request = {
@@ -52,6 +55,54 @@ test("request client sends idempotent loopback mutations and validates responses
     (observed[0]?.init?.headers as Record<string, string>)["Idempotency-Key"],
     "request:0123456789"
   );
+});
+
+test("request client uses explicit isolated commit preview, approval, and create routes", async () => {
+  const paths: string[] = [];
+  const fetcher = async (url: URL | RequestInfo) => {
+    const path = new URL(String(url)).pathname;
+    paths.push(path);
+    return Response.json({
+      schemaVersion: 1,
+      outcome: path.endsWith("commit-preview")
+        ? "commit_previewed"
+        : path.endsWith("commit-approve")
+          ? "commit_approved"
+          : "commit_created",
+      request,
+    });
+  };
+  await previewLocalCommit({
+    endpoint: "http://127.0.0.1:4312",
+    requestId: request.id,
+    proposal: {
+      schemaVersion: 1,
+      expectedAuthorityDigest: "a".repeat(64),
+      expectedRunDigest: "b".repeat(64),
+      message: "Create isolated commit",
+    },
+    idempotencyKey: "commit-preview:test",
+    fetcher,
+  });
+  await approveLocalCommit({
+    endpoint: "http://127.0.0.1:4312",
+    requestId: request.id,
+    approval: { schemaVersion: 1, expectedPreviewDigest: "c".repeat(64) },
+    idempotencyKey: "commit-approve:test",
+    fetcher,
+  });
+  await advanceLocalCommit({
+    endpoint: "http://127.0.0.1:4312",
+    requestId: request.id,
+    action: "create",
+    idempotencyKey: "commit-create:test",
+    fetcher,
+  });
+  assert.deepEqual(paths, [
+    `/api/v1/requests/${request.id}/commit-preview`,
+    `/api/v1/requests/${request.id}/commit-approve`,
+    `/api/v1/requests/${request.id}/commit-create`,
+  ]);
 });
 
 test("request client sends exact patch lifecycle payloads to loopback routes", async () => {

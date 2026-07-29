@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -25,6 +25,11 @@ import {
   previewReplacement,
   rollbackReplacement,
 } from "../apps/core/src/local-patch.js";
+import {
+  createIsolatedCommit,
+  previewIsolatedCommit,
+  undoIsolatedCommit,
+} from "../apps/core/src/local-commit.js";
 import {
   localDraftPlanSchema,
   localExecutionAuthoritySchema,
@@ -177,6 +182,45 @@ test("clean Git preflight and isolated worktree preserve the canonical worktree"
     assert.equal(changes.allowed, true);
     assert.deepEqual(changes.changedPaths, [{ path: "README.md", state: "modified" }]);
     assert.doesNotMatch(JSON.stringify(changes), new RegExp(repository));
+    const passedRun = {
+      ...patchRun,
+      state: "passed" as const,
+      completedAt: Date.now(),
+      changes,
+    };
+    const commitPreview = await previewIsolatedCommit({
+      workspacePath,
+      canonicalRoot: repository,
+      authority,
+      run: passedRun,
+      patchReceipt: receipt,
+      message: "Update the isolated readme",
+    });
+    assert.deepEqual(commitPreview.changedPaths, ["README.md"]);
+    assert.equal(commitPreview.hooksDisabled, true);
+    const hookMarker = join(root, "hook-ran");
+    const hookDirectory = join(repository, ".git", "hooks");
+    await mkdir(hookDirectory, { recursive: true });
+    const hookPath = join(hookDirectory, "pre-commit");
+    await writeFile(hookPath, `#!/bin/sh\ntouch '${hookMarker}'\nexit 1\n`, "utf8");
+    await chmod(hookPath, 0o755);
+    const commitReceipt = await createIsolatedCommit({
+      workspacePath,
+      canonicalRoot: repository,
+      authority,
+      preview: commitPreview,
+    });
+    assert.equal(commitReceipt.parentCommit, beforeHead);
+    assert.equal(commitReceipt.pushed, false);
+    await assert.rejects(() => access(hookMarker));
+    assert.equal((await git(workspacePath, ["rev-parse", "HEAD"])).trim(), commitReceipt.commit);
+    await undoIsolatedCommit({
+      workspacePath,
+      canonicalRoot: repository,
+      receipt: commitReceipt,
+    });
+    assert.equal((await git(workspacePath, ["rev-parse", "HEAD"])).trim(), beforeHead);
+    assert.equal(await readFile(join(workspacePath, "README.md"), "utf8"), "# Isolated change\n");
     await assert.rejects(
       () =>
         previewReplacement({

@@ -21,6 +21,9 @@ import {
   localPatchApprovalRequestSchema,
   localPatchApprovalSchema,
   localPatchPreviewRequestSchema,
+  localCommitApprovalRequestSchema,
+  localCommitApprovalSchema,
+  localCommitPreviewRequestSchema,
   localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
@@ -46,6 +49,11 @@ import {
   previewReplacement,
   rollbackReplacement,
 } from "./local-patch.js";
+import {
+  createIsolatedCommit,
+  previewIsolatedCommit,
+  undoIsolatedCommit,
+} from "./local-commit.js";
 
 const MAX_REQUESTS = 500;
 const sensitiveMaterial =
@@ -1240,6 +1248,251 @@ export class LocalRequestStore {
     });
   }
 
+  previewCommit(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const proposal = localCommitPreviewRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      if (
+        !execution ||
+        execution.state !== "review_ready" ||
+        !execution.workspace ||
+        !execution.run ||
+        execution.run.state !== "passed" ||
+        !execution.patch?.receipt ||
+        execution.patch.state !== "applied"
+      ) {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "A validated, review-ready isolated patch is required before commit preview."
+        );
+      }
+      if (
+        proposal.expectedAuthorityDigest !== execution.authority.digest ||
+        proposal.expectedRunDigest !== execution.run.digest
+      ) {
+        throw new LocalRequestError("stale_revision", "Execution changed before commit preview.");
+      }
+      if (execution.commit) {
+        if (execution.commit.preview.message === proposal.message.trim()) return record.request;
+        throw new LocalRequestError("plan_immutable", "A commit preview already exists.");
+      }
+      const preview = await previewIsolatedCommit({
+        workspacePath: locateIsolatedWorktree({
+          stateDirectory: this.#stateDirectory,
+          requestId,
+          authority: execution.authority,
+        }),
+        canonicalRoot: await this.#projectRoot(record.request.projectId),
+        authority: execution.authority,
+        run: execution.run,
+        patchReceipt: execution.patch.receipt,
+        message: proposal.message,
+      });
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        execution: {
+          ...execution,
+          commit: {
+            schemaVersion: 1,
+            state: "previewed",
+            preview,
+            approval: null,
+            receipt: null,
+            undoneAt: null,
+          },
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "commit_previewed",
+            now,
+            "Hook-free isolated commit preview recorded; no paths were staged."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  approveCommit(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const approvalRequest = localCommitApprovalRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const commit = record.request.execution?.commit;
+      if (commit?.state === "approved") return record.request;
+      if (!commit || commit.state !== "previewed") {
+        throw new LocalRequestError("invalid_transition", "Preview the exact isolated commit first.");
+      }
+      if (approvalRequest.expectedPreviewDigest !== commit.preview.digest) {
+        throw new LocalRequestError("stale_revision", "Commit preview changed before approval.");
+      }
+      const approvedAt = Date.now();
+      const approval = localCommitApprovalSchema.parse({
+        schemaVersion: 1,
+        previewDigest: commit.preview.digest,
+        approvedAt,
+        digest: digest(`${commit.preview.digest}:${approvedAt}:isolated_commit_only`),
+      });
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: approvedAt,
+        execution: {
+          ...record.request.execution,
+          commit: { ...commit, state: "approved", approval },
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "commit_approved",
+            approvedAt,
+            "Exact local isolated commit approved; creation has not started."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  createCommit(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const commit = execution?.commit;
+      if (commit?.state === "created") return record.request;
+      if (!execution || !commit || commit.state !== "approved" || !commit.approval) {
+        throw new LocalRequestError("invalid_transition", "Approve the commit preview first.");
+      }
+      const creatingAt = Date.now();
+      const creating = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: creatingAt,
+        execution: { ...execution, commit: { ...commit, state: "creating" } },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "commit_creating",
+            creatingAt,
+            "Creating one hook-free commit on the isolated branch."
+          ),
+        },
+      });
+      await this.#replace(store, creating);
+      const receipt = await createIsolatedCommit({
+        workspacePath: locateIsolatedWorktree({
+          stateDirectory: this.#stateDirectory,
+          requestId,
+          authority: execution.authority,
+        }),
+        canonicalRoot: await this.#projectRoot(record.request.projectId),
+        authority: execution.authority,
+        preview: commit.preview,
+      });
+      const now = Date.now();
+      const created = localRequestSchema.parse({
+        ...creating,
+        updatedAt: now,
+        execution: {
+          ...creating.execution,
+          commit: { ...creating.execution?.commit, state: "created", receipt },
+        },
+        run: {
+          ...creating.run,
+          events: appendEvent(
+            creating.run?.events ?? [],
+            "commit_created",
+            now,
+            "Local isolated commit verified; it was not merged, pushed, published, or deployed."
+          ),
+        },
+      });
+      await this.#replace(await this.#load(), created);
+      return created;
+    });
+  }
+
+  undoCommit(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const commit = execution?.commit;
+      if (commit?.state === "undone") return record.request;
+      if (!execution || !commit?.receipt || commit.state !== "created") {
+        throw new LocalRequestError("invalid_transition", "Only a created isolated commit can be undone.");
+      }
+      await undoIsolatedCommit({
+        workspacePath: locateIsolatedWorktree({
+          stateDirectory: this.#stateDirectory,
+          requestId,
+          authority: execution.authority,
+        }),
+        canonicalRoot: await this.#projectRoot(record.request.projectId),
+        receipt: commit.receipt,
+      });
+      const undoneAt = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: undoneAt,
+        execution: { ...execution, commit: { ...commit, state: "undone", undoneAt } },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "commit_undone",
+            undoneAt,
+            "Isolated commit removed; validated patch bytes remain uncommitted."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  reconcileCommit(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const commit = execution?.commit;
+      if (commit?.state === "interrupted") return record.request;
+      if (!execution || !commit || commit.state !== "creating") {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Only interrupted commit creation can be reconciled."
+        );
+      }
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        execution: { ...execution, commit: { ...commit, state: "interrupted" } },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "commit_reconciled",
+            now,
+            "Interrupted commit preserved for explicit Git inspection; no retry was attempted."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
   archive(requestId: string): Promise<void> {
     return this.#serialize(async () => {
       const store = await this.#load();
@@ -1394,7 +1647,13 @@ function event(
     | "patch_applying"
     | "patch_applied"
     | "patch_rolled_back"
-    | "patch_reconciled",
+    | "patch_reconciled"
+    | "commit_previewed"
+    | "commit_approved"
+    | "commit_creating"
+    | "commit_created"
+    | "commit_undone"
+    | "commit_reconciled",
   observedAt: number,
   detail: string
 ) {

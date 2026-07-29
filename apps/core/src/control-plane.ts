@@ -21,6 +21,8 @@ import {
   localExecutionAuthorizationRequestSchema,
   localPatchApprovalRequestSchema,
   localPatchPreviewRequestSchema,
+  localCommitApprovalRequestSchema,
+  localCommitPreviewRequestSchema,
   localRequestCreationSchema,
   localRequestMutationResponseSchema,
   validateLocalRequestCollection,
@@ -69,6 +71,11 @@ export type ControlPlaneServerOptions = {
     applyPatch?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     rollbackPatch?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     reconcilePatch?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    previewCommit?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    approveCommit?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    createCommit?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    undoCommit?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    reconcileCommit?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -165,8 +172,62 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|commit-preview|commit-approve|commit-create|commit-undo|commit-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "commit-preview" &&
+        options.requests?.previewCommit
+      ) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.previewCommit(
+          requestRoute[1] ?? "",
+          localCommitPreviewRequestSchema.parse(await readJsonBody(request))
+        );
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1, outcome: "commit_previewed", request: changed,
+        }));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "commit-approve" &&
+        options.requests?.approveCommit
+      ) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.approveCommit(
+          requestRoute[1] ?? "",
+          localCommitApprovalRequestSchema.parse(await readJsonBody(request))
+        );
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1, outcome: "commit_approved", request: changed,
+        }));
+        return;
+      }
+      const commitActions = {
+        "commit-create": options.requests?.createCommit,
+        "commit-undo": options.requests?.undoCommit,
+        "commit-reconcile": options.requests?.reconcileCommit,
+      } as const;
+      const commitAction = requestRoute?.[2] as keyof typeof commitActions | undefined;
+      if (request.method === "POST" && commitAction && commitActions[commitAction]) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const changed = await commitActions[commitAction]!(requestRoute?.[1] ?? "");
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: ({
+            "commit-create": "commit_created",
+            "commit-undo": "commit_undone",
+            "commit-reconcile": "commit_reconciled",
+          } as const)[commitAction],
+          request: changed,
+        }));
+        return;
+      }
       if (
         request.method === "POST" &&
         requestRoute?.[2] === "patch-preview" &&

@@ -28,11 +28,14 @@ import {
   advanceLocalRequest,
   authorizeLocalExecution,
   advanceLocalPatch,
+  advanceLocalCommit,
+  approveLocalCommit,
   approveLocalPatch,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
   previewLocalPatch,
+  previewLocalCommit,
   updateLocalPlan,
 } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
@@ -65,6 +68,7 @@ export function LocalRequestPanel(props: {
   const [patchDrafts, setPatchDrafts] = useState<
     Record<string, { path: string; content: string }>
   >({});
+  const [commitMessages, setCommitMessages] = useState<Record<string, string>>({});
   const disposed = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -350,6 +354,77 @@ export function LocalRequestPanel(props: {
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Patch action failed safely.");
+    }
+  }
+
+  async function previewCommit(request: LocalRequest) {
+    const execution = request.execution;
+    const message = commitMessages[request.id]?.trim() ?? "";
+    if (!execution?.run || message.length < 3) {
+      setNotice("Enter a clear local commit message.");
+      return;
+    }
+    setStatus("working");
+    try {
+      await previewLocalCommit({
+        endpoint,
+        requestId: request.id,
+        proposal: {
+          schemaVersion: 1,
+          expectedAuthorityDigest: execution.authority.digest,
+          expectedRunDigest: execution.run.digest,
+          message,
+        },
+        idempotencyKey: `commit-preview:${request.id}:${execution.run.digest}:${message}`,
+      });
+      await refresh();
+      setNotice("Hook-free local commit preview recorded. Nothing was staged.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Commit preview failed safely.");
+    }
+  }
+
+  async function approveCommit(request: LocalRequest) {
+    const preview = request.execution?.commit?.preview;
+    if (!preview) return;
+    setStatus("working");
+    try {
+      await approveLocalCommit({
+        endpoint,
+        requestId: request.id,
+        approval: { schemaVersion: 1, expectedPreviewDigest: preview.digest },
+        idempotencyKey: `commit-approve:${request.id}:${preview.digest}`,
+      });
+      await refresh();
+      setNotice("Exact isolated commit approved. It has not been created.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Commit approval failed safely.");
+    }
+  }
+
+  async function mutateCommit(
+    request: LocalRequest,
+    action: "create" | "undo" | "reconcile"
+  ) {
+    setStatus("working");
+    try {
+      await advanceLocalCommit({
+        endpoint,
+        requestId: request.id,
+        action,
+        idempotencyKey: `commit-${action}:${request.id}:${request.execution?.commit?.preview.digest ?? "none"}`,
+      });
+      await refresh();
+      setNotice({
+        create: "Local isolated commit created and verified. It was not pushed or merged.",
+        undo: "Isolated commit undone; validated patch remains uncommitted.",
+        reconcile: "Interrupted commit preserved for explicit Git inspection.",
+      }[action]);
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Commit action failed safely.");
     }
   }
 
@@ -751,6 +826,74 @@ export function LocalRequestPanel(props: {
                                 </p>
                               </div>
                             )}
+                            {request.execution.state === "review_ready" &&
+                              !request.execution.commit && (
+                                <div className="mt-3 bg-primary/[.055] p-3">
+                                  <p className="text-[11px] font-semibold">
+                                    Local isolated commit
+                                  </p>
+                                  <input
+                                    aria-label="Local commit message"
+                                    value={commitMessages[request.id] ?? ""}
+                                    onChange={(event) =>
+                                      setCommitMessages((current) => ({
+                                        ...current,
+                                        [request.id]: event.target.value,
+                                      }))
+                                    }
+                                    maxLength={200}
+                                    placeholder="Describe the validated change…"
+                                    className="mt-3 h-10 w-full rounded-xl bg-background/80 px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+                                  />
+                                  <p className="mt-2 text-[10px] text-muted-foreground">
+                                    Hooks and signing disabled · local identity · never pushed
+                                  </p>
+                                  <Button
+                                    size="sm"
+                                    className="mt-3"
+                                    onClick={() => void previewCommit(request)}
+                                    disabled={
+                                      status === "working" ||
+                                      (commitMessages[request.id]?.trim().length ?? 0) < 3
+                                    }
+                                  >
+                                    <Fingerprint />
+                                    Preview local commit
+                                  </Button>
+                                </div>
+                              )}
+                            {request.execution.commit && (
+                              <div className="mt-3 bg-primary/[.055] p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <strong className="text-[11px]">
+                                    {request.execution.commit.preview.message}
+                                  </strong>
+                                  <Badge
+                                    tone={
+                                      request.execution.commit.state === "created"
+                                        ? "positive"
+                                        : request.execution.commit.state === "interrupted"
+                                          ? "critical"
+                                          : "active"
+                                    }
+                                  >
+                                    {request.execution.commit.state}
+                                  </Badge>
+                                </div>
+                                <p className="mt-2 text-[10px] text-muted-foreground">
+                                  {request.execution.commit.preview.changedPaths.length} paths · +
+                                  {request.execution.commit.preview.insertions} / −
+                                  {request.execution.commit.preview.deletions} · parent{" "}
+                                  {request.execution.commit.preview.parentCommit.slice(0, 8)}
+                                </p>
+                                {request.execution.commit.receipt && (
+                                  <p className="mt-2 text-[10px] font-medium">
+                                    Commit {request.execution.commit.receipt.commit.slice(0, 10)} ·{" "}
+                                    {request.execution.commit.receipt.branch} · not pushed
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                         <p className="mt-3 text-[10px] text-muted-foreground">
@@ -925,6 +1068,48 @@ export function LocalRequestPanel(props: {
                     <Button size="sm" onClick={() => void advance(request, "checkpoint")} disabled={status === "working"}>
                       <CheckCircle />
                       Record zero-effect checkpoint
+                    </Button>
+                  )}
+                  {request.execution?.commit?.state === "previewed" && (
+                    <Button
+                      size="sm"
+                      onClick={() => void approveCommit(request)}
+                      disabled={status === "working"}
+                    >
+                      <LockKey />
+                      Approve local commit
+                    </Button>
+                  )}
+                  {request.execution?.commit?.state === "approved" && (
+                    <Button
+                      size="sm"
+                      onClick={() => void mutateCommit(request, "create")}
+                      disabled={status === "working"}
+                    >
+                      <GitBranch />
+                      Create isolated commit
+                    </Button>
+                  )}
+                  {request.execution?.commit?.state === "created" && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void mutateCommit(request, "undo")}
+                      disabled={status === "working"}
+                    >
+                      <ArrowClockwise />
+                      Undo isolated commit
+                    </Button>
+                  )}
+                  {request.execution?.commit?.state === "creating" && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void mutateCommit(request, "reconcile")}
+                      disabled={status === "working"}
+                    >
+                      <ArrowClockwise />
+                      Reconcile commit interruption
                     </Button>
                   )}
                   {request.state === "checkpointed" && (
