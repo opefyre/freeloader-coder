@@ -16,6 +16,8 @@ import {
 } from "../../../packages/runtime/src/local-projects.js";
 import { LocalProjectError } from "./local-project-registry.js";
 import {
+  localPlanApprovalSchema,
+  localPlanEditSchema,
   localRequestCreationSchema,
   localRequestMutationResponseSchema,
   validateLocalRequestCollection,
@@ -50,6 +52,8 @@ export type ControlPlaneServerOptions = {
     release?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     reconcile?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     ground?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    updatePlan?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    approvePlan?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -146,8 +150,42 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "plan-edit" &&
+        options.requests?.updatePlan
+      ) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.updatePlan(
+          requestRoute[1] ?? "",
+          localPlanEditSchema.parse(await readJsonBody(request))
+        );
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: "plan_updated",
+          request: changed,
+        }));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "plan-approve" &&
+        options.requests?.approvePlan
+      ) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.approvePlan(
+          requestRoute[1] ?? "",
+          localPlanApprovalSchema.parse(await readJsonBody(request))
+        );
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: "plan_approved",
+          request: changed,
+        }));
+        return;
+      }
       const requestActions = {
         approve: options.requests?.approve,
         claim: options.requests?.claim,

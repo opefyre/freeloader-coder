@@ -1,8 +1,13 @@
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
+import { ArrowDown } from "@phosphor-icons/react/ArrowDown";
+import { ArrowUp } from "@phosphor-icons/react/ArrowUp";
 import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
 import { Fingerprint } from "@phosphor-icons/react/Fingerprint";
+import { FloppyDisk } from "@phosphor-icons/react/FloppyDisk";
+import { GitBranch } from "@phosphor-icons/react/GitBranch";
 import { HourglassMedium } from "@phosphor-icons/react/HourglassMedium";
+import { LockKey } from "@phosphor-icons/react/LockKey";
 import { Play } from "@phosphor-icons/react/Play";
 import { Stop } from "@phosphor-icons/react/Stop";
 import { Trash } from "@phosphor-icons/react/Trash";
@@ -10,14 +15,19 @@ import { Warning } from "@phosphor-icons/react/Warning";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
-import type { LocalRequest } from "../../../../../packages/runtime/src/local-requests.js";
+import type {
+  LocalDraftPlan,
+  LocalRequest,
+} from "../../../../../packages/runtime/src/local-requests.js";
 import { listLocalProjects } from "../../local-project-client.js";
 import {
   archiveLocalRequest,
+  approveLocalPlan,
   advanceLocalRequest,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
+  updateLocalPlan,
 } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -158,6 +168,54 @@ export function LocalRequestPanel(props: {
     }
   }
 
+  async function editPlan(
+    request: LocalRequest,
+    edit:
+      | { type: "edit_task"; taskId: string; title: string; estimatedMinutes: number }
+      | { type: "reorder"; order: string[] }
+  ) {
+    if (!request.plan) return;
+    setStatus("working");
+    try {
+      await updateLocalPlan({
+        endpoint,
+        requestId: request.id,
+        edit: {
+          schemaVersion: 1,
+          expectedRevision: request.plan.revision,
+          ...edit,
+        },
+        idempotencyKey: `plan-edit:${request.id}:${request.plan.revision}:${crypto.randomUUID()}`,
+      });
+      await refresh();
+      setNotice("Plan revision saved locally. No execution authority was granted.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Plan edit failed safely.");
+    }
+  }
+
+  async function approvePlan(request: LocalRequest) {
+    if (!request.plan) return;
+    setStatus("working");
+    try {
+      await approveLocalPlan({
+        endpoint,
+        requestId: request.id,
+        approval: {
+          schemaVersion: 1,
+          expectedRevision: request.plan.revision,
+        },
+        idempotencyKey: `plan-approve:${request.id}:${request.plan.revision}`,
+      });
+      await refresh();
+      setNotice("Plan frozen and approved. Execution remains unauthorized.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Plan approval failed safely.");
+    }
+  }
+
   const projectNames = new Map(projects.map((project) => [project.id, project.displayName]));
   return (
     <section className="space-y-4" aria-labelledby={`local-request-${props.mode}-title`}>
@@ -292,13 +350,27 @@ export function LocalRequestPanel(props: {
                         </ol>
                       </div>
                     )}
-                    {request.grounding && request.plan && (
+                    {request.grounding && request.topology && request.plan && (
                       <div className="mt-4 rounded-2xl bg-primary/[.055] p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <strong className="text-xs">Real grounding and draft plan</strong>
+                          <strong className="text-xs">Real topology and execution plan</strong>
                           <span className="text-[10px] uppercase tracking-[.13em] text-muted-foreground">
-                            {request.grounding.digest.slice(0, 12)}
+                            revision {request.plan.revision} · {request.plan.state}
                           </span>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                          <DecisionFact
+                            label="Observed paths"
+                            value={`${request.topology.entries.length}${request.topology.truncated ? "+" : ""}`}
+                          />
+                          <DecisionFact
+                            label="Plan tasks"
+                            value={String(request.plan.tasks.length)}
+                          />
+                          <DecisionFact
+                            label="Authority"
+                            value="No execution"
+                          />
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {request.grounding.sources.map((source) => (
@@ -307,19 +379,50 @@ export function LocalRequestPanel(props: {
                             </span>
                           ))}
                         </div>
-                        {request.plan.tasks.map((task) => (
-                          <div key={task.id} className="mt-3 rounded-2xl bg-background/70 p-3">
-                            <strong className="text-xs">{task.title}</strong>
-                            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-                              Files · {task.allowedFiles.join(" · ")}
-                            </p>
-                            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-                              Checks · {task.checks.join(" · ")}
-                            </p>
+                        <ol className="mt-3 space-y-3" aria-label="Dependency-aware execution plan">
+                          {request.plan.order.map((taskId, index) => {
+                            const task = request.plan?.tasks.find((candidate) => candidate.id === taskId);
+                            if (!task) return null;
+                            return (
+                              <li key={`${task.id}:${request.plan?.revision}`}>
+                                <PlanTaskEditor
+                                  task={task}
+                                  index={index}
+                                  count={request.plan?.tasks.length ?? 0}
+                                  locked={request.plan?.state === "approved"}
+                                  working={status === "working"}
+                                  onSave={(title, estimatedMinutes) =>
+                                    void editPlan(request, {
+                                      type: "edit_task",
+                                      taskId: task.id,
+                                      title,
+                                      estimatedMinutes,
+                                    })
+                                  }
+                                  onMove={(direction) => {
+                                    const order = [...(request.plan?.order ?? [])];
+                                    const target = index + direction;
+                                    if (target < 0 || target >= order.length) return;
+                                    [order[index], order[target]] = [order[target]!, order[index]!];
+                                    void editPlan(request, { type: "reorder", order });
+                                  }}
+                                />
+                              </li>
+                            );
+                          })}
+                        </ol>
+                        {request.plan.approval && (
+                          <div className="mt-3 flex items-center gap-2 rounded-2xl bg-background/70 p-3 text-[11px]">
+                            <LockKey className="shrink-0 text-primary" />
+                            <span>
+                              Frozen approval {request.plan.approval.digest.slice(0, 12)} · zero-effect ·
+                              execution unauthorized
+                            </span>
                           </div>
-                        ))}
+                        )}
                         <p className="mt-3 text-[10px] text-muted-foreground">
-                          Deterministic local draft · not AI decomposition · no execution authority
+                          Grounding citations explain why · topology paths define proposed targets · no
+                          model or worker has run
                         </p>
                       </div>
                     )}
@@ -354,7 +457,13 @@ export function LocalRequestPanel(props: {
                       Ground and draft plan
                     </Button>
                   )}
-                  {request.state === "approved" && request.plan && (
+                  {request.state === "approved" && request.plan?.state === "draft" && (
+                    <Button size="sm" onClick={() => void approvePlan(request)} disabled={status === "working"}>
+                      <LockKey />
+                      Approve and freeze plan
+                    </Button>
+                  )}
+                  {request.state === "approved" && request.plan?.state === "approved" && (
                     <Button size="sm" onClick={() => void advance(request, "claim")} disabled={status === "working"}>
                       <Play />
                       Claim proof lease
@@ -415,5 +524,119 @@ function DecisionFact({ label, value }: { label: string; value: string }) {
       </span>
       <strong className="mt-1 block text-[11px]">{value}</strong>
     </span>
+  );
+}
+
+function PlanTaskEditor(props: {
+  task: LocalDraftPlan["tasks"][number];
+  index: number;
+  count: number;
+  locked: boolean;
+  working: boolean;
+  onSave: (title: string, estimatedMinutes: number) => void;
+  onMove: (direction: -1 | 1) => void;
+}) {
+  const [title, setTitle] = useState(props.task.title);
+  const [estimatedMinutes, setEstimatedMinutes] = useState(props.task.estimatedMinutes);
+  const changed =
+    title.trim() !== props.task.title ||
+    estimatedMinutes !== props.task.estimatedMinutes;
+  return (
+    <article className="rounded-2xl bg-background/75 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/12 text-[11px] font-semibold text-primary">
+            {props.index + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            {props.locked ? (
+              <strong className="text-xs leading-5">{props.task.title}</strong>
+            ) : (
+              <label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-muted-foreground">
+                Task title
+                <input
+                  value={title}
+                  maxLength={160}
+                  onChange={(event) => setTitle(event.target.value)}
+                  className="mt-1 h-9 w-full rounded-xl bg-muted px-3 text-xs font-medium normal-case tracking-normal text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                />
+              </label>
+            )}
+            <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+              Targets · {props.task.allowedFiles.join(" · ")}
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+              Depends on · {props.task.dependsOn.length > 0
+                ? props.task.dependsOn.map((id) => id.slice(-6)).join(" · ")
+                : "Nothing"}
+            </p>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+              Cites · {props.task.citedSources.join(" · ")}
+            </p>
+          </div>
+        </div>
+        <Badge tone={props.task.risk === "high" ? "caution" : "neutral"}>
+          {props.task.risk} risk
+        </Badge>
+      </div>
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <GitBranch className="text-primary" />
+          {props.locked ? (
+            <span className="text-[11px]">{props.task.estimatedMinutes} min</span>
+          ) : (
+            <label className="text-[10px] font-semibold uppercase tracking-[.12em] text-muted-foreground">
+              Minutes
+              <input
+                type="number"
+                min={5}
+                max={480}
+                step={5}
+                value={estimatedMinutes}
+                onChange={(event) => setEstimatedMinutes(Number(event.target.value))}
+                className="ml-2 h-8 w-20 rounded-xl bg-muted px-2 text-xs normal-case tracking-normal text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+              />
+            </label>
+          )}
+        </div>
+        {!props.locked && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Move ${props.task.title} earlier`}
+              disabled={props.working || props.index === 0}
+              onClick={() => props.onMove(-1)}
+            >
+              <ArrowUp />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Move ${props.task.title} later`}
+              disabled={props.working || props.index === props.count - 1}
+              onClick={() => props.onMove(1)}
+            >
+              <ArrowDown />
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={
+                props.working ||
+                !changed ||
+                title.trim().length === 0 ||
+                estimatedMinutes < 5 ||
+                estimatedMinutes > 480
+              }
+              onClick={() => props.onSave(title.trim(), estimatedMinutes)}
+            >
+              <FloppyDisk />
+              Save task
+            </Button>
+          </div>
+        )}
+      </div>
+    </article>
   );
 }

@@ -108,9 +108,11 @@ const controlPlane = createControlPlaneServer({
         (candidate) => candidate.id === requestId
       );
       if (!request) throw new LocalRequestError("not_found", "Request was not found.");
-      const grounding = await localProjects.grounding(request.projectId);
-      return localRequests.ground(requestId, grounding);
+      const snapshot = await localProjects.grounding(request.projectId);
+      return localRequests.ground(requestId, snapshot);
     },
+    updatePlan: (requestId, input) => localRequests.updatePlan(requestId, input),
+    approvePlan: (requestId, input) => localRequests.approvePlan(requestId, input),
     archive: (requestId) => localRequests.archive(requestId),
   },
 });

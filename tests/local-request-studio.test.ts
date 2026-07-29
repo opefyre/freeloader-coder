@@ -19,8 +19,12 @@ test("Studio separates real request state from guided orchestration examples", a
     "Release proof lease",
     "Maximum cost",
     "Ground and draft plan",
-    "Real grounding and draft plan",
-    "not AI decomposition",
+    "Real topology and execution plan",
+    "Approve and freeze plan",
+    "Grounding citations explain why",
+    "topology paths define proposed targets",
+    "execution unauthorized",
+    "Save task",
   ]) {
     assert.equal(panel.includes(phrase), true, `Missing truthful UI contract: ${phrase}`);
   }

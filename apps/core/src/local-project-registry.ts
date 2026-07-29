@@ -12,7 +12,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 
 import {
   localProjectRegistrationSchema,
@@ -22,8 +22,11 @@ import {
   type LocalProjectSnapshot,
 } from "../../../packages/runtime/src/local-projects.js";
 import {
+  localPlanningSnapshotSchema,
   localGroundingSchema,
-  type LocalGrounding,
+  localTopologySchema,
+  type LocalPlanningSnapshot,
+  type LocalTopology,
 } from "../../../packages/runtime/src/local-requests.js";
 
 const MAX_ENTRIES = 4_000;
@@ -64,6 +67,8 @@ const groundingFiles = [
   "go.mod",
   "tsconfig.json",
 ] as const;
+const MAX_TOPOLOGY_ENTRIES = 800;
+const MAX_TOPOLOGY_DEPTH = 8;
 
 type PrivateProjectRecord = {
   schemaVersion: 1;
@@ -102,7 +107,7 @@ export class LocalProjectRegistry {
     return registry.projects.some((project) => project.id === projectId);
   }
 
-  async grounding(projectId: string): Promise<LocalGrounding> {
+  async grounding(projectId: string): Promise<LocalPlanningSnapshot> {
     assertProjectId(projectId);
     const registry = await this.#load();
     const record = registry.projects.find((project) => project.id === projectId);
@@ -110,7 +115,7 @@ export class LocalProjectRegistry {
       throw new LocalProjectError("not_found", "Project registration was not found.");
     }
     const canonicalPath = await validateRepositoryRoot(record.canonicalPath);
-    const sources: LocalGrounding["sources"][number][] = [];
+    const sources: LocalPlanningSnapshot["grounding"]["sources"][number][] = [];
     let totalBytes = 0;
     for (const name of groundingFiles) {
       const absolute = join(canonicalPath, name);
@@ -149,7 +154,7 @@ export class LocalProjectRegistry {
       );
     }
     const body = { projectId, sources };
-    return localGroundingSchema.parse({
+    const grounding = localGroundingSchema.parse({
       schemaVersion: 1,
       projectId,
       provenance: "bounded_local_files",
@@ -160,6 +165,12 @@ export class LocalProjectRegistry {
         "Only explicitly allowlisted root files were read.",
         "Symlinks, sensitive-shaped content, source directories, and command output were excluded.",
       ],
+    });
+    const topology = await inventoryTopology(canonicalPath, projectId);
+    return localPlanningSnapshotSchema.parse({
+      schemaVersion: 1,
+      grounding,
+      topology,
     });
   }
 
@@ -475,6 +486,103 @@ async function inspectRepository(input: {
     ],
     warnings,
   });
+}
+
+async function inventoryTopology(
+  canonicalPath: string,
+  projectId: string
+): Promise<LocalTopology> {
+  const entries: LocalTopology["entries"][number][] = [];
+  let truncated = false;
+  const directories: { directory: string; depth: number }[] = [
+    { directory: canonicalPath, depth: 0 },
+  ];
+  while (directories.length > 0 && !truncated) {
+    const current = directories.shift();
+    if (!current) break;
+    if (current.depth > MAX_TOPOLOGY_DEPTH) {
+      truncated = true;
+      break;
+    }
+    const { directory, depth } = current;
+    const children = (await readdir(directory, { withFileTypes: true }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const child of children) {
+      if (truncated) break;
+      if (
+        ignoredNames.has(child.name) ||
+        child.name.startsWith(".") ||
+        sensitivePathName(child.name)
+      ) {
+        continue;
+      }
+      const absolute = join(directory, child.name);
+      const info = await lstat(absolute);
+      if (info.isSymbolicLink()) continue;
+      if (info.isDirectory()) {
+        directories.push({ directory: absolute, depth: depth + 1 });
+        continue;
+      }
+      if (!info.isFile() || info.size > 2_000_000) continue;
+      const projectPath = relative(canonicalPath, absolute).split(sep).join("/");
+      if (!projectPath || projectPath.startsWith("../") || isAbsolute(projectPath)) {
+        throw new LocalProjectError("scan_failed", "Topology escaped the registered repository.");
+      }
+      entries.push({
+        path: projectPath,
+        kind: topologyKind(projectPath),
+        extension: extname(child.name) || null,
+        bytes: info.size,
+      });
+      if (entries.length >= MAX_TOPOLOGY_ENTRIES) truncated = true;
+    }
+  }
+  if (entries.length === 0) {
+    throw new LocalProjectError("scan_failed", "No safe repository topology was observed.");
+  }
+  const canonicalEntries = [...entries].sort((left, right) => left.path.localeCompare(right.path));
+  return localTopologySchema.parse({
+    schemaVersion: 1,
+    projectId,
+    provenance: "bounded_path_inventory",
+    digest: hash(JSON.stringify({ projectId, entries: canonicalEntries, truncated })),
+    observedAt: Date.now(),
+    entries: canonicalEntries,
+    truncated,
+    excludedDirectories: [...ignoredNames].sort(),
+    limitations: [
+      "Topology contains project-relative file metadata only; file contents were not read.",
+      `Inventory is limited to ${MAX_TOPOLOGY_ENTRIES} files and ${MAX_TOPOLOGY_DEPTH} directory levels.`,
+      "Hidden, generated, dependency, secret-like, oversized, and symlinked paths were excluded.",
+    ],
+  });
+}
+
+function topologyKind(path: string): LocalTopology["entries"][number]["kind"] {
+  const normalized = path.toLocaleLowerCase();
+  if (/(^|\/)(test|tests|__tests__|spec|specs)\//.test(normalized) || /\.(test|spec)\./.test(normalized)) {
+    return "test";
+  }
+  if (/(^|\/)(docs?|documentation)\//.test(normalized) || /\.(md|mdx|txt)$/.test(normalized)) {
+    return "documentation";
+  }
+  if (/(^|\/)(public|assets?|images?)\//.test(normalized) || /\.(png|jpe?g|gif|svg|webp|ico)$/.test(normalized)) {
+    return "asset";
+  }
+  if (
+    /(^|\/)(config|configs)\//.test(normalized) ||
+    /(^|\/)(package\.json|tsconfig.*\.json|vite\.config\.|pyproject\.toml|cargo\.toml|go\.mod)/.test(normalized)
+  ) {
+    return "config";
+  }
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|swift|vue|svelte|css|scss|html)$/.test(normalized)) {
+    return "source";
+  }
+  return "other";
+}
+
+function sensitivePathName(name: string): boolean {
+  return /(^|[._-])(secret|secrets|token|tokens|credential|credentials|password|private[_-]?key)([._-]|$)/i.test(name);
 }
 
 async function readGitHead(repositoryPath: string): Promise<{ branch: string | null }> {

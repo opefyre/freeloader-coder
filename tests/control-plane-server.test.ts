@@ -269,6 +269,14 @@ test("request endpoints expose only durable queue metadata with guarded mutation
         calls.push(`approve:${id}`);
         return queued;
       },
+      updatePlan: (id, input) => {
+        calls.push(`plan-edit:${id}:${JSON.stringify(input)}`);
+        return queued;
+      },
+      approvePlan: (id, input) => {
+        calls.push(`plan-approve:${id}:${JSON.stringify(input)}`);
+        return queued;
+      },
       archive: (id) => {
         calls.push(`archive:${id}`);
       },
@@ -284,6 +292,41 @@ test("request endpoints expose only durable queue metadata with guarded mutation
         await fetch(`${base}/api/v1/requests/${queued.id}/approve`, {
           method: "POST",
           headers: { ...headers, "Idempotency-Key": "approve:01234567" },
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/requests/${queued.id}/plan-edit`, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "plan-edit:01234567",
+          },
+          body: JSON.stringify({
+            schemaVersion: 1,
+            type: "edit_task",
+            expectedRevision: 1,
+            taskId: "task_0123456789ab",
+            title: "Review the real plan",
+            estimatedMinutes: 45,
+          }),
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/requests/${queued.id}/plan-approve`, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "plan-approve:01234567",
+          },
+          body: JSON.stringify({ schemaVersion: 1, expectedRevision: 1 }),
         })
       ).status,
       200
@@ -338,7 +381,9 @@ test("request endpoints expose only durable queue metadata with guarded mutation
       ).status,
       200
     );
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 6);
+    assert.equal(calls.some((call) => call.startsWith(`plan-edit:${queued.id}:`)), true);
+    assert.equal(calls.some((call) => call.startsWith(`plan-approve:${queued.id}:`)), true);
   } finally {
     await controlPlane.close();
   }

@@ -13,9 +13,14 @@ import { z } from "zod";
 
 import {
   localRequestCreationSchema,
-  localGroundingSchema,
+  localPlanApprovalSchema,
+  localPlanEditSchema,
+  localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
+  type LocalDraftPlan,
+  type LocalGrounding,
+  type LocalTopology,
   type LocalRequest,
   type LocalRequestCollection,
 } from "../../../packages/runtime/src/local-requests.js";
@@ -228,8 +233,15 @@ export class LocalRequestStore {
       ) {
         return record.request;
       }
-      if (!record.request.run || record.request.state !== "approved") {
-        throw new LocalRequestError("invalid_transition", "Approve the contract before claiming it.");
+      if (
+        !record.request.run ||
+        record.request.state !== "approved" ||
+        record.request.plan?.state !== "approved"
+      ) {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Approve the grounded plan before claiming its zero-effect proof lease."
+        );
       }
       const now = Date.now();
       const leaseDigest = digest(`${record.request.run.contract.digest}:${now}`);
@@ -351,7 +363,8 @@ export class LocalRequestStore {
 
   ground(requestId: string, input: unknown): Promise<LocalRequest> {
     return this.#serialize(async () => {
-      const grounding = localGroundingSchema.parse(input);
+      const snapshot = localPlanningSnapshotSchema.parse(input);
+      const { grounding, topology } = snapshot;
       const store = await this.#load();
       const record = findRecord(store, requestId);
       if (!record.request.run || record.request.state !== "approved") {
@@ -360,11 +373,17 @@ export class LocalRequestStore {
           "Approve the zero-effect contract before grounding the request."
         );
       }
-      if (grounding.projectId !== record.request.projectId) {
+      if (
+        grounding.projectId !== record.request.projectId ||
+        topology.projectId !== record.request.projectId
+      ) {
         throw new LocalRequestError("grounding_mismatch", "Grounding does not match the request project.");
       }
       if (record.request.grounding) {
-        if (record.request.grounding.digest !== grounding.digest) {
+        if (
+          record.request.grounding.digest !== grounding.digest ||
+          record.request.topology?.digest !== topology.digest
+        ) {
           throw new LocalRequestError(
             "stale_source",
             "Project grounding changed. Create a new approval before replacing the plan."
@@ -372,45 +391,19 @@ export class LocalRequestStore {
         }
         return record.request;
       }
-      const allowedFiles = grounding.sources.map((source) => source.path);
-      const planBody = {
-        provenance: "deterministic_local_plan",
-        groundingDigest: grounding.digest,
-        outcome: record.request.outcome,
-        allowedFiles,
-      };
-      const planDigest = digest(JSON.stringify(planBody));
+      const plan = createLocalPlan(
+        record.request.outcome,
+        grounding,
+        topology,
+        record.request.run.contract.checks
+      );
       const now = Date.now();
       const request = localRequestSchema.parse({
         ...record.request,
         updatedAt: now,
         grounding,
-        plan: {
-          schemaVersion: 1,
-          provenance: "deterministic_local_plan",
-          digest: planDigest,
-          groundingDigest: grounding.digest,
-          state: "draft",
-          tasks: [{
-            id: `task_${planDigest.slice(0, 12)}`,
-            title:
-              record.request.outcome.length > 100
-                ? `${record.request.outcome.slice(0, 97)}…`
-                : record.request.outcome,
-            outcome: record.request.outcome,
-            allowedFiles,
-            acceptanceCriteria: [
-              "The requested outcome is implemented using observed project guidance.",
-              "Repository-defined checks pass before completion is claimed.",
-            ],
-            exclusions: [
-              "This draft does not authorize source changes.",
-              "No model, provider, command, or Git operation has run.",
-            ],
-            checks: record.request.run.contract.checks,
-            risk: "medium",
-          }],
-        },
+        topology,
+        plan,
         run: {
           ...record.request.run,
           events: appendEvent(
@@ -418,6 +411,122 @@ export class LocalRequestStore {
             "grounding_created",
             now,
             "Bounded local grounding and deterministic draft plan created."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  updatePlan(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const edit = localPlanEditSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const plan = editablePlan(record.request);
+      const replay =
+        plan.revision === edit.expectedRevision + 1 &&
+        (edit.type === "edit_task"
+          ? plan.tasks.some(
+              (task) =>
+                task.id === edit.taskId &&
+                task.title === edit.title.trim() &&
+                task.estimatedMinutes === edit.estimatedMinutes
+            )
+          : plan.order.join("\0") === edit.order.join("\0"));
+      if (replay) return record.request;
+      if (plan.revision !== edit.expectedRevision) {
+        throw new LocalRequestError(
+          "stale_revision",
+          "The plan changed since it was opened. Refresh before editing."
+        );
+      }
+      let tasks = [...plan.tasks];
+      let order = [...plan.order];
+      if (edit.type === "edit_task") {
+        if (!tasks.some((task) => task.id === edit.taskId)) {
+          throw new LocalRequestError("invalid_transition", "Plan task was not found.");
+        }
+        tasks = tasks.map((task) =>
+          task.id === edit.taskId
+            ? { ...task, title: edit.title.trim(), estimatedMinutes: edit.estimatedMinutes }
+            : task
+        );
+      } else {
+        validateOrder(tasks, edit.order);
+        order = [...edit.order];
+      }
+      const revision = plan.revision + 1;
+      const nextPlan = withPlanDigest({
+        ...plan,
+        revision,
+        tasks,
+        order,
+      });
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        plan: nextPlan,
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "plan_updated",
+            now,
+            `Plan revision ${revision} saved without execution authority.`
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  approvePlan(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const approval = localPlanApprovalSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      if (record.request.plan?.state === "approved") return record.request;
+      const plan = editablePlan(record.request);
+      if (plan.revision !== approval.expectedRevision) {
+        throw new LocalRequestError(
+          "stale_revision",
+          "The plan changed since it was opened. Refresh before approval."
+        );
+      }
+      const approvedAt = Date.now();
+      const approvalDigest = digest(JSON.stringify({
+        planDigest: plan.digest,
+        revision: plan.revision,
+        contractDigest: record.request.run?.contract.digest,
+        policy: "zero_effect",
+        executionAuthorized: false,
+      }));
+      const approvedPlan = withPlanDigest({
+        ...plan,
+        state: "approved",
+        approval: {
+          digest: approvalDigest,
+          revision: plan.revision,
+          approvedAt,
+          policy: "zero_effect",
+          executionAuthorized: false,
+        },
+      });
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: approvedAt,
+        plan: approvedPlan,
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "plan_approved",
+            approvedAt,
+            `Plan revision ${plan.revision} approved; execution remains unauthorized.`
           ),
         },
       });
@@ -526,6 +635,8 @@ export class LocalRequestError extends Error {
       | "lease_active"
       | "grounding_mismatch"
       | "stale_source"
+      | "stale_revision"
+      | "plan_immutable"
       | "store_invalid",
     message: string
   ) {
@@ -561,7 +672,9 @@ function event(
     | "checkpoint_observed"
     | "lease_released"
     | "lease_expired"
-    | "grounding_created",
+    | "grounding_created"
+    | "plan_updated"
+    | "plan_approved",
   observedAt: number,
   detail: string
 ) {
@@ -575,4 +688,216 @@ function appendEvent(
   detail: string
 ) {
   return [...events, event(events.length + 1, type, observedAt, detail)];
+}
+
+function createLocalPlan(
+  outcome: string,
+  grounding: LocalGrounding,
+  topology: LocalTopology,
+  checks: readonly string[]
+): LocalDraftPlan {
+  const citedSources = grounding.sources.slice(0, 6).map((source) => source.path);
+  const implementationEntries = topology.entries
+    .filter((entry) => ["source", "config", "documentation"].includes(entry.kind))
+    .sort((left, right) => {
+      const priority = { source: 0, config: 1, documentation: 2 } as const;
+      return targetScore(right.path, outcome) - targetScore(left.path, outcome) ||
+        priority[left.kind as keyof typeof priority] -
+        priority[right.kind as keyof typeof priority] ||
+        left.path.localeCompare(right.path);
+    });
+  const fallback = topology.entries.filter((entry) => entry.kind !== "asset");
+  const candidates = implementationEntries.length > 0 ? implementationEntries : fallback;
+  const groups = new Map<string, string[]>();
+  for (const entry of candidates) {
+    const key = topologyGroup(entry.path);
+    const paths = groups.get(key) ?? [];
+    if (paths.length < 6) paths.push(entry.path);
+    groups.set(key, paths);
+  }
+  const selectedGroups = [...groups.entries()].slice(0, 3);
+  if (selectedGroups.length === 0) {
+    throw new LocalRequestError(
+      "grounding_mismatch",
+      "No safe implementation target was observed in the bounded topology."
+    );
+  }
+  const tasks: LocalDraftPlan["tasks"][number][] = selectedGroups.map(
+    ([group, allowedFiles], index) => {
+      const identity = digest(JSON.stringify({
+        outcome,
+        grounding: grounding.digest,
+        topology: topology.digest,
+        group,
+      }));
+      return {
+        id: `task_${identity.slice(0, 12)}`,
+        title: `Implement the requested outcome in ${group}`,
+        outcome,
+        scope: [
+          `Change only the observed ${group} targets listed in this task.`,
+          "Preserve repository guidance and existing project patterns.",
+        ],
+        allowedFiles,
+        citedSources,
+        dependsOn: index === 0 ? [] : [],
+        acceptanceCriteria: [
+          "The task outcome is satisfied within its declared file scope.",
+          "Repository-defined checks pass before completion is claimed.",
+        ],
+        exclusions: [
+          "Plan approval does not authorize source changes or command execution.",
+          "No model, provider, Git operation, credential, network, or paid route is enabled.",
+        ],
+        checks: [...checks],
+        risk: allowedFiles.some((path) => path.includes("config") || path.endsWith("package.json"))
+          ? "medium"
+          : "low",
+        estimatedMinutes: Math.min(120, 25 + allowedFiles.length * 10),
+      };
+    }
+  );
+  const testFiles = topology.entries
+    .filter((entry) => entry.kind === "test")
+    .map((entry) => entry.path)
+    .filter((path) => !tasks.some((task) => task.allowedFiles.includes(path)))
+    .slice(0, 12);
+  if (testFiles.length > 0 && tasks.length < 8) {
+    const identity = digest(JSON.stringify({
+      outcome,
+      topology: topology.digest,
+      kind: "validation",
+      testFiles,
+    }));
+    tasks.push({
+      id: `task_${identity.slice(0, 12)}`,
+      title: "Validate the requested outcome with observed tests",
+      outcome: `Prove the requested outcome using the repository's observed test surface.`,
+      scope: ["Update only observed test targets and record deterministic validation evidence."],
+      allowedFiles: testFiles,
+      citedSources,
+      dependsOn: tasks.map((task) => task.id),
+      acceptanceCriteria: [
+        "Relevant tests cover the requested behavior.",
+        "Validation evidence distinguishes observed results from model claims.",
+      ],
+      exclusions: [
+        "Plan approval does not run tests or authorize test-file changes.",
+        "No validation result is claimed until a later execution stage observes it.",
+      ],
+      checks: [...checks],
+      risk: "low",
+      estimatedMinutes: Math.min(120, 20 + testFiles.length * 8),
+    });
+  }
+  return withPlanDigest({
+    schemaVersion: 1,
+    provenance: "deterministic_local_plan",
+    digest: "0".repeat(64),
+    groundingDigest: grounding.digest,
+    topologyDigest: topology.digest,
+    revision: 1,
+    state: "draft",
+    order: tasks.map((task) => task.id),
+    approval: null,
+    tasks,
+  });
+}
+
+function topologyGroup(path: string): string {
+  const parts = path.split("/");
+  if (["apps", "packages"].includes(parts[0] ?? "") && parts.length > 1) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+  return parts.length > 1 ? parts[0] ?? "repository root" : "repository root";
+}
+
+function targetScore(path: string, outcome: string): number {
+  const normalizedPath = path.toLocaleLowerCase();
+  const normalizedOutcome = outcome.toLocaleLowerCase();
+  const stopWords = new Set([
+    "with", "from", "into", "that", "this", "safe", "local", "requested", "outcome",
+  ]);
+  const tokens = normalizedOutcome
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 4 && !stopWords.has(token));
+  let score = tokens.reduce(
+    (total, token) => total + (normalizedPath.includes(token) ? 8 : 0),
+    0
+  );
+  const signals: [RegExp, readonly string[]][] = [
+    [/(ui|screen|page|review|conversation|dashboard)/, ["apps/studio", ".tsx", ".css"]],
+    [/(api|control|server|request|queue)/, ["apps/core", "control-plane", "request"]],
+    [/(plan|task|orchestrat|dependenc)/, ["orchestration", "task-planner", "local-request"]],
+    [/(test|validat|quality|qa)/, ["tests/", ".test.", "validation"]],
+    [/(provider|model|quota|routing)/, ["providers", "provider"]],
+    [/(runtime|schema|contract)/, ["packages/runtime", "schema", "contract"]],
+  ];
+  for (const [pattern, hints] of signals) {
+    if (pattern.test(normalizedOutcome)) {
+      score += hints.reduce(
+        (total, hint) => total + (normalizedPath.includes(hint) ? 5 : 0),
+        0
+      );
+    }
+  }
+  return score;
+}
+
+function withPlanDigest(plan: LocalDraftPlan): LocalDraftPlan {
+  const { digest: _ignored, ...canonical } = plan;
+  return {
+    ...plan,
+    digest: digest(JSON.stringify(canonical)),
+  };
+}
+
+function editablePlan(request: LocalRequest): LocalDraftPlan {
+  if (
+    request.state !== "approved" ||
+    !request.run ||
+    !request.grounding ||
+    !request.topology ||
+    !request.plan
+  ) {
+    throw new LocalRequestError(
+      "invalid_transition",
+      "Ground the approved request before editing its plan."
+    );
+  }
+  if (request.plan.state !== "draft") {
+    throw new LocalRequestError("plan_immutable", "Approved plans are immutable.");
+  }
+  return request.plan;
+}
+
+function validateOrder(
+  tasks: LocalDraftPlan["tasks"],
+  order: readonly string[]
+): void {
+  const ids = tasks.map((task) => task.id);
+  if (
+    order.length !== ids.length ||
+    new Set(order).size !== ids.length ||
+    order.some((id) => !ids.includes(id))
+  ) {
+    throw new LocalRequestError(
+      "invalid_transition",
+      "Plan order must contain every task exactly once."
+    );
+  }
+  const position = new Map(order.map((id, index) => [id, index]));
+  for (const task of tasks) {
+    if (
+      task.dependsOn.some(
+        (dependency) =>
+          (position.get(dependency) ?? Infinity) >= (position.get(task.id) ?? -1)
+      )
+    ) {
+      throw new LocalRequestError(
+        "invalid_transition",
+        "Dependent work cannot be ordered before its prerequisite."
+      );
+    }
+  }
 }
