@@ -31,6 +31,12 @@ import {
   undoIsolatedCommit,
 } from "../apps/core/src/local-commit.js";
 import {
+  createLocalIntegration,
+  LocalIntegrationError,
+  previewLocalIntegration,
+  undoLocalIntegration,
+} from "../apps/core/src/local-integration.js";
+import {
   localDraftPlanSchema,
   localExecutionAuthoritySchema,
 } from "../packages/runtime/src/local-requests.js";
@@ -214,6 +220,33 @@ test("clean Git preflight and isolated worktree preserve the canonical worktree"
     assert.equal(commitReceipt.pushed, false);
     await assert.rejects(() => access(hookMarker));
     assert.equal((await git(workspacePath, ["rev-parse", "HEAD"])).trim(), commitReceipt.commit);
+    const integrationPreview = await previewLocalIntegration({
+      canonicalRoot: repository,
+      authority,
+      commitReceipt,
+    });
+    assert.equal(integrationPreview.targetHead, beforeHead);
+    assert.equal(integrationPreview.conflictProbe, "passed");
+    const integrationReceipt = await createLocalIntegration({
+      canonicalRoot: repository,
+      preview: integrationPreview,
+    });
+    assert.equal(integrationReceipt.previousHead, beforeHead);
+    assert.equal(integrationReceipt.pushed, false);
+    assert.equal(await readFile(join(repository, "README.md"), "utf8"), "# Isolated change\n");
+    await assert.rejects(() => access(hookMarker));
+    await undoLocalIntegration({ canonicalRoot: repository, receipt: integrationReceipt });
+    assert.equal((await git(repository, ["rev-parse", "HEAD"])).trim(), beforeHead);
+    assert.equal(await readFile(join(repository, "README.md"), "utf8"), "# Test\n");
+    await writeFile(join(repository, "README.md"), "# Conflicting canonical change\n", "utf8");
+    await git(repository, ["add", "README.md"]);
+    await git(repository, ["-c", "core.hooksPath=/dev/null", "commit", "-m", "conflicting canonical change"]);
+    await assert.rejects(
+      () => previewLocalIntegration({ canonicalRoot: repository, authority, commitReceipt }),
+      (error: unknown) =>
+        error instanceof LocalIntegrationError && error.code === "integration_conflict"
+    );
+    await git(repository, ["reset", "--hard", beforeHead]);
     await undoIsolatedCommit({
       workspacePath,
       canonicalRoot: repository,

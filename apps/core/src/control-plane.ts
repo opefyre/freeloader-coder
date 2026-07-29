@@ -23,6 +23,8 @@ import {
   localPatchPreviewRequestSchema,
   localCommitApprovalRequestSchema,
   localCommitPreviewRequestSchema,
+  localIntegrationApprovalRequestSchema,
+  localIntegrationPreviewRequestSchema,
   localRequestCreationSchema,
   localRequestMutationResponseSchema,
   validateLocalRequestCollection,
@@ -76,6 +78,11 @@ export type ControlPlaneServerOptions = {
     createCommit?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     undoCommit?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     reconcileCommit?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    previewIntegration?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    approveIntegration?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    createIntegration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    undoIntegration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    reconcileIntegration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -172,8 +179,37 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|commit-preview|commit-approve|commit-create|commit-undo|commit-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|commit-preview|commit-approve|commit-create|commit-undo|commit-reconcile|integration-preview|integration-approve|integration-create|integration-undo|integration-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      if (request.method === "POST" && requestRoute?.[2] === "integration-preview" && options.requests?.previewIntegration) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.previewIntegration(requestRoute[1] ?? "", localIntegrationPreviewRequestSchema.parse(await readJsonBody(request)));
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: "integration_previewed", request: changed }));
+        return;
+      }
+      if (request.method === "POST" && requestRoute?.[2] === "integration-approve" && options.requests?.approveIntegration) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.approveIntegration(requestRoute[1] ?? "", localIntegrationApprovalRequestSchema.parse(await readJsonBody(request)));
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: "integration_approved", request: changed }));
+        return;
+      }
+      const integrationActions = {
+        "integration-create": options.requests?.createIntegration,
+        "integration-undo": options.requests?.undoIntegration,
+        "integration-reconcile": options.requests?.reconcileIntegration,
+      } as const;
+      const integrationAction = requestRoute?.[2] as keyof typeof integrationActions | undefined;
+      if (request.method === "POST" && integrationAction && integrationActions[integrationAction]) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        const changed = await integrationActions[integrationAction]!(requestRoute?.[1] ?? "");
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: ({ "integration-create": "integration_created", "integration-undo": "integration_undone", "integration-reconcile": "integration_reconciled" } as const)[integrationAction],
+          request: changed,
+        }));
+        return;
+      }
       if (
         request.method === "POST" &&
         requestRoute?.[2] === "commit-preview" &&

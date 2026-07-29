@@ -24,6 +24,9 @@ import {
   localCommitApprovalRequestSchema,
   localCommitApprovalSchema,
   localCommitPreviewRequestSchema,
+  localIntegrationApprovalRequestSchema,
+  localIntegrationApprovalSchema,
+  localIntegrationPreviewRequestSchema,
   localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
@@ -54,6 +57,11 @@ import {
   previewIsolatedCommit,
   undoIsolatedCommit,
 } from "./local-commit.js";
+import {
+  createLocalIntegration,
+  previewLocalIntegration,
+  undoLocalIntegration,
+} from "./local-integration.js";
 
 const MAX_REQUESTS = 500;
 const sensitiveMaterial =
@@ -1493,6 +1501,163 @@ export class LocalRequestStore {
     });
   }
 
+  previewIntegration(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const proposal = localIntegrationPreviewRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const commit = execution?.commit;
+      if (!execution || !commit?.receipt || commit.state !== "created") {
+        throw new LocalRequestError("invalid_transition", "Create and verify the isolated commit first.");
+      }
+      if (proposal.expectedCommitReceiptDigest !== commit.receipt.digest) {
+        throw new LocalRequestError("stale_revision", "Commit receipt changed before integration preview.");
+      }
+      if (execution.integration) return record.request;
+      const preview = await previewLocalIntegration({
+        canonicalRoot: await this.#projectRoot(record.request.projectId),
+        authority: execution.authority,
+        commitReceipt: commit.receipt,
+      });
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: now,
+        execution: { ...execution, integration: {
+          schemaVersion: 1, state: "previewed", preview, approval: null, receipt: null, undoneAt: null,
+        }},
+        run: { ...record.request.run, events: appendEvent(
+          record.request.run?.events ?? [], "integration_previewed", now,
+          "Canonical integration preview and disposable conflict probe passed; no canonical files changed."
+        )},
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  approveIntegration(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const proposal = localIntegrationApprovalRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const integration = execution?.integration;
+      if (integration?.state === "approved") return record.request;
+      if (!execution || !integration || integration.state !== "previewed") {
+        throw new LocalRequestError("invalid_transition", "Preview canonical integration first.");
+      }
+      if (proposal.expectedPreviewDigest !== integration.preview.digest) {
+        throw new LocalRequestError("stale_revision", "Integration preview changed before approval.");
+      }
+      const approvedAt = Date.now();
+      const approval = localIntegrationApprovalSchema.parse({
+        schemaVersion: 1, previewDigest: integration.preview.digest, approvedAt,
+        digest: digest(`${integration.preview.digest}:${approvedAt}:local_integration_only`),
+      });
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: approvedAt,
+        execution: { ...execution, integration: { ...integration, state: "approved", approval }},
+        run: { ...record.request.run, events: appendEvent(
+          record.request.run?.events ?? [], "integration_approved", approvedAt,
+          "Exact local canonical integration approved; no remote effect was authorized."
+        )},
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  createIntegration(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const integration = execution?.integration;
+      if (integration?.state === "created") return record.request;
+      if (!execution || !integration?.approval || integration.state !== "approved") {
+        throw new LocalRequestError("invalid_transition", "Approve the exact integration preview first.");
+      }
+      const startedAt = Date.now();
+      const creating = localRequestSchema.parse({
+        ...record.request, updatedAt: startedAt,
+        execution: { ...execution, integration: { ...integration, state: "creating" }},
+        run: { ...record.request.run, events: appendEvent(
+          record.request.run?.events ?? [], "integration_creating", startedAt,
+          "Integrating one approved commit into the local canonical branch."
+        )},
+      });
+      await this.#replace(store, creating);
+      const receipt = await createLocalIntegration({
+        canonicalRoot: await this.#projectRoot(record.request.projectId), preview: integration.preview,
+      });
+      const now = Date.now();
+      const created = localRequestSchema.parse({
+        ...creating, updatedAt: now,
+        execution: { ...creating.execution, integration: {
+          ...creating.execution?.integration, state: "created", receipt,
+        }},
+        run: { ...creating.run, events: appendEvent(
+          creating.run?.events ?? [], "integration_created", now,
+          "Canonical local commit verified; nothing was pushed, published or deployed."
+        )},
+      });
+      await this.#replace(await this.#load(), created);
+      return created;
+    });
+  }
+
+  undoIntegration(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const integration = execution?.integration;
+      if (integration?.state === "undone") return record.request;
+      if (!execution || !integration?.receipt || integration.state !== "created") {
+        throw new LocalRequestError("invalid_transition", "Only the exact latest local integration can be undone.");
+      }
+      await undoLocalIntegration({
+        canonicalRoot: await this.#projectRoot(record.request.projectId), receipt: integration.receipt,
+      });
+      const undoneAt = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: undoneAt,
+        execution: { ...execution, integration: { ...integration, state: "undone", undoneAt }},
+        run: { ...record.request.run, events: appendEvent(
+          record.request.run?.events ?? [], "integration_undone", undoneAt,
+          "Canonical branch restored to its exact pre-integration HEAD."
+        )},
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  reconcileIntegration(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const integration = execution?.integration;
+      if (integration?.state === "interrupted") return record.request;
+      if (!execution || !integration || integration.state !== "creating") {
+        throw new LocalRequestError("invalid_transition", "Only interrupted integration can be reconciled.");
+      }
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: now,
+        execution: { ...execution, integration: { ...integration, state: "interrupted" }},
+        run: { ...record.request.run, events: appendEvent(
+          record.request.run?.events ?? [], "integration_reconciled", now,
+          "Interrupted integration preserved for exact canonical Git inspection; no retry was attempted."
+        )},
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
   archive(requestId: string): Promise<void> {
     return this.#serialize(async () => {
       const store = await this.#load();
@@ -1653,7 +1818,13 @@ function event(
     | "commit_creating"
     | "commit_created"
     | "commit_undone"
-    | "commit_reconciled",
+    | "commit_reconciled"
+    | "integration_previewed"
+    | "integration_approved"
+    | "integration_creating"
+    | "integration_created"
+    | "integration_undone"
+    | "integration_reconciled",
   observedAt: number,
   detail: string
 ) {

@@ -6,6 +6,8 @@ import {
   localPatchPreviewRequestSchema,
   localCommitApprovalRequestSchema,
   localCommitPreviewRequestSchema,
+  localIntegrationApprovalRequestSchema,
+  localIntegrationPreviewRequestSchema,
   localRequestCollectionSchema,
   localRequestMutationResponseSchema,
   type LocalRequestCollection,
@@ -267,6 +269,40 @@ export async function advanceLocalCommit(input: {
     path: `/api/v1/requests/${input.requestId}/commit-${input.action}`,
     method: "POST",
     idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function previewLocalIntegration(input: {
+  endpoint: string; requestId: string; proposal: unknown; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint, path: `/api/v1/requests/${input.requestId}/integration-preview`,
+    method: "POST", body: localIntegrationPreviewRequestSchema.parse(input.proposal),
+    idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function approveLocalIntegration(input: {
+  endpoint: string; requestId: string; approval: unknown; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint, path: `/api/v1/requests/${input.requestId}/integration-approve`,
+    method: "POST", body: localIntegrationApprovalRequestSchema.parse(input.approval),
+    idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function advanceLocalIntegration(input: {
+  endpoint: string; requestId: string; action: "create" | "undo" | "reconcile";
+  idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint, path: `/api/v1/requests/${input.requestId}/integration-${input.action}`,
+    method: "POST", idempotencyKey: input.idempotencyKey,
     ...(input.fetcher ? { fetcher: input.fetcher } : {}),
   }));
 }

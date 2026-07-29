@@ -80,6 +80,12 @@ export const localRunEventSchema = z.strictObject({
     "commit_created",
     "commit_undone",
     "commit_reconciled",
+    "integration_previewed",
+    "integration_approved",
+    "integration_creating",
+    "integration_created",
+    "integration_undone",
+    "integration_reconciled",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
@@ -429,6 +435,66 @@ export const localCommitSessionSchema = z.strictObject({
   undoneAt: z.number().int().nonnegative().nullable(),
 });
 
+export const localIntegrationPreviewRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedCommitReceiptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const localIntegrationPreviewSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("bounded_local_integration_preview"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  commitReceiptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+  sourceParent: z.string().regex(/^[a-f0-9]{40,64}$/),
+  targetBranch: z.string().trim().min(1).max(200),
+  targetHead: z.string().regex(/^[a-f0-9]{40,64}$/),
+  changedPaths: z.array(relativePath).min(1).max(12),
+  strategy: z.literal("cherry_pick_one_commit"),
+  conflictProbe: z.literal("passed"),
+  hooksDisabled: z.literal(true),
+  signingDisabled: z.literal(true),
+  pushed: z.literal(false),
+  maximumCostUsd: z.literal(0),
+  previewedAt: z.number().int().nonnegative(),
+});
+
+export const localIntegrationApprovalRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedPreviewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const localIntegrationApprovalSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  approvedAt: z.number().int().nonnegative(),
+});
+
+export const localIntegrationReceiptSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
+  previousHead: z.string().regex(/^[a-f0-9]{40,64}$/),
+  resultingHead: z.string().regex(/^[a-f0-9]{40,64}$/),
+  targetBranch: z.string().trim().min(1).max(200),
+  changedPaths: z.array(relativePath).min(1).max(12),
+  createdAt: z.number().int().nonnegative(),
+  hooksDisabled: z.literal(true),
+  signingDisabled: z.literal(true),
+  pushed: z.literal(false),
+});
+
+export const localIntegrationSessionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  state: z.enum(["previewed", "approved", "creating", "created", "undone", "interrupted"]),
+  preview: localIntegrationPreviewSchema,
+  approval: localIntegrationApprovalSchema.nullable(),
+  receipt: localIntegrationReceiptSchema.nullable(),
+  undoneAt: z.number().int().nonnegative().nullable(),
+});
+
 export const localExecutionSessionSchema = z.strictObject({
   schemaVersion: z.literal(1),
   state: z.enum([
@@ -448,6 +514,7 @@ export const localExecutionSessionSchema = z.strictObject({
   run: localExecutionRunSchema.nullable().default(null),
   patch: localPatchSessionSchema.nullable().default(null),
   commit: localCommitSessionSchema.nullable().default(null),
+  integration: localIntegrationSessionSchema.nullable().default(null),
 });
 
 export const localPlanningSnapshotSchema = z.strictObject({
@@ -530,6 +597,11 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "commit_created",
     "commit_undone",
     "commit_reconciled",
+    "integration_previewed",
+    "integration_approved",
+    "integration_created",
+    "integration_undone",
+    "integration_reconciled",
     "cancelled",
     "archived",
   ]),
@@ -565,6 +637,10 @@ export type LocalCommitPreview = z.infer<typeof localCommitPreviewSchema>;
 export type LocalCommitApproval = z.infer<typeof localCommitApprovalSchema>;
 export type LocalCommitReceipt = z.infer<typeof localCommitReceiptSchema>;
 export type LocalCommitSession = z.infer<typeof localCommitSessionSchema>;
+export type LocalIntegrationPreview = z.infer<typeof localIntegrationPreviewSchema>;
+export type LocalIntegrationApproval = z.infer<typeof localIntegrationApprovalSchema>;
+export type LocalIntegrationReceipt = z.infer<typeof localIntegrationReceiptSchema>;
+export type LocalIntegrationSession = z.infer<typeof localIntegrationSessionSchema>;
 
 export function validateLocalRequestCollection(input: unknown): LocalRequestCollection {
   const collection = localRequestCollectionSchema.parse(input);

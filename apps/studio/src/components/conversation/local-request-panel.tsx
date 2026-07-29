@@ -29,6 +29,9 @@ import {
   authorizeLocalExecution,
   advanceLocalPatch,
   advanceLocalCommit,
+  advanceLocalIntegration,
+  approveLocalIntegration,
+  previewLocalIntegration,
   approveLocalCommit,
   approveLocalPatch,
   cancelLocalRequest,
@@ -425,6 +428,61 @@ export function LocalRequestPanel(props: {
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Commit action failed safely.");
+    }
+  }
+
+  async function previewIntegration(request: LocalRequest) {
+    const receipt = request.execution?.commit?.receipt;
+    if (!receipt) return;
+    setStatus("working");
+    try {
+      await previewLocalIntegration({
+        endpoint, requestId: request.id,
+        proposal: { schemaVersion: 1, expectedCommitReceiptDigest: receipt.digest },
+        idempotencyKey: `integration-preview:${request.id}:${receipt.digest}`,
+      });
+      await refresh();
+      setNotice("Local canonical integration is conflict-free. Nothing was changed.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Integration preview failed safely.");
+    }
+  }
+
+  async function approveIntegration(request: LocalRequest) {
+    const preview = request.execution?.integration?.preview;
+    if (!preview) return;
+    setStatus("working");
+    try {
+      await approveLocalIntegration({
+        endpoint, requestId: request.id,
+        approval: { schemaVersion: 1, expectedPreviewDigest: preview.digest },
+        idempotencyKey: `integration-approve:${request.id}:${preview.digest}`,
+      });
+      await refresh();
+      setNotice("Exact local canonical integration approved. Nothing was pushed.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Integration approval failed safely.");
+    }
+  }
+
+  async function mutateIntegration(request: LocalRequest, action: "create" | "undo" | "reconcile") {
+    setStatus("working");
+    try {
+      await advanceLocalIntegration({
+        endpoint, requestId: request.id, action,
+        idempotencyKey: `integration-${action}:${request.id}:${request.execution?.integration?.preview.digest ?? "none"}`,
+      });
+      await refresh();
+      setNotice({
+        create: "Commit integrated into the canonical local branch. It was not pushed or published.",
+        undo: "Canonical branch restored to its exact previous HEAD.",
+        reconcile: "Interrupted integration preserved for exact Git inspection.",
+      }[action]);
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Integration action failed safely.");
     }
   }
 
@@ -894,6 +952,24 @@ export function LocalRequestPanel(props: {
                                 )}
                               </div>
                             )}
+                            {request.execution.integration && (
+                              <div className="mt-3 bg-primary/[.055] p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <strong className="text-[11px]">Local canonical integration</strong>
+                                  <Badge tone={request.execution.integration.state === "created" ? "positive" : request.execution.integration.state === "interrupted" ? "critical" : "active"}>
+                                    {request.execution.integration.state}
+                                  </Badge>
+                                </div>
+                                <p className="mt-2 text-[10px] text-muted-foreground">
+                                  {request.execution.integration.preview.targetBranch} · {request.execution.integration.preview.targetHead.slice(0, 8)} · {request.execution.integration.preview.changedPaths.length} paths · conflict probe passed
+                                </p>
+                                {request.execution.integration.receipt && (
+                                  <p className="mt-2 text-[10px] font-medium">
+                                    Local HEAD {request.execution.integration.receipt.resultingHead.slice(0, 10)} · not pushed
+                                  </p>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                         <p className="mt-3 text-[10px] text-muted-foreground">
@@ -1091,14 +1167,35 @@ export function LocalRequestPanel(props: {
                     </Button>
                   )}
                   {request.execution?.commit?.state === "created" && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void mutateCommit(request, "undo")}
-                      disabled={status === "working"}
-                    >
-                      <ArrowClockwise />
-                      Undo isolated commit
+                    <>
+                      {!request.execution.integration && (
+                        <Button size="sm" onClick={() => void previewIntegration(request)} disabled={status === "working"}>
+                          <GitBranch /> Preview local integration
+                        </Button>
+                      )}
+                      <Button size="sm" variant="secondary" onClick={() => void mutateCommit(request, "undo")} disabled={status === "working" || Boolean(request.execution.integration)}>
+                        <ArrowClockwise /> Undo isolated commit
+                      </Button>
+                    </>
+                  )}
+                  {request.execution?.integration?.state === "previewed" && (
+                    <Button size="sm" onClick={() => void approveIntegration(request)} disabled={status === "working"}>
+                      <LockKey /> Approve local integration
+                    </Button>
+                  )}
+                  {request.execution?.integration?.state === "approved" && (
+                    <Button size="sm" onClick={() => void mutateIntegration(request, "create")} disabled={status === "working"}>
+                      <GitBranch /> Integrate into local branch
+                    </Button>
+                  )}
+                  {request.execution?.integration?.state === "created" && (
+                    <Button size="sm" variant="secondary" onClick={() => void mutateIntegration(request, "undo")} disabled={status === "working"}>
+                      <ArrowClockwise /> Undo local integration
+                    </Button>
+                  )}
+                  {request.execution?.integration?.state === "creating" && (
+                    <Button size="sm" variant="secondary" onClick={() => void mutateIntegration(request, "reconcile")} disabled={status === "working"}>
+                      <ArrowClockwise /> Reconcile integration
                     </Button>
                   )}
                   {request.execution?.commit?.state === "creating" && (

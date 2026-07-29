@@ -5,6 +5,8 @@ import {
   advanceLocalExecution,
   advanceLocalPatch,
   advanceLocalCommit,
+  advanceLocalIntegration,
+  approveLocalIntegration,
   approveLocalCommit,
   approveLocalPatch,
   cancelLocalRequest,
@@ -12,6 +14,7 @@ import {
   listLocalRequests,
   previewLocalPatch,
   previewLocalCommit,
+  previewLocalIntegration,
 } from "../apps/studio/src/local-request-client.js";
 
 const request = {
@@ -55,6 +58,42 @@ test("request client sends idempotent loopback mutations and validates responses
     (observed[0]?.init?.headers as Record<string, string>)["Idempotency-Key"],
     "request:0123456789"
   );
+});
+
+test("request client uses explicit local integration preview, approval, and create routes", async () => {
+  const paths: string[] = [];
+  const fetcher = async (url: URL | RequestInfo) => {
+    const path = new URL(String(url)).pathname;
+    paths.push(path);
+    return Response.json({
+      schemaVersion: 1,
+      outcome: path.endsWith("integration-preview")
+        ? "integration_previewed"
+        : path.endsWith("integration-approve")
+          ? "integration_approved"
+          : "integration_created",
+      request,
+    });
+  };
+  await previewLocalIntegration({
+    endpoint: "http://127.0.0.1:4312", requestId: request.id,
+    proposal: { schemaVersion: 1, expectedCommitReceiptDigest: "d".repeat(64) },
+    idempotencyKey: "integration-preview:test", fetcher,
+  });
+  await approveLocalIntegration({
+    endpoint: "http://127.0.0.1:4312", requestId: request.id,
+    approval: { schemaVersion: 1, expectedPreviewDigest: "e".repeat(64) },
+    idempotencyKey: "integration-approve:test", fetcher,
+  });
+  await advanceLocalIntegration({
+    endpoint: "http://127.0.0.1:4312", requestId: request.id, action: "create",
+    idempotencyKey: "integration-create:test", fetcher,
+  });
+  assert.deepEqual(paths, [
+    `/api/v1/requests/${request.id}/integration-preview`,
+    `/api/v1/requests/${request.id}/integration-approve`,
+    `/api/v1/requests/${request.id}/integration-create`,
+  ]);
 });
 
 test("request client uses explicit isolated commit preview, approval, and create routes", async () => {
