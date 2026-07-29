@@ -17,6 +17,7 @@ import {
   localPlanEditSchema,
   localExecutionAuthorizationRequestSchema,
   localExecutionAuthoritySchema,
+  localExecutionRunSchema,
   localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
@@ -30,8 +31,13 @@ import {
   compileExecutionManifest,
   inspectGitRepository,
   prepareIsolatedWorktree,
+  locateIsolatedWorktree,
   preserveWorkspace,
 } from "./local-execution.js";
+import {
+  observeBoundedChanges,
+  runBoundedValidation,
+} from "./local-validation.js";
 
 const MAX_REQUESTS = 500;
 const sensitiveMaterial =
@@ -704,7 +710,15 @@ export class LocalRequestStore {
       if (record.request.execution?.state === "cancelled") return record.request;
       if (
         !record.request.execution ||
-        !["authorized", "ready", "preparing"].includes(record.request.execution.state)
+        ![
+          "authorized",
+          "ready",
+          "preparing",
+          "validating",
+          "validated",
+          "review_ready",
+          "failed",
+        ].includes(record.request.execution.state)
       ) {
         throw new LocalRequestError("invalid_transition", "No active execution session can be cancelled.");
       }
@@ -717,6 +731,13 @@ export class LocalRequestStore {
           state: "cancelled",
           workspace: record.request.execution.workspace
             ? preserveWorkspace(record.request.execution.workspace, "preserved")
+            : null,
+          run: record.request.execution.run
+            ? localExecutionRunSchema.parse({
+                ...record.request.execution.run,
+                state: "cancelled",
+                completedAt: Date.now(),
+              })
             : null,
         },
         run: {
@@ -739,7 +760,10 @@ export class LocalRequestStore {
       const store = await this.#load();
       const record = findRecord(store, requestId);
       if (record.request.execution?.state === "interrupted") return record.request;
-      if (!record.request.execution || record.request.execution.state !== "preparing") {
+      if (
+        !record.request.execution ||
+        !["preparing", "validating"].includes(record.request.execution.state)
+      ) {
         throw new LocalRequestError(
           "invalid_transition",
           "Only an interrupted preparation can be reconciled."
@@ -755,6 +779,13 @@ export class LocalRequestStore {
           workspace: record.request.execution.workspace
             ? preserveWorkspace(record.request.execution.workspace, "interrupted")
             : null,
+          run: record.request.execution.run
+            ? localExecutionRunSchema.parse({
+                ...record.request.execution.run,
+                state: "interrupted",
+                completedAt: Date.now(),
+              })
+            : null,
         },
         run: {
           ...record.request.run,
@@ -768,6 +799,162 @@ export class LocalRequestStore {
       });
       await this.#replace(store, request);
       return request;
+    });
+  }
+
+  startExecution(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      if (execution?.run) return record.request;
+      if (
+        !execution ||
+        execution.state !== "ready" ||
+        !execution.workspace ||
+        execution.workspace.state !== "ready"
+      ) {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Prepare and verify the isolated workspace before starting a run."
+        );
+      }
+      const startedAt = Date.now();
+      const runBody = {
+        schemaVersion: 1 as const,
+        id: `execution_${digest(execution.authority.digest).slice(0, 20)}`,
+        state: "ready" as const,
+        authorityDigest: execution.authority.digest,
+        manifestDigest: execution.authority.manifest.digest,
+        workspaceRef: execution.workspace.workspaceRef,
+        baseline: execution.workspace.baseline,
+        maximumCostUsd: 0 as const,
+        startedAt,
+        completedAt: null,
+        attempts: [],
+        changes: null,
+      };
+      const run = localExecutionRunSchema.parse({
+        ...runBody,
+        digest: digest(JSON.stringify(runBody)),
+      });
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: startedAt,
+        execution: { ...execution, run },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "execution_started",
+            startedAt,
+            "Bounded local run created; no command has executed yet."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  validateExecution(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      if (
+        !execution ||
+        execution.state !== "ready" ||
+        !execution.workspace ||
+        !execution.run ||
+        execution.run.state !== "ready"
+      ) {
+        if (
+          execution?.run &&
+          ["passed", "failed"].includes(execution.run.state)
+        ) {
+          return record.request;
+        }
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Start a ready bounded run before deterministic validation."
+        );
+      }
+      const validatingAt = Date.now();
+      const validatingRun = localExecutionRunSchema.parse({
+        ...execution.run,
+        state: "validating",
+      });
+      const validating = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: validatingAt,
+        execution: { ...execution, state: "validating", run: validatingRun },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "validation_started",
+            validatingAt,
+            "Running fixed-argument git diff --check in the isolated workspace."
+          ),
+        },
+      });
+      await this.#replace(store, validating);
+
+      const workspacePath = locateIsolatedWorktree({
+        stateDirectory: this.#stateDirectory,
+        requestId,
+        authority: execution.authority,
+      });
+      const attemptId = `attempt_${digest(
+        `${execution.run.digest}:${execution.run.attempts.length + 1}`
+      ).slice(0, 20)}`;
+      const attempt = await runBoundedValidation({
+        workspacePath,
+        authority: execution.authority,
+        attemptId,
+        startedAt: validatingAt,
+      });
+      const canonicalRoot = await this.#projectRoot(record.request.projectId);
+      const changes = await observeBoundedChanges({
+        workspacePath,
+        canonicalRoot,
+        authority: execution.authority,
+      });
+      const passed = attempt.state === "passed" && changes.allowed;
+      const reviewReady = passed && changes.changedPaths.length > 0;
+      const completedAt = Date.now();
+      const completedRun = localExecutionRunSchema.parse({
+        ...validatingRun,
+        state: passed ? "passed" : "failed",
+        completedAt,
+        attempts: [...validatingRun.attempts, attempt],
+        changes,
+      });
+      const completed = localRequestSchema.parse({
+        ...validating,
+        updatedAt: completedAt,
+        execution: {
+          ...validating.execution,
+          state: passed ? (reviewReady ? "review_ready" : "validated") : "failed",
+          run: completedRun,
+        },
+        run: {
+          ...validating.run,
+          events: appendEvent(
+            validating.run?.events ?? [],
+            passed ? "validation_completed" : "validation_failed",
+            completedAt,
+            passed
+              ? reviewReady
+                ? "Validation passed and approved isolated changes are ready for review."
+                : "Validation passed; no isolated source changes were observed."
+              : "Validation or approved-path policy failed; review is required."
+          ),
+        },
+      });
+      await this.#replace(await this.#load(), completed);
+      return completed;
     });
   }
 
@@ -915,7 +1102,11 @@ function event(
     | "workspace_preparing"
     | "workspace_ready"
     | "execution_cancelled"
-    | "execution_reconciled",
+    | "execution_reconciled"
+    | "execution_started"
+    | "validation_started"
+    | "validation_completed"
+    | "validation_failed",
   observedAt: number,
   detail: string
 ) {

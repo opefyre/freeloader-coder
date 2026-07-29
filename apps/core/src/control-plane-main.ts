@@ -117,6 +117,8 @@ const controlPlane = createControlPlaneServer({
     authorizeExecution: (requestId, input) =>
       localRequests.authorizeExecution(requestId, input),
     prepareExecution: (requestId) => localRequests.prepareExecution(requestId),
+    startExecution: (requestId) => localRequests.startExecution(requestId),
+    validateExecution: (requestId) => localRequests.validateExecution(requestId),
     cancelExecution: (requestId) => localRequests.cancelExecution(requestId),
     reconcileExecution: (requestId) => localRequests.reconcileExecution(requestId),
     archive: (requestId) => localRequests.archive(requestId),

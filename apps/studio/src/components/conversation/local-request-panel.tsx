@@ -246,7 +246,7 @@ export function LocalRequestPanel(props: {
 
   async function mutateExecution(
     request: LocalRequest,
-    action: "prepare" | "cancel" | "reconcile"
+    action: "prepare" | "start" | "validate" | "cancel" | "reconcile"
   ) {
     setStatus("working");
     try {
@@ -260,6 +260,10 @@ export function LocalRequestPanel(props: {
       setNotice({
         prepare:
           "Private Git worktree prepared and baseline verified. No task, model, network, or arbitrary command started.",
+        start:
+          "Bounded run recorded. No validation command or source mutation has happened yet.",
+        validate:
+          "Fixed-argument Git validation and bounded change observation completed in the isolated workspace.",
         cancel: "Execution cancelled. The isolated workspace was preserved for explicit recovery.",
         reconcile: "Interrupted preparation reconciled without claiming completion.",
       }[action]);
@@ -480,7 +484,15 @@ export function LocalRequestPanel(props: {
                                 <ShieldCheck className="text-primary" />
                                 Execution authority
                               </span>
-                              <Badge tone={request.execution.state === "ready" ? "positive" : "active"}>
+                              <Badge
+                                tone={
+                                  ["validated", "review_ready"].includes(request.execution.state)
+                                    ? "positive"
+                                    : request.execution.state === "failed"
+                                      ? "critical"
+                                      : "active"
+                                }
+                              >
                                 {request.execution.state}
                               </Badge>
                             </div>
@@ -510,6 +522,39 @@ export function LocalRequestPanel(props: {
                                 {request.execution.workspace.branch} · workspace{" "}
                                 {request.execution.workspace.state}
                               </p>
+                            )}
+                            {request.execution.run && (
+                              <div className="mt-3 bg-primary/[.055] p-3">
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                  <DecisionFact
+                                    label="Bounded run"
+                                    value={request.execution.run.id.slice("execution_".length, 12)}
+                                  />
+                                  <DecisionFact
+                                    label="Validation"
+                                    value={
+                                      request.execution.run.attempts.at(-1)?.state ??
+                                      "Not started"
+                                    }
+                                  />
+                                  <DecisionFact
+                                    label="Observed changes"
+                                    value={String(
+                                      request.execution.run.changes?.changedPaths.length ?? 0
+                                    )}
+                                  />
+                                </div>
+                                {request.execution.run.attempts.at(-1) && (
+                                  <p className="mt-2 text-[10px] text-muted-foreground">
+                                    git diff --check · fixed argv · 10s limit · 64 KiB output cap
+                                  </p>
+                                )}
+                                {(request.execution.run.changes?.blockers.length ?? 0) > 0 && (
+                                  <p className="mt-2 text-[10px] font-medium text-destructive">
+                                    {request.execution.run.changes?.blockers[0]}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
@@ -578,7 +623,36 @@ export function LocalRequestPanel(props: {
                           Prepare isolated workspace
                         </Button>
                       )}
-                      {["authorized", "preparing", "ready"].includes(
+                      {request.execution?.state === "ready" && !request.execution.run && (
+                        <Button
+                          size="sm"
+                          onClick={() => void mutateExecution(request, "start")}
+                          disabled={status === "working"}
+                        >
+                          <Play />
+                          Start bounded run
+                        </Button>
+                      )}
+                      {request.execution?.state === "ready" &&
+                        request.execution.run?.state === "ready" && (
+                          <Button
+                            size="sm"
+                            onClick={() => void mutateExecution(request, "validate")}
+                            disabled={status === "working"}
+                          >
+                            <CheckCircle />
+                            Run deterministic validation
+                          </Button>
+                        )}
+                      {[
+                        "authorized",
+                        "preparing",
+                        "ready",
+                        "validating",
+                        "validated",
+                        "review_ready",
+                        "failed",
+                      ].includes(
                         request.execution?.state ?? ""
                       ) && (
                         <Button
@@ -591,7 +665,9 @@ export function LocalRequestPanel(props: {
                           Cancel and preserve
                         </Button>
                       )}
-                      {request.execution?.state === "preparing" && (
+                      {["preparing", "validating"].includes(
+                        request.execution?.state ?? ""
+                      ) && (
                         <Button
                           size="sm"
                           variant="secondary"

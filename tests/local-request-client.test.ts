@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  advanceLocalExecution,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
@@ -48,6 +49,31 @@ test("request client sends idempotent loopback mutations and validates responses
     (observed[0]?.init?.headers as Record<string, string>)["Idempotency-Key"],
     "request:0123456789"
   );
+});
+
+test("request client targets bounded execution start and validation routes", async () => {
+  const paths: string[] = [];
+  for (const action of ["start", "validate"] as const) {
+    const response = await advanceLocalExecution({
+      endpoint: "http://127.0.0.1:4312",
+      requestId: request.id,
+      action,
+      idempotencyKey: `execution-${action}:0123456789`,
+      fetcher: async (url) => {
+        paths.push(new URL(String(url)).pathname);
+        return Response.json({
+          schemaVersion: 1,
+          outcome: action === "start" ? "execution_started" : "execution_validated",
+          request,
+        });
+      },
+    });
+    assert.equal(response.request?.id, request.id);
+  }
+  assert.deepEqual(paths, [
+    `/api/v1/requests/${request.id}/execution-start`,
+    `/api/v1/requests/${request.id}/execution-validate`,
+  ]);
 });
 
 test("request client rejects remote endpoints, malformed responses, and bad identities", async () => {

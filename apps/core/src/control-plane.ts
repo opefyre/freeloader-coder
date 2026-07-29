@@ -60,6 +60,8 @@ export type ControlPlaneServerOptions = {
     prepareExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     cancelExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     reconcileExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    startExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    validateExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -156,7 +158,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-cancel|execution-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
       if (
         request.method === "POST" &&
@@ -177,6 +179,8 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       }
       const executionActions = {
         "execution-prepare": options.requests?.prepareExecution,
+        "execution-start": options.requests?.startExecution,
+        "execution-validate": options.requests?.validateExecution,
         "execution-cancel": options.requests?.cancelExecution,
         "execution-reconcile": options.requests?.reconcileExecution,
       } as const;
@@ -196,6 +200,8 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           schemaVersion: 1,
           outcome: ({
             "execution-prepare": "workspace_prepared",
+            "execution-start": "execution_started",
+            "execution-validate": "execution_validated",
             "execution-cancel": "execution_cancelled",
             "execution-reconcile": "execution_reconciled",
           } as const)[executionAction],

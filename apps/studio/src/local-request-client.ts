@@ -139,7 +139,7 @@ export async function authorizeLocalExecution(input: {
 export async function advanceLocalExecution(input: {
   endpoint: string;
   requestId: string;
-  action: "prepare" | "cancel" | "reconcile";
+  action: "prepare" | "start" | "validate" | "cancel" | "reconcile";
   idempotencyKey: string;
   fetcher?: typeof fetch;
 }): Promise<LocalRequestMutationResponse> {

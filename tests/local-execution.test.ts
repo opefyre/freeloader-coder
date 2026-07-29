@@ -10,9 +10,14 @@ import {
   LocalExecutionError,
   compileExecutionManifest,
   inspectGitRepository,
+  locateIsolatedWorktree,
   prepareIsolatedWorktree,
   preserveWorkspace,
 } from "../apps/core/src/local-execution.js";
+import {
+  observeBoundedChanges,
+  runBoundedValidation,
+} from "../apps/core/src/local-validation.js";
 import {
   localDraftPlanSchema,
   localExecutionAuthoritySchema,
@@ -110,6 +115,36 @@ test("clean Git preflight and isolated worktree preserve the canonical worktree"
       }),
       workspace
     );
+    const workspacePath = locateIsolatedWorktree({
+      stateDirectory: state,
+      requestId: authority.requestId,
+      authority,
+    });
+    const cleanAttempt = await runBoundedValidation({
+      workspacePath,
+      authority,
+      attemptId: `attempt_${"1".repeat(20)}`,
+    });
+    assert.equal(cleanAttempt.state, "passed");
+    assert.deepEqual(cleanAttempt.command.arguments, ["diff", "--check"]);
+    assert.equal(cleanAttempt.outputDigest.length, 64);
+    await writeFile(join(workspacePath, "README.md"), "# Isolated change\n", "utf8");
+    const changes = await observeBoundedChanges({
+      workspacePath,
+      canonicalRoot: repository,
+      authority,
+    });
+    assert.equal(changes.allowed, true);
+    assert.deepEqual(changes.changedPaths, [{ path: "README.md", state: "modified" }]);
+    assert.doesNotMatch(JSON.stringify(changes), new RegExp(repository));
+    await writeFile(join(workspacePath, "outside.txt"), "not approved\n", "utf8");
+    const denied = await observeBoundedChanges({
+      workspacePath,
+      canonicalRoot: repository,
+      authority,
+    });
+    assert.equal(denied.allowed, false);
+    assert.match(denied.blockers[0] ?? "", /outside the approved manifest/);
     assert.equal((await git(repository, ["rev-parse", "HEAD"])).trim(), beforeHead);
     assert.equal(await git(repository, ["status", "--porcelain=v1", "-z"]), beforeStatus);
     assert.equal(preserveWorkspace(workspace, "preserved").state, "preserved");

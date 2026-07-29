@@ -64,6 +64,10 @@ export const localRunEventSchema = z.strictObject({
     "workspace_ready",
     "execution_cancelled",
     "execution_reconciled",
+    "execution_started",
+    "validation_started",
+    "validation_completed",
+    "validation_failed",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
@@ -231,11 +235,74 @@ export const localExecutionWorkspaceSchema = z.strictObject({
   stateDigest: z.string().regex(/^[a-f0-9]{64}$/),
 });
 
+export const localValidationAttemptSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^attempt_[a-f0-9]{20}$/),
+  command: z.strictObject({
+    executable: z.literal("git"),
+    arguments: z.tuple([z.literal("diff"), z.literal("--check")]),
+    timeoutMs: z.literal(10_000),
+    maximumOutputBytes: z.literal(65_536),
+  }),
+  state: z.enum(["passed", "failed", "timed_out", "cancelled", "policy_denied"]),
+  startedAt: z.number().int().nonnegative(),
+  completedAt: z.number().int().nonnegative(),
+  exitCode: z.number().int().min(0).max(255).nullable(),
+  output: z.string().max(65_536),
+  outputDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  truncated: z.boolean(),
+});
+
+export const localChangeObservationSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("bounded_git_change_observation"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  observedAt: z.number().int().nonnegative(),
+  changedPaths: z.array(z.strictObject({
+    path: relativePath,
+    state: z.enum(["added", "modified", "deleted", "renamed", "untracked"]),
+  })).max(200),
+  canonicalBaseline: z.string().regex(/^[a-f0-9]{40,64}$/),
+  workspaceBaseline: z.string().regex(/^[a-f0-9]{40,64}$/),
+  canonicalClean: z.literal(true),
+  allowed: z.boolean(),
+  blockers: z.array(z.string().trim().min(1).max(300)).max(50),
+  limitations: z.array(z.string().trim().min(1).max(300)).min(1).max(10),
+});
+
+export const localExecutionRunSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^execution_[a-f0-9]{20}$/),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  state: z.enum(["ready", "validating", "passed", "failed", "cancelled", "interrupted"]),
+  authorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  manifestDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  workspaceRef: z.string().regex(/^workspace_[a-f0-9]{20}$/),
+  baseline: z.string().regex(/^[a-f0-9]{40,64}$/),
+  maximumCostUsd: z.literal(0),
+  startedAt: z.number().int().nonnegative(),
+  completedAt: z.number().int().nonnegative().nullable(),
+  attempts: z.array(localValidationAttemptSchema).max(20),
+  changes: localChangeObservationSchema.nullable(),
+});
+
 export const localExecutionSessionSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  state: z.enum(["authorized", "preparing", "ready", "cancelled", "interrupted", "blocked"]),
+  state: z.enum([
+    "authorized",
+    "preparing",
+    "ready",
+    "validating",
+    "validated",
+    "review_ready",
+    "failed",
+    "cancelled",
+    "interrupted",
+    "blocked",
+  ]),
   authority: localExecutionAuthoritySchema,
   workspace: localExecutionWorkspaceSchema.nullable(),
+  run: localExecutionRunSchema.nullable().default(null),
 });
 
 export const localPlanningSnapshotSchema = z.strictObject({
@@ -306,6 +373,8 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "workspace_prepared",
     "execution_cancelled",
     "execution_reconciled",
+    "execution_started",
+    "execution_validated",
     "cancelled",
     "archived",
   ]),
@@ -329,6 +398,9 @@ export type LocalExecutionManifest = z.infer<typeof localExecutionManifestSchema
 export type LocalExecutionAuthority = z.infer<typeof localExecutionAuthoritySchema>;
 export type LocalExecutionWorkspace = z.infer<typeof localExecutionWorkspaceSchema>;
 export type LocalExecutionSession = z.infer<typeof localExecutionSessionSchema>;
+export type LocalExecutionRun = z.infer<typeof localExecutionRunSchema>;
+export type LocalValidationAttempt = z.infer<typeof localValidationAttemptSchema>;
+export type LocalChangeObservation = z.infer<typeof localChangeObservationSchema>;
 
 export function validateLocalRequestCollection(input: unknown): LocalRequestCollection {
   const collection = localRequestCollectionSchema.parse(input);
@@ -392,7 +464,10 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
         throw new Error("Local execution authority does not match the approved plan.");
       }
       if (
-        (execution.state === "ready" && execution.workspace?.state !== "ready") ||
+        (["ready", "validating", "validated", "review_ready", "failed"].includes(
+          execution.state
+        ) &&
+          execution.workspace?.state !== "ready") ||
         (execution.state === "cancelled" &&
           execution.workspace !== null &&
           execution.workspace.state !== "preserved") ||
@@ -401,6 +476,32 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
           execution.workspace.state !== "interrupted")
       ) {
         throw new Error("Local execution workspace does not match its session state.");
+      }
+      if (execution.run) {
+        if (
+          !execution.workspace ||
+          execution.run.authorityDigest !== execution.authority.digest ||
+          execution.run.manifestDigest !== execution.authority.manifest.digest ||
+          execution.run.workspaceRef !== execution.workspace.workspaceRef ||
+          execution.run.baseline !== execution.workspace.baseline ||
+          execution.run.maximumCostUsd !== 0 ||
+          new Set(execution.run.attempts.map((attempt) => attempt.id)).size !==
+            execution.run.attempts.length
+        ) {
+          throw new Error("Local execution run does not match its authority or workspace.");
+        }
+        if (
+          execution.state === "review_ready" &&
+          (execution.run.state !== "passed" ||
+            !execution.run.changes?.allowed ||
+            execution.run.changes.changedPaths.length === 0)
+        ) {
+          throw new Error("Review-ready execution requires passed validation and observed changes.");
+        }
+      } else if (
+        ["validating", "validated", "review_ready", "failed"].includes(execution.state)
+      ) {
+        throw new Error("Local execution state requires a bounded run.");
       }
     }
   }

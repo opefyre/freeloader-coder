@@ -227,6 +227,27 @@ export async function prepareIsolatedWorktree(input: {
   return workspace(input.authority, branch);
 }
 
+export function locateIsolatedWorktree(input: {
+  readonly stateDirectory: string;
+  readonly requestId: string;
+  readonly authority: LocalExecutionAuthority;
+}): string {
+  const worktreesRoot = resolve(input.stateDirectory, "worktrees");
+  const suffix = hash(input.authority.digest).slice(0, 10);
+  const requestSuffix = input.requestId.slice("request_".length, "request_".length + 12);
+  const workspacePath = resolve(worktreesRoot, `${requestSuffix}-${suffix}`);
+  const relation = relative(worktreesRoot, workspacePath);
+  if (
+    relation.length === 0 ||
+    relation.startsWith(`..${sep}`) ||
+    relation === ".." ||
+    isAbsolute(relation)
+  ) {
+    throw new LocalExecutionError("workspace_escape", "Workspace escaped its private root.");
+  }
+  return workspacePath;
+}
+
 export function preserveWorkspace(
   current: LocalExecutionWorkspace,
   state: "preserved" | "interrupted"
