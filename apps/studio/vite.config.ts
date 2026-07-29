@@ -10,6 +10,7 @@ export default defineConfig({
   build: {
     outDir: resolve(import.meta.dirname, "../../dist/studio"),
     emptyOutDir: true,
+    manifest: true,
     rollupOptions: {
       output: {
         manualChunks(id) {

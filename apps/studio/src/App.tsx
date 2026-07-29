@@ -45,6 +45,7 @@ import {
 } from "./components/shell/demo-data-disclosure.js";
 import {
   RouteBoundary,
+  SyntheticRouteFailure,
   WorkspaceLoading,
 } from "./components/shell/route-boundary.js";
 import { Button, buttonVariants } from "./components/ui/button.js";
@@ -84,7 +85,10 @@ import {
 } from "./onboarding-fixture.js";
 import {
   canonicalStudioUrl,
+  studioViews,
   viewFromLocation,
+  workspaceDefinition,
+  workspaceDefinitions,
   type StudioView,
 } from "./routing.js";
 
@@ -164,92 +168,38 @@ const RuntimeSetupPanel = lazy(() =>
   }))
 );
 
-const navItems = [
-  { id: "overview", label: "Overview", note: "Pipeline health and decisions", icon: Gauge },
-  { id: "projects", label: "Projects", note: "Add, understand, and start safely", icon: FolderOpen },
-  {
-    id: "conversation",
-    label: "Conversation",
-    note: "Ask, clarify, and guide work",
-    icon: ChatCircleDots,
-  },
-  { id: "work", label: "Work", note: "Active, queued, and verified tasks", icon: ListChecks, count: "8" },
-  { id: "providers", label: "Providers", note: "Free routes and model health", icon: PlugsConnected },
-  { id: "integrations", label: "Connect", note: "GitHub and Jira workspaces", icon: GitBranch },
-  { id: "evidence", label: "Evidence", note: "Checks, checkpoints, and sources", icon: ShieldCheck },
-  { id: "help", label: "Help", note: "Guidance, recovery, and support", icon: Question },
-] as const;
-
-const viewCopy: Record<
-  StudioView,
-  { eyebrow: string; title: string; description: string }
-> = {
-  overview: {
-    eyebrow: "Freeloader Coder · Demo data",
-    title: "Good morning, Opefyre",
-    description: "Your pipeline is moving. One safe decision is waiting.",
-  },
-  projects: {
-    eyebrow: "Guided project setup",
-    title: "Start with confidence",
-    description: "Add a repository, understand it automatically, and reach a validated first preview.",
-  },
-  conversation: {
-    eyebrow: "Grounded in this project",
-    title: "Build through conversation",
-    description: "Describe outcomes, clarify intent, and guide the pipeline without losing execution context.",
-  },
-  work: {
-    eyebrow: "1 active · 8 queued",
-    title: "Work that explains itself",
-    description: "Follow every task from readiness through independent review and verified completion.",
-  },
-  providers: {
-    eyebrow: "Free-provider mesh · Demo evidence",
-    title: "Models working as one system",
-    description: "Inspect routing, health, usage, fallbacks, and the evidence behind every provider claim.",
-  },
-  integrations: {
-    eyebrow: "GitHub + Jira · Connected Beta",
-    title: "Bring work in. Send proof back.",
-    description: "Connect exact resources, ground selected work, and approve every external write before it happens.",
-  },
-  evidence: {
-    eyebrow: "87 checks passed",
-    title: "Trust, with receipts",
-    description: "Review checkpoints, validations, sources, and recoverable proof before accepting a result.",
-  },
-  help: {
-    eyebrow: "Offline · Product-aware · Safe to share",
-    title: "Help that knows the workflow",
-    description: "Learn, recover, and prepare support evidence without leaking sensitive data.",
-  },
-  launch: {
-    eyebrow: "Local launch preview · No deployment",
-    title: "Make the promise inspectable",
-    description: "Explore the product story, safe failure demo, competitive boundary, launch gates, and learning evidence.",
-  },
-  releases: {
-    eyebrow: "Candidate 0.8.0-beta.2 · Local verification",
-    title: "Releases you can prove and undo",
-    description: "Inspect artifacts, compatibility, updates, rollout gates, and incident recovery before publishing.",
-  },
-  trust: {
-    eyebrow: "Open source · Inspectable · No legal claim",
-    title: "Trust that links back to source",
-    description: "Inspect governance, release safeguards, data journeys, and responsible-AI choices in one place.",
-  },
-  accessibility: {
-    eyebrow: "WCAG 2.2 AA · Release-blocking evidence",
-    title: "Accessibility is a release decision",
-    description: "Inspect automated checks, named manual evidence, chart alternatives, and foundation proof before promotion.",
-  },
-  settings: {
-    eyebrow: "Local-first configuration",
-    title: "Connections and safeguards",
-    description: "Connect services, control privacy, and keep automatic spend locked at zero.",
-  },
+const workspaceIcons: Record<StudioView, typeof Gauge> = {
+  overview: Gauge,
+  projects: FolderOpen,
+  conversation: ChatCircleDots,
+  work: ListChecks,
+  providers: PlugsConnected,
+  integrations: GitBranch,
+  evidence: ShieldCheck,
+  help: Question,
+  launch: Sparkle,
+  releases: RocketLaunch,
+  trust: Scales,
+  accessibility: PersonArmsSpread,
+  settings: Gear,
 };
+
+const navItems = studioViews
+  .filter((id) => workspaceDefinitions[id].group === "primary")
+  .map((id) => ({
+    id,
+    ...workspaceDefinitions[id],
+    icon: workspaceIcons[id],
+    count: id === "work" ? "8" : undefined,
+  }));
+
+const secondaryNavItems = studioViews
+  .filter((id) => workspaceDefinitions[id].group === "secondary")
+  .map((id) => ({
+    id,
+    ...workspaceDefinitions[id],
+    icon: workspaceIcons[id],
+  }));
 
 function initialView(): StudioView {
   return viewFromLocation(window.location);
@@ -357,6 +307,7 @@ function App() {
   const [selectedConnection, setSelectedConnection] = useState("cerebras");
   const [costOpen, setCostOpen] = useState(false);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
+  const [simulateRouteFailure, setSimulateRouteFailure] = useState(false);
   const [productChoice, setProductChoice] = useState<string>();
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState(false);
@@ -374,42 +325,10 @@ function App() {
     );
     return total === 0 ? 0 : Math.round((successfulProviderCalls / total) * 100);
   }, []);
-  const activeCopy = viewCopy[activeView];
+  const activeCopy = workspaceDefinition(activeView);
   const filteredCommands = useMemo(() => {
     const query = commandQuery.trim().toLowerCase();
-    const items = [
-      ...navItems,
-      {
-        id: "launch" as const,
-        label: "Launch",
-        note: "Positioning, demo, operations, and learning",
-        icon: Sparkle,
-      },
-      {
-        id: "releases" as const,
-        label: "Releases",
-        note: "Updates, compatibility, and rollout",
-        icon: RocketLaunch,
-      },
-      {
-        id: "trust" as const,
-        label: "Trust",
-        note: "Governance, supply chain, and data use",
-        icon: Scales,
-      },
-      {
-        id: "accessibility" as const,
-        label: "Accessibility",
-        note: "Release gates and foundation evidence",
-        icon: PersonArmsSpread,
-      },
-      {
-        id: "settings" as const,
-        label: "Settings",
-        note: "Connections, privacy, and safeguards",
-        icon: Gear,
-      },
-    ];
+    const items = [...navItems, ...secondaryNavItems];
     return query
       ? items.filter((item) =>
           `${item.label} ${item.note}`.toLowerCase().includes(query)
@@ -508,7 +427,7 @@ function App() {
                 weight={activeView === item.id ? "fill" : "regular"}
               />
               <span>{item.label}</span>
-              {"count" in item && (
+              {item.count && (
                 <Badge className="ml-auto px-2 py-0.5">{item.count}</Badge>
               )}
             </button>
@@ -532,75 +451,24 @@ function App() {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => navigate("launch")}
-          aria-current={activeView === "launch" ? "page" : undefined}
-          className={cn(
-            "mt-3 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-            activeView === "launch" &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
-          )}
-        >
-          <Sparkle size={18} />
-          Launch
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate("releases")}
-          aria-current={activeView === "releases" ? "page" : undefined}
-          className={cn(
-            "mt-3 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-            activeView === "releases" &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
-          )}
-        >
-          <RocketLaunch size={18} />
-          Releases
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate("trust")}
-          aria-current={activeView === "trust" ? "page" : undefined}
-          className={cn(
-            "mt-1 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-            activeView === "trust" &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
-          )}
-        >
-          <Scales size={18} />
-          Trust
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate("accessibility")}
-          aria-current={activeView === "accessibility" ? "page" : undefined}
-          className={cn(
-            "mt-1 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-            activeView === "accessibility" &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
-          )}
-        >
-          <PersonArmsSpread size={18} />
-          Accessibility
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate("settings")}
-          aria-current={activeView === "settings" ? "page" : undefined}
-          className={cn(
-            "mt-3 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-            activeView === "settings" &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
-          )}
-        >
-          <Gear size={18} />
-          Settings
-        </button>
+        <div className="mt-3 space-y-1">
+          {secondaryNavItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => navigate(item.id)}
+              aria-current={activeView === item.id ? "page" : undefined}
+              className={cn(
+                "flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+                activeView === item.id &&
+                  "bg-sidebar-accent text-sidebar-accent-foreground"
+              )}
+            >
+              <item.icon size={18} />
+              {item.label}
+            </button>
+          ))}
+        </div>
       </aside>
 
       <main id="workspace" className="min-w-0">
@@ -1089,8 +957,13 @@ function App() {
           </div>
             </>
           ) : (
-            <RouteBoundary route={activeView} navigate={navigate}>
+            <RouteBoundary
+              route={activeView}
+              navigate={navigate}
+              recover={() => setSimulateRouteFailure(false)}
+            >
               <Suspense fallback={<WorkspaceLoading />}>
+                <SyntheticRouteFailure active={simulateRouteFailure} />
                 <WorkspaceSurface
                   view={activeView}
                   selectedProvider={selectedProvider}
@@ -1128,20 +1001,7 @@ function App() {
               size={18}
               weight={activeView === item.id ? "fill" : "regular"}
             />
-            <span>
-              {
-                {
-                  overview: "Home",
-                  projects: "Project",
-                  conversation: "Chat",
-                  work: "Work",
-                  providers: "Models",
-                  integrations: "Connect",
-                  evidence: "Proof",
-                  help: "Help",
-                }[item.id]
-              }
-            </span>
+            <span>{item.mobileLabel}</span>
           </button>
         ))}
       </nav>
@@ -1156,7 +1016,13 @@ function App() {
         />
       )}
       {provenanceOpen && (
-        <DemoDataDisclosure close={() => setProvenanceOpen(false)} />
+        <DemoDataDisclosure
+          close={() => setProvenanceOpen(false)}
+          simulateRouteFailure={() => {
+            setProvenanceOpen(false);
+            setSimulateRouteFailure(true);
+          }}
+        />
       )}
     </div>
   );

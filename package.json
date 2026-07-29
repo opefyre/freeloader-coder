@@ -17,6 +17,8 @@
     "repair": "node scripts/setup.mjs --repair",
     "studio:dev": "vite --config apps/studio/vite.config.ts",
     "studio:build": "vite build --config apps/studio/vite.config.ts",
+    "studio:budget": "node scripts/studio-budget.mjs",
+    "studio:release-check": "npm run build && npm run studio:build && npm run studio:budget",
     "setup:check": "node scripts/setup-check.mjs",
     "format:check": "node scripts/repo-check.mjs format",
     "lint": "node scripts/repo-check.mjs lint",

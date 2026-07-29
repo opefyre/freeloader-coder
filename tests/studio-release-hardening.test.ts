@@ -34,7 +34,7 @@ test("route failure containment exposes bounded retry and safe return actions", 
     "This workspace could not render",
     "Retry workspace",
     "Return to overview",
-    'navigate("overview")',
+    'this.props.navigate("overview")',
     "does not emit stack traces or source paths",
   ]) {
     assert.equal(source.includes(phrase), true, `Missing recovery contract: ${phrase}`);
@@ -58,6 +58,7 @@ test("demo provenance is globally inspectable and forbids ambiguous live claims"
     "Not permitted",
     "Provider calls",
     "Writes or deployment",
+    "Preview safe failure",
   ]) {
     assert.equal(disclosure.includes(phrase), true, `Missing provenance contract: ${phrase}`);
   }

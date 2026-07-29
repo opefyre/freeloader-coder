@@ -10,7 +10,7 @@ test("Launch route mounts the local interactive launch center", async () => {
     readFile("apps/studio/src/routing.ts", "utf8"),
   ]);
   assert.match(app, /LaunchCenter/);
-  assert.match(routes, /launch: "\/launch"/);
+  assert.match(routes, /launch:\s*\{\s*path: "\/launch"/);
 });
 
 test("launch center proves positioning, demo, comparison, operations, and learning", async () => {
@@ -48,4 +48,3 @@ test("launch center is source-linked, interactive, local-only, and responsive", 
   }
   assert.doesNotMatch(source, /react-icons|lucide|bg-gradient|linear-gradient/);
 });
-

@@ -10,10 +10,10 @@ const workbench = readFileSync(
 );
 
 test("Integrations has a stable route and mounts a dedicated connected-work surface", () => {
-  assert.match(routing, /integrations: "\/integrations"/);
+  assert.match(routing, /integrations:\s*\{\s*path: "\/integrations"/);
   assert.match(app, /view === "integrations"/);
   assert.match(app, /<IntegrationWorkbench \/>/);
-  assert.match(app, /label: "Connect"/);
+  assert.match(routing, /label: "Connect"/);
 });
 
 test("connected-work UI exposes granular grants, import, grounding, publishing, and sync", () => {

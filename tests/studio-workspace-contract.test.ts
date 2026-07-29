@@ -26,8 +26,11 @@ test("workspace exposes trusted destinations and keyboard command semantics", as
 });
 
 test("workspace labels fixture claims and prevents inert decision controls", async () => {
-  const source = await readFile("apps/studio/src/App.tsx", "utf8");
-  assert.match(source, /Demo data/);
+  const [source, routing] = await Promise.all([
+    readFile("apps/studio/src/App.tsx", "utf8"),
+    readFile("apps/studio/src/routing.ts", "utf8"),
+  ]);
+  assert.match(routing, /Demo data/);
   assert.match(source, /Choose the public product name/);
   assert.match(source, /Demo message received locally\. No task was created\./);
   assert.match(source, /Demo choice recorded locally\. No project data was changed\./);
@@ -36,11 +39,15 @@ test("workspace labels fixture claims and prevents inert decision controls", asy
 });
 
 test("workspace provides dedicated interactive surfaces rather than inert anchors", async () => {
-  const source = await readFile("apps/studio/src/App.tsx", "utf8");
-  const workbench = await readFile(
-    "apps/studio/src/components/orchestration/orchestration-workbench.tsx",
-    "utf8",
-  );
+  const [source, routing, workbench] = await Promise.all([
+    readFile("apps/studio/src/App.tsx", "utf8"),
+    readFile("apps/studio/src/routing.ts", "utf8"),
+    readFile(
+      "apps/studio/src/components/orchestration/orchestration-workbench.tsx",
+      "utf8",
+    ),
+  ]);
+  const shellContract = `${source}\n${routing}`;
   for (const title of [
     "Build through conversation",
     "Work that explains itself",
@@ -48,7 +55,7 @@ test("workspace provides dedicated interactive surfaces rather than inert anchor
     "Trust, with receipts",
     "Connections and safeguards",
   ]) {
-    assert.match(source, new RegExp(title));
+    assert.match(shellContract, new RegExp(title));
   }
   assert.match(source, /onClick=\{\(\) => navigate\(item\.id\)\}/);
   assert.match(source, /onClick=\{\(\) => navigate\("conversation"\)\}/);

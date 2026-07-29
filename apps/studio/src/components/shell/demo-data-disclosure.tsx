@@ -1,5 +1,6 @@
 import { Database } from "@phosphor-icons/react/Database";
 import { Info } from "@phosphor-icons/react/Info";
+import { Warning } from "@phosphor-icons/react/Warning";
 import { X } from "@phosphor-icons/react/X";
 
 import {
@@ -41,7 +42,13 @@ export function DemoModeButton({ open }: { open: () => void }) {
   );
 }
 
-export function DemoDataDisclosure({ close }: { close: () => void }) {
+export function DemoDataDisclosure({
+  close,
+  simulateRouteFailure,
+}: {
+  close: () => void;
+  simulateRouteFailure: () => void;
+}) {
   return (
     <div
       className="fixed inset-0 z-[70] grid place-items-end bg-background/55 p-3 backdrop-blur-sm sm:place-items-center"
@@ -99,9 +106,13 @@ export function DemoDataDisclosure({ close }: { close: () => void }) {
           <DisclosureFact label="Writes or deployment" value="None" />
         </div>
 
-        <Button className="mt-6 w-full" onClick={close}>
-          I understand
-        </Button>
+        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <Button variant="secondary" onClick={simulateRouteFailure}>
+            <Warning />
+            Preview safe failure
+          </Button>
+          <Button onClick={close}>I understand</Button>
+        </div>
       </section>
     </div>
   );

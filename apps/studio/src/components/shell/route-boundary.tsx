@@ -10,6 +10,7 @@ type Props = {
   children: ReactNode;
   route: StudioView;
   navigate: (view: StudioView) => void;
+  recover: () => void;
 };
 
 type State = {
@@ -35,10 +36,16 @@ export class RouteBoundary extends Component<Props, State> {
   }
 
   private retry = () => {
+    this.props.recover();
     this.setState((state) => ({
       failed: false,
       recoveryKey: state.recoveryKey + 1,
     }));
+  };
+
+  private returnToOverview = () => {
+    this.props.recover();
+    this.props.navigate("overview");
   };
 
   override render() {
@@ -68,7 +75,7 @@ export class RouteBoundary extends Component<Props, State> {
                 <ArrowClockwise />
                 Retry workspace
               </Button>
-              <Button variant="secondary" onClick={() => this.props.navigate("overview")}>
+              <Button variant="secondary" onClick={this.returnToOverview}>
                 <House />
                 Return to overview
               </Button>
@@ -99,4 +106,11 @@ export function WorkspaceLoading() {
       </div>
     </section>
   );
+}
+
+export function SyntheticRouteFailure({ active }: { active: boolean }) {
+  if (active) {
+    throw new Error("Synthetic route failure.");
+  }
+  return null;
 }
