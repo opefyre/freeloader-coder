@@ -62,6 +62,14 @@ import {
   type AutonomySnapshot,
 } from "../../../packages/runtime/src/autonomy.js";
 import { LocalAutonomyError } from "./local-autonomy-service.js";
+import {
+  activityKindSchema,
+  activityQuerySchema,
+  activitySeveritySchema,
+  activitySnapshotSchema,
+  type ActivityQuery,
+  type ActivitySnapshot,
+} from "../../../packages/runtime/src/activity.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -74,6 +82,7 @@ export type ControlPlaneServerOptions = {
   health: () => ControlPlaneHealth | Promise<ControlPlaneHealth>;
   snapshot: () => ControlPlaneSnapshot | Promise<ControlPlaneSnapshot>;
   liveOperations?: () => LiveOperationsSnapshot | Promise<LiveOperationsSnapshot>;
+  activity?: (query: ActivityQuery) => ActivitySnapshot | Promise<ActivitySnapshot>;
   autonomy?: {
     snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
     setProjectMode: (projectId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
@@ -339,6 +348,35 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         request.method !== "GET"
       ) {
         sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (url.pathname === "/api/v1/activity" && request.method !== "GET") {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/activity" &&
+        options.activity
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const allowed = new Set(["range", "kind", "severity", "project", "provider", "search"]);
+        if ([...url.searchParams.keys()].some((key) => !allowed.has(key))) {
+          sendJson(response, 400, { error: "Unknown activity query parameter." });
+          return;
+        }
+        const query = activityQuerySchema.parse({
+          range: url.searchParams.get("range") ?? "24h",
+          kinds: parseFacet(url.searchParams.getAll("kind"), activityKindSchema),
+          severities: parseFacet(url.searchParams.getAll("severity"), activitySeveritySchema),
+          projectId: url.searchParams.get("project"),
+          providerId: url.searchParams.get("provider"),
+          search: url.searchParams.get("search") ?? "",
+        });
+        sendJson(response, 200, activitySnapshotSchema.parse(await options.activity(query)));
         return;
       }
       if (
@@ -940,6 +978,12 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         server.closeIdleConnections();
       }),
   };
+}
+
+function parseFacet<T>(values: string[], schema: { parse(value: unknown): T }): T[] {
+  const flattened = values.flatMap((value) => value.split(",")).filter(Boolean);
+  if (new Set(flattened).size !== flattened.length) throw new ZodError([]);
+  return flattened.map((value) => schema.parse(value));
 }
 
 function requireIdempotencyKey(request: IncomingMessage): string {

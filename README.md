@@ -76,6 +76,14 @@ execution, proposal, change, commit, and integration approvals. Provider waits
 use observed retry times instead of constant retries, and automatic spend is
 structurally fixed at zero.
 
+The Activity route is a live, bounded operational history. It combines
+canonical request and run events with project observations, provider state,
+coordinator recommendations, leases, and receipts. Filters and search are
+validated by the loopback API; the Studio preserves stale observations without
+inventing progress. Local JSON exports contain only the displayed redacted
+records and explicitly exclude credentials, personal paths, prompts, source
+content, and provider response bodies.
+
 Projects can now register an existing local Git worktree through the loopback
 control plane. Registration performs a deterministic, bounded metadata scan and
 stores the canonical path only in the private ignored local state directory.

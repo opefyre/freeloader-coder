@@ -19,6 +19,7 @@ import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
 import { Moon } from "@phosphor-icons/react/Moon";
 import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { Pause } from "@phosphor-icons/react/Pause";
+import { Pulse } from "@phosphor-icons/react/Pulse";
 import { PersonArmsSpread } from "@phosphor-icons/react/PersonArmsSpread";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
 import { Question } from "@phosphor-icons/react/Question";
@@ -108,6 +109,11 @@ const AutonomousWorkCenter = lazy(() =>
     default: module.AutonomousWorkCenter,
   }))
 );
+const ActivityExplorer = lazy(() =>
+  import("./components/activity/activity-explorer.js").then((module) => ({
+    default: module.ActivityExplorer,
+  }))
+);
 const HelpCenter = lazy(() =>
   import("./components/help/help-center.js").then((module) => ({
     default: module.HelpCenter,
@@ -179,6 +185,7 @@ const workspaceIcons: Record<StudioView, typeof Gauge> = {
   projects: FolderOpen,
   conversation: ChatCircleDots,
   work: ListChecks,
+  activity: Pulse,
   providers: PlugsConnected,
   integrations: GitBranch,
   evidence: ShieldCheck,
@@ -480,7 +487,7 @@ function App() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {activeView !== "overview" && activeView !== "work" && (
+              {activeView !== "overview" && activeView !== "work" && activeView !== "activity" && (
                 <Button variant="secondary">
                   <Pause />
                   Pause after step
@@ -1032,6 +1039,10 @@ function WorkspaceSurface({
         <LocalRequestPanel mode="queue" />
       </div>
     );
+  }
+
+  if (view === "activity") {
+    return <ActivityExplorer endpoint={controlPlaneEndpoint} />;
   }
 
   if (view === "integrations") {

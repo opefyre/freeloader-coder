@@ -20,6 +20,7 @@ import {
 } from "../../../packages/vault/src/vault.js";
 import { buildLiveOperationsSnapshot } from "./live-operations.js";
 import { LocalAutonomyService } from "./local-autonomy-service.js";
+import { buildActivitySnapshot } from "./activity-explorer.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -190,6 +191,16 @@ const controlPlane = createControlPlaneServer({
       projects: await localProjects.list(),
       requests: await localRequests.list(),
       providers: await providerConnectionService.list(),
+    }),
+  activity: async (query) =>
+    buildActivitySnapshot({
+      live: buildLiveOperationsSnapshot({
+        projects: await localProjects.list(),
+        requests: await localRequests.list(),
+        providers: await providerConnectionService.list(),
+      }),
+      autonomy: await autonomy.snapshot(),
+      query,
     }),
   autonomy: {
     snapshot: () => autonomy.snapshot(),

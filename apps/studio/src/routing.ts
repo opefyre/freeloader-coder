@@ -57,6 +57,17 @@ export const workspaceDefinitions = {
     group: "primary",
     mobile: true,
   },
+  activity: {
+    path: "/activity",
+    label: "Activity",
+    mobileLabel: "Activity",
+    note: "Canonical history and recovery evidence",
+    eyebrow: "Live local history · Privacy-safe",
+    title: "See exactly what happened",
+    description: "Search real request, project, provider, validation, decision, and recovery activity.",
+    group: "primary",
+    mobile: true,
+  },
   providers: {
     path: "/providers",
     label: "Providers",
