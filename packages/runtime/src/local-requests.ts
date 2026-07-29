@@ -92,6 +92,14 @@ export const localRunEventSchema = z.strictObject({
     "change_set_applied",
     "change_set_rolled_back",
     "change_set_reconciled",
+    "proposal_requested",
+    "proposal_generating",
+    "proposal_review_ready",
+    "proposal_accepted",
+    "proposal_rejected",
+    "proposal_deferred",
+    "proposal_needs_user",
+    "proposal_reconciled",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
@@ -452,6 +460,108 @@ export const localChangeSetSessionSchema = z.strictObject({
   rolledBackAt: z.number().int().nonnegative().nullable(),
 });
 
+export const localProposalSourceSchema = z.strictObject({
+  path: relativePath,
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  bytes: z.number().int().nonnegative().max(65_536),
+  content: z.string().max(65_536),
+});
+
+export const localProposalPromptSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("bounded_local_coding_prompt"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  authorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  runDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  taskId: z.string().regex(/^task_[a-f0-9]{12}$/),
+  system: z.string().min(1).max(8_000),
+  instruction: z.string().min(1).max(20_000),
+  sources: z.array(localProposalSourceSchema).max(12),
+  allowedPaths: z.array(relativePath).min(1).max(12),
+  responseContract: z.literal("pipeline_studio_change_proposal_v1"),
+  maximumCostUsd: z.literal(0),
+});
+
+export const localProposalRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedAuthorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  expectedRunDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  taskId: z.string().regex(/^task_[a-f0-9]{12}$/),
+});
+
+export const localProposalImportSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedPromptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  providerId: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/),
+  modelId: z.string().trim().min(1).max(160),
+  response: z.string().min(2).max(786_432),
+  inputTokens: z.number().int().nonnegative().max(10_000_000),
+  outputTokens: z.number().int().nonnegative().max(10_000_000),
+});
+
+export const localProposalOperationSchema = z.strictObject({
+  type: z.enum(["create", "replace", "delete"]),
+  path: relativePath,
+  expectedBeforeDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  content: changeSetContent.nullable(),
+  citations: z.array(relativePath).min(1).max(12),
+  rationale: z.string().trim().min(1).max(500),
+});
+
+export const localProposalFindingSchema = z.strictObject({
+  code: z.enum([
+    "destructive_delete", "large_change", "sensitive_path", "test_not_updated",
+    "configuration_change", "no_op", "unsupported_content",
+  ]),
+  severity: z.enum(["warning", "blocking"]),
+  path: relativePath.nullable(),
+  detail: z.string().trim().min(1).max(500),
+});
+
+export const localImplementationProposalSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("untrusted_provider_change_proposal"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  promptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  authorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  runDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  providerId: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/),
+  modelId: z.string().trim().min(1).max(160),
+  responseDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  summary: z.string().trim().min(1).max(500),
+  operations: z.array(localProposalOperationSchema).min(1).max(12),
+  findings: z.array(localProposalFindingSchema).max(50),
+  inputTokens: z.number().int().nonnegative().max(10_000_000),
+  outputTokens: z.number().int().nonnegative().max(10_000_000),
+  generatedAt: z.number().int().nonnegative(),
+  maximumCostUsd: z.literal(0),
+});
+
+export const localProposalDecisionRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedProposalDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  decision: z.enum(["accept", "reject"]),
+});
+
+export const localProposalDecisionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  proposalDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  decision: z.enum(["accepted", "rejected"]),
+  decidedAt: z.number().int().nonnegative(),
+});
+
+export const localProposalSessionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  state: z.enum(["requested", "generating", "review_ready", "accepted", "rejected", "deferred", "needs_user", "interrupted"]),
+  prompt: localProposalPromptSchema,
+  proposal: localImplementationProposalSchema.nullable(),
+  decision: localProposalDecisionSchema.nullable(),
+  artifactDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  retryAt: z.number().int().nonnegative().nullable(),
+  safeMessage: z.string().trim().min(1).max(500).nullable(),
+});
+
 export const localCommitPreviewRequestSchema = z.strictObject({
   schemaVersion: z.literal(1),
   expectedAuthorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -599,6 +709,7 @@ export const localExecutionSessionSchema = z.strictObject({
   run: localExecutionRunSchema.nullable().default(null),
   patch: localPatchSessionSchema.nullable().default(null),
   changeSet: localChangeSetSessionSchema.nullable().default(null),
+  proposal: localProposalSessionSchema.nullable().default(null),
   commit: localCommitSessionSchema.nullable().default(null),
   integration: localIntegrationSessionSchema.nullable().default(null),
 });
@@ -693,6 +804,12 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "change_set_applied",
     "change_set_rolled_back",
     "change_set_reconciled",
+    "proposal_requested",
+    "proposal_generating",
+    "proposal_imported",
+    "proposal_accepted",
+    "proposal_rejected",
+    "proposal_reconciled",
     "cancelled",
     "archived",
   ]),
@@ -729,6 +846,13 @@ export type LocalChangeSetPreview = z.infer<typeof localChangeSetPreviewSchema>;
 export type LocalChangeSetApproval = z.infer<typeof localChangeSetApprovalSchema>;
 export type LocalChangeSetReceipt = z.infer<typeof localChangeSetReceiptSchema>;
 export type LocalChangeSetSession = z.infer<typeof localChangeSetSessionSchema>;
+export type LocalProposalSource = z.infer<typeof localProposalSourceSchema>;
+export type LocalProposalPrompt = z.infer<typeof localProposalPromptSchema>;
+export type LocalProposalRequest = z.infer<typeof localProposalRequestSchema>;
+export type LocalProposalImport = z.infer<typeof localProposalImportSchema>;
+export type LocalImplementationProposal = z.infer<typeof localImplementationProposalSchema>;
+export type LocalProposalDecision = z.infer<typeof localProposalDecisionSchema>;
+export type LocalProposalSession = z.infer<typeof localProposalSessionSchema>;
 export type LocalCommitPreview = z.infer<typeof localCommitPreviewSchema>;
 export type LocalCommitApproval = z.infer<typeof localCommitApprovalSchema>;
 export type LocalCommitReceipt = z.infer<typeof localCommitReceiptSchema>;
@@ -913,6 +1037,59 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
         }
         if (changeSet.state === "rolled_back" && changeSet.rolledBackAt === null) {
           throw new Error("Rolled-back change set requires a verified rollback time.");
+        }
+      }
+      if (execution.proposal) {
+        const proposalSession = execution.proposal;
+        const prompt = proposalSession.prompt;
+        const task = execution.authority.manifest.tasks.find((item) => item.id === prompt.taskId);
+        if (
+          !execution.run || !task ||
+          prompt.authorityDigest !== execution.authority.digest ||
+          prompt.runDigest !== execution.run.digest ||
+          prompt.maximumCostUsd !== 0 ||
+          prompt.allowedPaths.join("\0") !== [...task.allowedFiles].sort((a, b) => a.localeCompare(b)).join("\0") ||
+          prompt.sources.some((source) => !prompt.allowedPaths.includes(source.path))
+        ) {
+          throw new Error("Local proposal prompt does not match its execution authority.");
+        }
+        const proposal = proposalSession.proposal;
+        if (["review_ready", "accepted", "rejected"].includes(proposalSession.state) && !proposal) {
+          throw new Error("Proposal review state requires a parsed provider proposal.");
+        }
+        if (proposal) {
+          const paths = proposal.operations.map((item) => item.path);
+          if (
+            proposal.promptDigest !== prompt.digest ||
+            proposal.authorityDigest !== execution.authority.digest ||
+            proposal.runDigest !== execution.run.digest ||
+            proposal.maximumCostUsd !== 0 ||
+            new Set(paths).size !== paths.length ||
+            paths.some((path) => !prompt.allowedPaths.includes(path)) ||
+            proposal.operations.some((operation) =>
+              operation.citations.some((citation) => !prompt.sources.some((source) => source.path === citation)))
+          ) {
+            throw new Error("Provider proposal is not grounded in its exact prompt.");
+          }
+        }
+        if (["accepted", "rejected"].includes(proposalSession.state)) {
+          if (!proposal || !proposalSession.decision ||
+            proposalSession.decision.proposalDigest !== proposal.digest ||
+            proposalSession.decision.decision !== `${proposalSession.state}`) {
+            throw new Error("Proposal decision does not match the exact provider proposal.");
+          }
+        }
+        if (proposalSession.state === "accepted" && proposal?.findings.some((item) => item.severity === "blocking")) {
+          throw new Error("A blocked provider proposal cannot be accepted.");
+        }
+        if (execution.changeSet && proposalSession.state === "accepted" && proposal) {
+          const expected = proposal.operations.map((item) => ({ type: item.type, path: item.path,
+            before: item.expectedBeforeDigest, content: item.content })).sort((a, b) => a.path.localeCompare(b.path));
+          const actual = execution.changeSet.preview.operations.map((item) => ({ type: item.type, path: item.path,
+            before: item.beforeDigest, content: item.content })).sort((a, b) => a.path.localeCompare(b.path));
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error("Atomic change set does not match the accepted provider proposal.");
+          }
         }
       }
       if (execution.commit) {

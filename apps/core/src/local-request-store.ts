@@ -31,6 +31,10 @@ import {
   localChangeSetApprovalSchema,
   localChangeSetPreviewRequestSchema,
   localChangeSetReceiptSchema,
+  localProposalRequestSchema,
+  localProposalImportSchema,
+  localProposalDecisionRequestSchema,
+  localProposalDecisionSchema,
   localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
@@ -73,6 +77,12 @@ import {
   reconcileChangeSet,
   rollbackChangeSet,
 } from "./local-change-set.js";
+import {
+  compileLocalProposalPrompt,
+  parseLocalImplementationProposal,
+  proposalToChangeSetRequest,
+  writePrivateProposalArtifact,
+} from "./local-proposal.js";
 
 const MAX_REQUESTS = 500;
 const sensitiveMaterial =
@@ -1464,6 +1474,110 @@ export class LocalRequestStore {
     });
   }
 
+  requestProposal(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const proposalRequest = localProposalRequestSchema.parse(input);
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      if (!execution || execution.state !== "ready" || !execution.workspace || !execution.run || execution.run.state !== "ready" || !record.request.plan) {
+        throw new LocalRequestError("invalid_transition", "Start a ready bounded execution before requesting a proposal.");
+      }
+      if (proposalRequest.expectedAuthorityDigest !== execution.authority.digest || proposalRequest.expectedRunDigest !== execution.run.digest) {
+        throw new LocalRequestError("stale_revision", "Execution changed before proposal compilation.");
+      }
+      if (execution.patch || execution.changeSet) throw new LocalRequestError("plan_immutable", "A file-change workflow already owns this execution run.");
+      if (execution.proposal) {
+        if (execution.proposal.prompt.taskId === proposalRequest.taskId) return record.request;
+        throw new LocalRequestError("plan_immutable", "A proposal workflow already owns this execution run.");
+      }
+      const prompt = await compileLocalProposalPrompt({
+        workspacePath: locateIsolatedWorktree({ stateDirectory: this.#stateDirectory, requestId, authority: execution.authority }),
+        authority: execution.authority, run: execution.run, plan: record.request.plan, taskId: proposalRequest.taskId,
+      });
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: now,
+        execution: { ...execution, proposal: { schemaVersion: 1, state: "requested", prompt, proposal: null, decision: null, artifactDigest: null, retryAt: null, safeMessage: "Prompt compiled locally. Provider execution has not started." } },
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "proposal_requested", now, `Grounded proposal prompt compiled for ${prompt.sources.length} bounded source files; no provider called.`) },
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
+  beginProposalGeneration(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const proposal = execution?.proposal;
+      if (proposal?.state === "generating") return record.request;
+      if (!execution || !proposal || proposal.state !== "requested") throw new LocalRequestError("invalid_transition", "Compile a grounded proposal prompt first.");
+      const now = Date.now();
+      const request = localRequestSchema.parse({ ...record.request, updatedAt: now,
+        execution: { ...execution, proposal: { ...proposal, state: "generating", safeMessage: "Waiting for one eligible free provider response." } },
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "proposal_generating", now, "Grounded prompt handed to the provider runtime; provider output remains untrusted data.") },
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
+  importProposal(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const imported = localProposalImportSchema.parse(input);
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const session = execution?.proposal;
+      if (!execution || !execution.run || !session || !["requested", "generating"].includes(session.state)) throw new LocalRequestError("invalid_transition", "A current grounded prompt is required before importing provider output.");
+      if (session.prompt.digest !== imported.expectedPromptDigest) throw new LocalRequestError("stale_revision", "Provider output belongs to a stale prompt.");
+      const artifactDigest = await writePrivateProposalArtifact({ directory: resolve(this.#stateDirectory, "proposal-artifacts", requestId), response: imported.response });
+      const proposal = parseLocalImplementationProposal({ prompt: session.prompt, authority: execution.authority, run: execution.run, imported });
+      if (proposal.responseDigest !== artifactDigest) throw new LocalRequestError("store_invalid", "Provider artifact digest does not match parsed evidence.");
+      const now = Date.now();
+      const request = localRequestSchema.parse({ ...record.request, updatedAt: now,
+        execution: { ...execution, proposal: { ...session, state: "review_ready", proposal, decision: null, artifactDigest, retryAt: null, safeMessage: proposal.findings.some((item) => item.severity === "blocking") ? "Proposal contains blocking findings and cannot be accepted." : "Generated proposal is ready for explicit review; no files changed." } },
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "proposal_review_ready", now, `${proposal.operations.length} untrusted provider operations parsed and policy-checked; no files changed.`) },
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
+  decideProposal(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const decisionRequest = localProposalDecisionRequestSchema.parse(input);
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const session = execution?.proposal; const proposal = session?.proposal;
+      if (!execution || !execution.run || !execution.workspace || !session || !proposal || session.state !== "review_ready") throw new LocalRequestError("invalid_transition", "Review a current provider proposal first.");
+      if (proposal.digest !== decisionRequest.expectedProposalDigest) throw new LocalRequestError("stale_revision", "Provider proposal changed before the decision.");
+      if (decisionRequest.decision === "accept" && proposal.findings.some((item) => item.severity === "blocking")) throw new LocalRequestError("invalid_transition", "Resolve blocking proposal findings before acceptance.");
+      const now = Date.now(); const state = decisionRequest.decision === "accept" ? "accepted" : "rejected";
+      const decision = localProposalDecisionSchema.parse({ schemaVersion: 1, proposalDigest: proposal.digest, decision: state, decidedAt: now, digest: digest(`${proposal.digest}:${state}:${now}`) });
+      let changeSet = execution.changeSet;
+      if (state === "accepted") {
+        const preview = await previewChangeSet({
+          workspacePath: locateIsolatedWorktree({ stateDirectory: this.#stateDirectory, requestId, authority: execution.authority }),
+          authority: execution.authority, run: execution.run, operations: proposalToChangeSetRequest(proposal),
+        });
+        changeSet = { schemaVersion: 1, state: "previewed", preview, approval: null, receipt: null, rolledBackAt: null };
+      }
+      const request = localRequestSchema.parse({ ...record.request, updatedAt: now,
+        execution: { ...execution, proposal: { ...session, state, decision, safeMessage: state === "accepted" ? "Proposal accepted and converted to an exact change-set preview; file application still requires separate approval." : "Proposal rejected; no files changed." }, changeSet },
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], state === "accepted" ? "proposal_accepted" : "proposal_rejected", now, state === "accepted" ? "Exact provider proposal accepted and converted to a separate unapproved atomic preview." : "Provider proposal rejected; no files changed.") },
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
+  reconcileProposal(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const proposal = execution?.proposal;
+      if (!execution || !proposal || !["generating", "interrupted"].includes(proposal.state)) throw new LocalRequestError("invalid_transition", "Only interrupted proposal generation can be reconciled.");
+      const now = Date.now();
+      const request = localRequestSchema.parse({ ...record.request, updatedAt: now,
+        execution: { ...execution, proposal: { ...proposal, state: "interrupted", safeMessage: "Provider outcome is unknown. Inspect provider evidence before importing or requesting a new prompt." } },
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "proposal_reconciled", now, "Interrupted provider generation preserved as outcome unknown; no retry or file mutation occurred.") },
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
   approveCommit(requestId: string, input: unknown): Promise<LocalRequest> {
     return this.#serialize(async () => {
       const approvalRequest = localCommitApprovalRequestSchema.parse(input);
@@ -1974,7 +2088,15 @@ function event(
     | "change_set_applying"
     | "change_set_applied"
     | "change_set_rolled_back"
-    | "change_set_reconciled",
+    | "change_set_reconciled"
+    | "proposal_requested"
+    | "proposal_generating"
+    | "proposal_review_ready"
+    | "proposal_accepted"
+    | "proposal_rejected"
+    | "proposal_deferred"
+    | "proposal_needs_user"
+    | "proposal_reconciled",
   observedAt: number,
   detail: string
 ) {

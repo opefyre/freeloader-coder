@@ -13,7 +13,7 @@ import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Stop } from "@phosphor-icons/react/Stop";
 import { Trash } from "@phosphor-icons/react/Trash";
 import { Warning } from "@phosphor-icons/react/Warning";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
 import type {
@@ -53,6 +53,15 @@ import {
   CardHeader,
   CardTitle,
 } from "../ui/card.js";
+
+const LocalProposalCard = lazy(async () => {
+  const module = await import("./local-proposal-card.js");
+  return { default: module.LocalProposalCard };
+});
+const LocalProposalControls = lazy(async () => {
+  const module = await import("./local-proposal-card.js");
+  return { default: module.LocalProposalControls };
+});
 
 const endpoint =
   import.meta.env.VITE_PIPELINE_STUDIO_CONTROL_URL ?? "http://127.0.0.1:4312";
@@ -827,7 +836,7 @@ export function LocalRequestPanel(props: {
                               </div>
                             )}
                             {request.execution.run?.state === "ready" &&
-                              !request.execution.patch && !request.execution.changeSet && (
+                              !request.execution.patch && !request.execution.changeSet && !request.execution.proposal && (
                                 <div className="mt-3 bg-primary/[.055] p-3">
                                   <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
@@ -865,7 +874,7 @@ export function LocalRequestPanel(props: {
                                 </div>
                               )}
                             {request.execution.run?.state === "ready" &&
-                              !request.execution.patch && !request.execution.changeSet && (
+                              !request.execution.patch && !request.execution.changeSet && !request.execution.proposal && (
                                 <div className="mt-3 bg-primary/[.055] p-3">
                                   <p className="text-[11px] font-semibold">
                                     Exact isolated replacement
@@ -992,6 +1001,17 @@ export function LocalRequestPanel(props: {
                                 </div>
                                 <p className="mt-2 text-[10px] text-muted-foreground">{request.execution.changeSet.preview.operations.map((item) => `${item.type} ${item.path}`).join(" · ")}</p>
                               </div>
+                            )}
+                            {request.execution.proposal && (
+                              <Suspense
+                                fallback={
+                                  <div className="mt-3 bg-primary/[.055] p-3 text-[11px] text-muted-foreground">
+                                    Loading proposal evidence…
+                                  </div>
+                                }
+                              >
+                                <LocalProposalCard proposal={request.execution.proposal} />
+                              </Suspense>
                             )}
                             {request.execution.state === "review_ready" &&
                               !request.execution.commit && (
@@ -1159,6 +1179,23 @@ export function LocalRequestPanel(props: {
                       {request.execution?.state === "ready" &&
                         request.execution.run?.state === "ready" && (
                           <>
+                            {!request.execution.patch && !request.execution.changeSet && (
+                              <Suspense fallback={null}>
+                                <LocalProposalControls
+                                  endpoint={endpoint}
+                                  request={request}
+                                  working={status === "working"}
+                                  onComplete={async (message) => {
+                                    await refresh();
+                                    setNotice(message);
+                                  }}
+                                  onError={(message) => {
+                                    setStatus("ready");
+                                    setNotice(message);
+                                  }}
+                                />
+                              </Suspense>
+                            )}
                             {request.execution.patch?.state === "previewed" && (
                               <Button
                                 size="sm"

@@ -10,13 +10,16 @@ import {
   localIntegrationPreviewRequestSchema,
   localChangeSetApprovalRequestSchema,
   localChangeSetPreviewRequestSchema,
+  localProposalRequestSchema,
+  localProposalImportSchema,
+  localProposalDecisionRequestSchema,
   localRequestCollectionSchema,
   localRequestMutationResponseSchema,
   type LocalRequestCollection,
   type LocalRequestMutationResponse,
 } from "../../../packages/runtime/src/local-requests.js";
 
-const MAX_RESPONSE_BYTES = 256_000;
+const MAX_RESPONSE_BYTES = 1_000_000;
 
 export async function listLocalRequests(input: {
   endpoint: string;
@@ -341,6 +344,45 @@ export async function advanceLocalChangeSet(input: {
     method: "POST", idempotencyKey: input.idempotencyKey,
     ...(input.fetcher ? { fetcher: input.fetcher } : {}),
   }));
+}
+
+export async function requestLocalProposal(input: {
+  endpoint: string; requestId: string; proposal: unknown; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({ endpoint: input.endpoint,
+    path: `/api/v1/requests/${input.requestId}/proposal-request`, method: "POST",
+    body: localProposalRequestSchema.parse(input.proposal), idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function importLocalProposal(input: {
+  endpoint: string; requestId: string; imported: unknown; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({ endpoint: input.endpoint,
+    path: `/api/v1/requests/${input.requestId}/proposal-import`, method: "POST",
+    body: localProposalImportSchema.parse(input.imported), idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function decideLocalProposal(input: {
+  endpoint: string; requestId: string; decision: unknown; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({ endpoint: input.endpoint,
+    path: `/api/v1/requests/${input.requestId}/proposal-decide`, method: "POST",
+    body: localProposalDecisionRequestSchema.parse(input.decision), idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function advanceLocalProposal(input: {
+  endpoint: string; requestId: string; action: "generate" | "reconcile"; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({ endpoint: input.endpoint,
+    path: `/api/v1/requests/${input.requestId}/proposal-${input.action}`, method: "POST",
+    idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
 }
 
 export async function archiveLocalRequest(input: {

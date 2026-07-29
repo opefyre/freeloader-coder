@@ -7,6 +7,11 @@ test("Studio separates real request state from guided orchestration examples", a
     "apps/studio/src/components/conversation/local-request-panel.tsx",
     "utf8"
   );
+  const proposal = await readFile(
+    "apps/studio/src/components/conversation/local-proposal-card.tsx",
+    "utf8"
+  );
+  const studioUi = `${panel}\n${proposal}`;
   for (const phrase of [
     "Create real local work",
     "Real local work queue",
@@ -33,6 +38,12 @@ test("Studio separates real request state from guided orchestration examples", a
     "Validate complete change set",
     "Roll back every file",
     "Reconcile interrupted change set",
+    "Prepare grounded AI proposal",
+    "Grounded model proposal",
+    "Untrusted suggestion · never applied automatically",
+    "Accept proposal preview",
+    "Reject proposal",
+    "Reconcile provider outcome",
     "Applied means isolated bytes verified",
     "Local isolated commit",
     "Preview local commit",
@@ -58,12 +69,12 @@ test("Studio separates real request state from guided orchestration examples", a
     "execution unauthorized",
     "Save task",
   ]) {
-    assert.equal(panel.includes(phrase), true, `Missing truthful UI contract: ${phrase}`);
+    assert.equal(studioUi.includes(phrase), true, `Missing truthful UI contract: ${phrase}`);
   }
   const app = await readFile("apps/studio/src/App.tsx", "utf8");
   assert.equal(app.includes('LocalRequestPanel mode="compose"'), true);
   assert.equal(app.includes('LocalRequestPanel mode="queue"'), true);
   assert.equal(app.includes("interactive preview, not active work"), true);
   const controlPlane = await readFile("apps/core/src/control-plane.ts", "utf8");
-  assert.equal(controlPlane.includes("const MAX_REQUEST_BYTES = 98_304"), true);
+  assert.equal(controlPlane.includes("const MAX_REQUEST_BYTES = 900_000"), true);
 });

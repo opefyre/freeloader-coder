@@ -27,6 +27,9 @@ import {
   localIntegrationPreviewRequestSchema,
   localChangeSetApprovalRequestSchema,
   localChangeSetPreviewRequestSchema,
+  localProposalRequestSchema,
+  localProposalImportSchema,
+  localProposalDecisionRequestSchema,
   localRequestCreationSchema,
   localRequestMutationResponseSchema,
   validateLocalRequestCollection,
@@ -37,7 +40,7 @@ import { LocalRequestError } from "./local-request-store.js";
 import { LocalExecutionError } from "./local-execution.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
-const MAX_REQUEST_BYTES = 98_304;
+const MAX_REQUEST_BYTES = 900_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 
 export type ControlPlaneServerOptions = {
@@ -90,6 +93,11 @@ export type ControlPlaneServerOptions = {
     applyChangeSet?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     rollbackChangeSet?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     reconcileChangeSet?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    requestProposal?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    beginProposalGeneration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    importProposal?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    decideProposal?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    reconcileProposal?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -186,8 +194,30 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|change-set-preview|change-set-approve|change-set-apply|change-set-rollback|change-set-reconcile|commit-preview|commit-approve|commit-create|commit-undo|commit-reconcile|integration-preview|integration-approve|integration-create|integration-undo|integration-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|change-set-preview|change-set-approve|change-set-apply|change-set-rollback|change-set-reconcile|proposal-request|proposal-generate|proposal-import|proposal-decide|proposal-reconcile|commit-preview|commit-approve|commit-create|commit-undo|commit-reconcile|integration-preview|integration-approve|integration-create|integration-undo|integration-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      if (request.method === "POST" && requestRoute?.[2] === "proposal-request" && options.requests?.requestProposal) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.requestProposal(requestRoute[1] ?? "", localProposalRequestSchema.parse(await readJsonBody(request)));
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: "proposal_requested", request: changed })); return;
+      }
+      if (request.method === "POST" && requestRoute?.[2] === "proposal-import" && options.requests?.importProposal) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.importProposal(requestRoute[1] ?? "", localProposalImportSchema.parse(await readJsonBody(request)));
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: "proposal_imported", request: changed })); return;
+      }
+      if (request.method === "POST" && requestRoute?.[2] === "proposal-decide" && options.requests?.decideProposal) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.decideProposal(requestRoute[1] ?? "", localProposalDecisionRequestSchema.parse(await readJsonBody(request)));
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: changed.execution?.proposal?.state === "accepted" ? "proposal_accepted" : "proposal_rejected", request: changed })); return;
+      }
+      const proposalActions = { "proposal-generate": options.requests?.beginProposalGeneration, "proposal-reconcile": options.requests?.reconcileProposal } as const;
+      const proposalAction = requestRoute?.[2] as keyof typeof proposalActions | undefined;
+      if (request.method === "POST" && proposalAction && proposalActions[proposalAction]) {
+        requireIdempotencyKey(request); if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        const changed = await proposalActions[proposalAction]!(requestRoute?.[1] ?? "");
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: proposalAction === "proposal-generate" ? "proposal_generating" : "proposal_reconciled", request: changed })); return;
+      }
       if (request.method === "POST" && requestRoute?.[2] === "change-set-preview" && options.requests?.previewChangeSet) {
         requireIdempotencyKey(request);
         const changed = await options.requests.previewChangeSet(requestRoute[1] ?? "", localChangeSetPreviewRequestSchema.parse(await readJsonBody(request)));

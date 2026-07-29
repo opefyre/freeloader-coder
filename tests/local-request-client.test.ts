@@ -18,6 +18,10 @@ import {
   previewLocalCommit,
   previewLocalIntegration,
   advanceLocalChangeSet,
+  requestLocalProposal,
+  importLocalProposal,
+  decideLocalProposal,
+  advanceLocalProposal,
 } from "../apps/studio/src/local-request-client.js";
 
 const request = {
@@ -232,6 +236,21 @@ test("request client sends exact atomic change-set lifecycle payloads to loopbac
     `/api/v1/requests/${request.id}/change-set-reconcile`,
   ]);
   assert.match(observed[0]?.body ?? "", /new\.txt/);
+});
+
+test("request client uses explicit grounded proposal lifecycle routes", async () => {
+  const paths: string[] = [];
+  const fetcher = async (url: URL | RequestInfo) => {
+    const path = new URL(String(url)).pathname; paths.push(path);
+    const outcome = path.endsWith("proposal-request") ? "proposal_requested" : path.endsWith("proposal-generate") ? "proposal_generating" : path.endsWith("proposal-import") ? "proposal_imported" : path.endsWith("proposal-decide") ? "proposal_accepted" : "proposal_reconciled";
+    return Response.json({ schemaVersion: 1, outcome, request });
+  };
+  await requestLocalProposal({ endpoint: "http://127.0.0.1:4312", requestId: request.id, proposal: { schemaVersion: 1, expectedAuthorityDigest: "a".repeat(64), expectedRunDigest: "b".repeat(64), taskId: "task_abcdef012345" }, idempotencyKey: "proposal-request:test", fetcher });
+  await advanceLocalProposal({ endpoint: "http://127.0.0.1:4312", requestId: request.id, action: "generate", idempotencyKey: "proposal-generate:test", fetcher });
+  await importLocalProposal({ endpoint: "http://127.0.0.1:4312", requestId: request.id, imported: { schemaVersion: 1, expectedPromptDigest: "c".repeat(64), providerId: "free-provider", modelId: "model", response: "{}", inputTokens: 1, outputTokens: 1 }, idempotencyKey: "proposal-import:test", fetcher });
+  await decideLocalProposal({ endpoint: "http://127.0.0.1:4312", requestId: request.id, decision: { schemaVersion: 1, expectedProposalDigest: "d".repeat(64), decision: "accept" }, idempotencyKey: "proposal-decide:test", fetcher });
+  await advanceLocalProposal({ endpoint: "http://127.0.0.1:4312", requestId: request.id, action: "reconcile", idempotencyKey: "proposal-reconcile:test", fetcher });
+  assert.deepEqual(paths, ["proposal-request", "proposal-generate", "proposal-import", "proposal-decide", "proposal-reconcile"].map((name) => `/api/v1/requests/${request.id}/${name}`));
 });
 
 test("request client targets bounded execution start and validation routes", async () => {
