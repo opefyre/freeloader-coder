@@ -29,7 +29,7 @@ import { Sparkle } from "@phosphor-icons/react/Sparkle";
 import { Sun } from "@phosphor-icons/react/Sun";
 import { Warning } from "@phosphor-icons/react/Warning";
 import { X } from "@phosphor-icons/react/X";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { controlCenterMetric } from "../../../fixtures/control-center-metrics.js";
 import {
@@ -38,22 +38,15 @@ import {
 } from "../../../packages/ui/src/content.js";
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
-import { ExecutionSafetyPanel } from "./components/execution/execution-safety-panel.js";
-import { HelpCenter } from "./components/help/help-center.js";
-import { LaunchCenter } from "./components/launch/launch-center.js";
-import { IntegrationWorkbench } from "./components/integrations/integration-workbench.js";
-import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
-import { EvidenceCenter } from "./components/quality/evidence-center.js";
-import { AccessibilityCenter } from "./components/quality/accessibility-center.js";
-import { ReleaseCenter } from "./components/releases/release-center.js";
-import { TrustCenter } from "./components/governance/trust-center.js";
 import { ControlCenter } from "./components/control-center/control-center.js";
-import { ResilienceCenter } from "./components/resilience/resilience-center.js";
-import { ConversationWorkbench } from "./components/conversation/conversation-workbench.js";
-import { ProviderConnectionWizard } from "./components/providers/provider-connection-wizard.js";
-import { ExpandedProviderMesh } from "./components/providers/expanded-provider-mesh.js";
-import { OptionalProviderCenter } from "./components/providers/optional-provider-center.js";
-import { RuntimeSetupPanel } from "./components/runtime/runtime-setup-panel.js";
+import {
+  DemoDataDisclosure,
+  DemoModeButton,
+} from "./components/shell/demo-data-disclosure.js";
+import {
+  RouteBoundary,
+  WorkspaceLoading,
+} from "./components/shell/route-boundary.js";
 import { Button, buttonVariants } from "./components/ui/button.js";
 import {
   Card,
@@ -94,6 +87,82 @@ import {
   viewFromLocation,
   type StudioView,
 } from "./routing.js";
+
+const ConversationWorkbench = lazy(() =>
+  import("./components/conversation/conversation-workbench.js").then((module) => ({
+    default: module.ConversationWorkbench,
+  }))
+);
+const ExecutionSafetyPanel = lazy(() =>
+  import("./components/execution/execution-safety-panel.js").then((module) => ({
+    default: module.ExecutionSafetyPanel,
+  }))
+);
+const HelpCenter = lazy(() =>
+  import("./components/help/help-center.js").then((module) => ({
+    default: module.HelpCenter,
+  }))
+);
+const LaunchCenter = lazy(() =>
+  import("./components/launch/launch-center.js").then((module) => ({
+    default: module.LaunchCenter,
+  }))
+);
+const IntegrationWorkbench = lazy(() =>
+  import("./components/integrations/integration-workbench.js").then((module) => ({
+    default: module.IntegrationWorkbench,
+  }))
+);
+const OrchestrationWorkbench = lazy(() =>
+  import("./components/orchestration/orchestration-workbench.js").then((module) => ({
+    default: module.OrchestrationWorkbench,
+  }))
+);
+const EvidenceCenter = lazy(() =>
+  import("./components/quality/evidence-center.js").then((module) => ({
+    default: module.EvidenceCenter,
+  }))
+);
+const AccessibilityCenter = lazy(() =>
+  import("./components/quality/accessibility-center.js").then((module) => ({
+    default: module.AccessibilityCenter,
+  }))
+);
+const ReleaseCenter = lazy(() =>
+  import("./components/releases/release-center.js").then((module) => ({
+    default: module.ReleaseCenter,
+  }))
+);
+const TrustCenter = lazy(() =>
+  import("./components/governance/trust-center.js").then((module) => ({
+    default: module.TrustCenter,
+  }))
+);
+const ResilienceCenter = lazy(() =>
+  import("./components/resilience/resilience-center.js").then((module) => ({
+    default: module.ResilienceCenter,
+  }))
+);
+const ProviderConnectionWizard = lazy(() =>
+  import("./components/providers/provider-connection-wizard.js").then((module) => ({
+    default: module.ProviderConnectionWizard,
+  }))
+);
+const ExpandedProviderMesh = lazy(() =>
+  import("./components/providers/expanded-provider-mesh.js").then((module) => ({
+    default: module.ExpandedProviderMesh,
+  }))
+);
+const OptionalProviderCenter = lazy(() =>
+  import("./components/providers/optional-provider-center.js").then((module) => ({
+    default: module.OptionalProviderCenter,
+  }))
+);
+const RuntimeSetupPanel = lazy(() =>
+  import("./components/runtime/runtime-setup-panel.js").then((module) => ({
+    default: module.RuntimeSetupPanel,
+  }))
+);
 
 const navItems = [
   { id: "overview", label: "Overview", note: "Pipeline health and decisions", icon: Gauge },
@@ -287,6 +356,7 @@ function App() {
   );
   const [selectedConnection, setSelectedConnection] = useState("cerebras");
   const [costOpen, setCostOpen] = useState(false);
+  const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [productChoice, setProductChoice] = useState<string>();
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState(false);
@@ -551,10 +621,7 @@ function App() {
             <kbd className="ml-auto rounded-lg bg-background/70 px-2 py-1 text-[10px]">⌘ K</kbd>
           </button>
           <div className="flex items-center gap-2">
-            <Badge tone="positive">
-              <span className="size-1.5 rounded-full bg-emerald-300" />
-              Pipeline online
-            </Badge>
+            <DemoModeButton open={() => setProvenanceOpen(true)} />
             <Button
               variant="ghost"
               size="icon"
@@ -1022,18 +1089,22 @@ function App() {
           </div>
             </>
           ) : (
-            <WorkspaceSurface
-              view={activeView}
-              selectedProvider={selectedProvider}
-              setSelectedProvider={setSelectedProvider}
-              selectedConnection={selectedConnection}
-              setSelectedConnection={setSelectedConnection}
-              message={message}
-              setMessage={setMessage}
-              sent={sent}
-              setSent={setSent}
-              navigate={navigate}
-            />
+            <RouteBoundary route={activeView} navigate={navigate}>
+              <Suspense fallback={<WorkspaceLoading />}>
+                <WorkspaceSurface
+                  view={activeView}
+                  selectedProvider={selectedProvider}
+                  setSelectedProvider={setSelectedProvider}
+                  selectedConnection={selectedConnection}
+                  setSelectedConnection={setSelectedConnection}
+                  message={message}
+                  setMessage={setMessage}
+                  sent={sent}
+                  setSent={setSent}
+                  navigate={navigate}
+                />
+              </Suspense>
+            </RouteBoundary>
           )}
         </div>
       </main>
@@ -1083,6 +1154,9 @@ function App() {
           close={() => setCommandOpen(false)}
           navigate={navigate}
         />
+      )}
+      {provenanceOpen && (
+        <DemoDataDisclosure close={() => setProvenanceOpen(false)} />
       )}
     </div>
   );

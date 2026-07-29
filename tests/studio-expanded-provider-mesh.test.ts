@@ -4,7 +4,7 @@ import test from "node:test";
 
 test("Providers mounts the interactive expanded provider mesh", async () => {
   const app = await readFile("apps/studio/src/App.tsx", "utf8");
-  assert.match(app, /import \{ ExpandedProviderMesh \}/);
+  assert.match(app, /import\("\.\/components\/providers\/expanded-provider-mesh\.js"\)/);
   assert.match(app, /<ExpandedProviderMesh \/>/);
 });
 

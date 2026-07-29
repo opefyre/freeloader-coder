@@ -9,7 +9,14 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     outDir: resolve(import.meta.dirname, "../../dist/studio"),
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          return id.includes("/node_modules/react") ? "react-runtime" : undefined;
+        }
+      }
+    }
   },
   server: {
     host: "127.0.0.1",
