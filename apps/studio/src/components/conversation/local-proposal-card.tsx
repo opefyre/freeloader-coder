@@ -81,6 +81,46 @@ export function LocalProposalCard(props: {
           )}
         </>
       )}
+      {session.generation && (
+        <div className="mt-3 bg-background/65 p-3" aria-label="Provider generation evidence">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <strong className="text-[10px] uppercase tracking-[.12em]">
+              Free-provider execution
+            </strong>
+            <span className="text-[10px] text-muted-foreground">
+              {session.generation.state.replaceAll("_", " ")}
+            </span>
+          </div>
+          {session.generation.attempts.length > 0 ? (
+            <ol className="mt-2 grid gap-1">
+              {session.generation.attempts.map((attempt, index) => (
+                <li
+                  key={`${attempt.candidateId}-${index}`}
+                  className="flex flex-wrap items-center justify-between gap-2 text-[10px]"
+                >
+                  <span>{attempt.providerId} · {attempt.modelId}</span>
+                  <span className="text-muted-foreground">
+                    {attempt.state}
+                    {attempt.failureCode ? ` · ${attempt.failureCode}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              No provider call has been recorded.
+            </p>
+          )}
+          {session.generation.retryAt && (
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              Next eligible retry · {new Date(session.generation.retryAt).toLocaleString()}
+            </p>
+          )}
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            {session.generation.safeMessage}
+          </p>
+        </div>
+      )}
       {session.safeMessage && (
         <p className="mt-2 text-[10px] text-muted-foreground">{session.safeMessage}</p>
       )}
@@ -170,6 +210,28 @@ export function LocalProposalControls(props: {
     }
   }
 
+  async function generate() {
+    if (!session) return;
+    setBusy(true);
+    try {
+      await advanceLocalProposal({
+        endpoint: props.endpoint,
+        requestId: props.request.id,
+        action: "generate",
+        idempotencyKey: `proposal-generate:${props.request.id}:${session.prompt.digest}`,
+      });
+      await props.onComplete(
+        "Free-provider generation queued. Routing, fallback, and results are recorded durably."
+      );
+    } catch (error) {
+      props.onError(
+        error instanceof Error ? error.message : "Proposal generation failed safely."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!session) {
     return (
       <Button size="sm" onClick={() => void prepare()} disabled={props.working || busy}>
@@ -202,6 +264,16 @@ export function LocalProposalControls(props: {
           Reject proposal
         </Button>
       </>
+    );
+  }
+  if (["requested", "deferred", "needs_user"].includes(session.state)) {
+    return (
+      <Button size="sm" onClick={() => void generate()} disabled={props.working || busy}>
+        <Fingerprint />
+        {session.state === "requested"
+          ? "Generate with free provider"
+          : "Retry eligible free providers"}
+      </Button>
     );
   }
   if (session.state === "generating" || session.state === "interrupted") {

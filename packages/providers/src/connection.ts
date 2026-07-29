@@ -148,6 +148,7 @@ export function createAdmittedProviderCandidate(input: {
   readonly now: number;
   readonly priority: number;
   readonly usage: ProviderCapacityUsage;
+  readonly circuitOpenUntil?: number | undefined;
   readonly requiredCapabilities?: readonly ProviderCapability[] | undefined;
 }): ProviderCandidate {
   const decision = evaluateProviderAdmission(input);
@@ -162,7 +163,7 @@ export function createAdmittedProviderCandidate(input: {
   const requestsPerDay = quota.requestsPerDay ?? provider.documentedCapacity.requestsPerDay;
   const tokensPerDay = quota.tokensPerDay ?? provider.documentedCapacity.tokensPerDay;
   return {
-    id: `${input.connection.providerId}-${input.connection.modelId}`,
+    id: `${input.connection.id}:${input.connection.providerId}:${input.connection.modelId}`,
     providerId: input.connection.providerId,
     modelId: input.connection.modelId,
     priority: input.priority,
@@ -210,7 +211,7 @@ export function createAdmittedProviderCandidate(input: {
       providerRemainingTokens: quota.remainingTokens,
       providerResetAt: quota.resetAt
     },
-    circuitOpenUntil: 0
+    circuitOpenUntil: input.circuitOpenUntil ?? 0
   };
 }
 

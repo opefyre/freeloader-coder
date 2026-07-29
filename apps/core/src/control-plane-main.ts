@@ -1,10 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { createControlPlaneServer } from "./control-plane.js";
 import { LocalProjectRegistry } from "./local-project-registry.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
+import { LocalProposalGenerator } from "./local-proposal-generator.js";
+import { LocalSensitiveCommandRunner } from "./sensitive-command-runner.js";
+import { JsonProviderConnectionRepository } from "../../../packages/storage/src/provider-connections.js";
+import { createOpenAiCompatibleAdapter } from "../../../packages/providers/src/openai-compatible.js";
+import {
+  createOperatingSystemCredentialBackend,
+} from "../../../packages/vault/src/backends.js";
+import { SqliteCredentialMetadataRepository } from "../../../packages/vault/src/repository.js";
+import {
+  OperatingSystemCredentialVault,
+  ProviderCredentialVaultBridge,
+} from "../../../packages/vault/src/vault.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -12,6 +24,7 @@ const allowedOrigins = parseOrigins(process.env.PIPELINE_STUDIO_ALLOWED_ORIGINS)
 const stateDirectory = resolve(
   process.env.PIPELINE_STUDIO_STATE_DIR ?? ".pipeline-studio"
 );
+await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
 const setupStatePath = resolve(stateDirectory, "setup-state.json");
 const instanceId = randomUUID();
 const startedAt = Date.now();
@@ -20,6 +33,48 @@ const localRequests = new LocalRequestStore(
   stateDirectory,
   (projectId) => localProjects.has(projectId),
   (projectId) => localProjects.canonicalRoot(projectId)
+);
+const providerConnections = new JsonProviderConnectionRepository(
+  resolve(stateDirectory, "provider-connections.json")
+);
+const credentialBackend = createOperatingSystemCredentialBackend({
+  platform:
+    process.platform === "darwin"
+      ? "darwin"
+      : process.platform === "win32"
+        ? "win32"
+        : "linux",
+  available: true,
+  runner: new LocalSensitiveCommandRunner(),
+});
+const credentialVault = new ProviderCredentialVaultBridge(
+  new OperatingSystemCredentialVault(
+    credentialBackend,
+    new SqliteCredentialMetadataRepository(
+      resolve(stateDirectory, "credential-metadata.sqlite")
+    )
+  ),
+  Date.now
+);
+const adapterCache = new Map<string, ReturnType<typeof createOpenAiCompatibleAdapter>>();
+const proposalGenerator = new LocalProposalGenerator(
+  stateDirectory,
+  localRequests,
+  providerConnections,
+  credentialVault,
+  {
+    adapter(providerId) {
+      try {
+        const current = adapterCache.get(providerId);
+        if (current) return current;
+        const adapter = createOpenAiCompatibleAdapter({ providerId });
+        adapterCache.set(providerId, adapter);
+        return adapter;
+      } catch {
+        return null;
+      }
+    },
+  }
 );
 
 async function setupObservation() {
@@ -141,6 +196,7 @@ const controlPlane = createControlPlaneServer({
     reconcileChangeSet: (requestId) => localRequests.reconcileChangeSet(requestId),
     requestProposal: (requestId, input) => localRequests.requestProposal(requestId, input),
     beginProposalGeneration: (requestId) => localRequests.beginProposalGeneration(requestId),
+    generateProposal: (requestId) => proposalGenerator.schedule(requestId),
     importProposal: (requestId, input) => localRequests.importProposal(requestId, input),
     decideProposal: (requestId, input) => localRequests.decideProposal(requestId, input),
     reconcileProposal: (requestId) => localRequests.reconcileProposal(requestId),
@@ -151,6 +207,7 @@ const controlPlane = createControlPlaneServer({
 });
 
 const boundPort = await controlPlane.listen();
+await proposalGenerator.resumePending();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
 console.log(
   "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state."

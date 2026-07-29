@@ -4,3 +4,6 @@ export * from "./local-project-registry.js";
 export * from "./local-request-store.js";
 export * from "./provider-service.js";
 export * from "./local-proposal.js";
+export * from "./local-proposal-generator.js";
+export * from "./sensitive-command-runner.js";
+export * from "./provider-capacity-store.js";

@@ -551,6 +551,27 @@ export const localProposalDecisionSchema = z.strictObject({
   decidedAt: z.number().int().nonnegative(),
 });
 
+export const localProposalGenerationAttemptSchema = z.strictObject({
+  candidateId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,239}$/),
+  providerId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/),
+  modelId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,239}$/),
+  state: z.enum(["started", "failed", "succeeded"]),
+  failureCode: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/).nullable(),
+  retryAt: z.number().int().nonnegative().nullable(),
+});
+
+export const localProposalGenerationSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  promptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  state: z.enum(["running", "deferred", "needs_user", "succeeded"]),
+  attempts: z.array(localProposalGenerationAttemptSchema).max(24),
+  selectedProviderId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/).nullable(),
+  selectedModelId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,239}$/).nullable(),
+  retryAt: z.number().int().nonnegative().nullable(),
+  safeMessage: z.string().trim().min(1).max(500),
+  updatedAt: z.number().int().nonnegative(),
+});
+
 export const localProposalSessionSchema = z.strictObject({
   schemaVersion: z.literal(1),
   state: z.enum(["requested", "generating", "review_ready", "accepted", "rejected", "deferred", "needs_user", "interrupted"]),
@@ -560,6 +581,7 @@ export const localProposalSessionSchema = z.strictObject({
   artifactDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
   retryAt: z.number().int().nonnegative().nullable(),
   safeMessage: z.string().trim().min(1).max(500).nullable(),
+  generation: localProposalGenerationSchema.nullable().default(null),
 });
 
 export const localCommitPreviewRequestSchema = z.strictObject({
@@ -852,6 +874,7 @@ export type LocalProposalRequest = z.infer<typeof localProposalRequestSchema>;
 export type LocalProposalImport = z.infer<typeof localProposalImportSchema>;
 export type LocalImplementationProposal = z.infer<typeof localImplementationProposalSchema>;
 export type LocalProposalDecision = z.infer<typeof localProposalDecisionSchema>;
+export type LocalProposalGeneration = z.infer<typeof localProposalGenerationSchema>;
 export type LocalProposalSession = z.infer<typeof localProposalSessionSchema>;
 export type LocalCommitPreview = z.infer<typeof localCommitPreviewSchema>;
 export type LocalCommitApproval = z.infer<typeof localCommitApprovalSchema>;

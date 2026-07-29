@@ -301,6 +301,7 @@ export function resolveAdmittedProviderCandidates(input: {
   readonly requiredCapabilities: readonly ProviderCapability[];
   readonly priorityByConnectionId: Readonly<Record<string, number>>;
   readonly usageByConnectionId: Readonly<Record<string, ProviderCapacityUsage>>;
+  readonly circuitOpenUntilByConnectionId?: Readonly<Record<string, number>> | undefined;
 }): ProviderCandidateResolution {
   const candidates: ProviderCandidate[] = [];
   const excluded: {
@@ -335,6 +336,7 @@ export function resolveAdmittedProviderCandidates(input: {
       now: input.now,
       priority: input.priorityByConnectionId[connection.id] ?? 100,
       usage,
+      circuitOpenUntil: input.circuitOpenUntilByConnectionId?.[connection.id] ?? 0,
       requiredCapabilities: input.requiredCapabilities
     }));
   }

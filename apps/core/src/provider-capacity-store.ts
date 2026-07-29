@@ -1,0 +1,175 @@
+import { randomUUID } from "node:crypto";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { z } from "zod";
+
+import {
+  emptyCapacityUsage,
+  recordCapacityUsage,
+  recordCircuitFailure,
+  recordCircuitSuccess,
+  type CapacityUsageState,
+} from "../../../packages/providers/src/circuit.js";
+import type { ProviderCapacityUsage } from "../../../packages/providers/src/router.js";
+import type { ProviderJournalProjection } from "../../../packages/storage/src/provider-journal.js";
+
+const circuitSchema = z.strictObject({
+  consecutiveFailures: z.number().int().nonnegative(),
+  openUntil: z.number().int().nonnegative(),
+  lastFailureAt: z.number().int().nonnegative().nullable(),
+  lastFailureCode: z.string().max(120).nullable(),
+});
+const usageSchema = z.strictObject({
+  utcDay: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  requestsToday: z.number().int().nonnegative(),
+  inputTokensToday: z.number().int().nonnegative(),
+  outputTokensToday: z.number().int().nonnegative(),
+  freeUnitsToday: z.number().nonnegative(),
+  requestTimestamps: z.array(z.number().int().nonnegative()).max(10_000),
+  tokenSamples: z.array(z.strictObject({
+    at: z.number().int().nonnegative(),
+    tokens: z.number().int().nonnegative(),
+  })).max(10_000),
+  providerRemainingRequests: z.number().int().nonnegative().nullable(),
+  providerRemainingTokens: z.number().int().nonnegative().nullable(),
+  providerResetAt: z.number().int().nonnegative().nullable(),
+});
+const entrySchema = z.strictObject({
+  usage: usageSchema,
+  circuit: circuitSchema,
+  recordedAttempts: z.array(z.string().min(1).max(160)).max(50_000),
+});
+const documentSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  connections: z.record(z.string(), entrySchema),
+});
+type Document = z.infer<typeof documentSchema>;
+
+export class ProviderCapacityStore {
+  public constructor(private readonly path: string) {}
+
+  public async snapshot(
+    connectionIds: readonly string[],
+    now: number
+  ): Promise<{
+    usageByConnectionId: Readonly<Record<string, ProviderCapacityUsage>>;
+    circuitOpenUntilByConnectionId: Readonly<Record<string, number>>;
+  }> {
+    const document = await this.load();
+    const usageByConnectionId: Record<string, ProviderCapacityUsage> = {};
+    const circuitOpenUntilByConnectionId: Record<string, number> = {};
+    for (const id of connectionIds) {
+      const entry = document.connections[id] ?? freshEntry(now);
+      const usage = entry.usage.utcDay === utcDay(now) ? entry.usage : emptyCapacityUsage(now);
+      usageByConnectionId[id] = toProviderUsage(usage);
+      circuitOpenUntilByConnectionId[id] = entry.circuit.openUntil;
+    }
+    return { usageByConnectionId, circuitOpenUntilByConnectionId };
+  }
+
+  public async record(
+    projection: ProviderJournalProjection,
+    candidateConnectionIds: Readonly<Record<string, string>>,
+    now: number
+  ): Promise<void> {
+    const document = await this.load();
+    for (const attempt of projection.attempts) {
+      const connectionId = candidateConnectionIds[attempt.candidateId];
+      if (!connectionId) continue;
+      const entry = document.connections[connectionId] ?? freshEntry(now);
+      if (entry.recordedAttempts.includes(attempt.idempotencyKey) || attempt.status === "started") {
+        continue;
+      }
+      const usage = recordCapacityUsage({
+        state: entry.usage,
+        now: attempt.finishedAt ?? now,
+        inputTokens: attempt.inputTokens ?? 0,
+        outputTokens: attempt.outputTokens ?? 0,
+      });
+      entry.usage = {
+        ...usage,
+        requestTimestamps: [...usage.requestTimestamps],
+        tokenSamples: usage.tokenSamples.map((sample) => ({ ...sample })),
+      };
+      entry.circuit =
+        attempt.status === "succeeded"
+          ? recordCircuitSuccess()
+          : recordCircuitFailure({
+              state: entry.circuit,
+              now: attempt.finishedAt ?? now,
+              threshold: 2,
+              cooldownMs: 5 * 60_000,
+              transient: [
+                "capacity_deferred",
+                "gateway_interrupted",
+                "rate_limit",
+                "transient_provider",
+              ].includes(attempt.failureClass ?? ""),
+              ...(attempt.failureCode ? { code: attempt.failureCode } : {}),
+            });
+      entry.recordedAttempts.push(attempt.idempotencyKey);
+      document.connections[connectionId] = entry;
+    }
+    await this.save(document);
+  }
+
+  private async load(): Promise<Document> {
+    try {
+      return documentSchema.parse(JSON.parse(await readFile(this.path, "utf8")));
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) return { schemaVersion: 1, connections: {} };
+      throw error;
+    }
+  }
+
+  private async save(document: Document): Promise<void> {
+    const parsed = documentSchema.parse(document);
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+    await chmod(dirname(this.path), 0o700);
+    const temporary = `${this.path}.${randomUUID()}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await rename(temporary, this.path);
+    await chmod(this.path, 0o600);
+  }
+}
+
+function freshEntry(now: number): z.infer<typeof entrySchema> {
+  const usage = emptyCapacityUsage(now);
+  return {
+    usage: {
+      ...usage,
+      requestTimestamps: [...usage.requestTimestamps],
+      tokenSamples: usage.tokenSamples.map((sample) => ({ ...sample })),
+    },
+    circuit: recordCircuitSuccess(),
+    recordedAttempts: [],
+  };
+}
+
+function toProviderUsage(state: CapacityUsageState): ProviderCapacityUsage {
+  return {
+    activeRequests: 0,
+    requestsToday: state.requestsToday,
+    tokensToday: state.inputTokensToday + state.outputTokensToday,
+    inputTokensToday: state.inputTokensToday,
+    outputTokensToday: state.outputTokensToday,
+    freeUnitsToday: state.freeUnitsToday,
+    requestTimestamps: state.requestTimestamps,
+    tokenSamples: state.tokenSamples,
+    providerRemainingRequests: state.providerRemainingRequests,
+    providerRemainingTokens: state.providerRemainingTokens,
+    providerResetAt: state.providerResetAt,
+  };
+}
+
+function utcDay(now: number): string {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}

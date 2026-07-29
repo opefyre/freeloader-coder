@@ -95,6 +95,7 @@ export type ControlPlaneServerOptions = {
     reconcileChangeSet?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     requestProposal?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
     beginProposalGeneration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    generateProposal?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     importProposal?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
     decideProposal?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
     reconcileProposal?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
@@ -211,7 +212,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         const changed = await options.requests.decideProposal(requestRoute[1] ?? "", localProposalDecisionRequestSchema.parse(await readJsonBody(request)));
         sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: changed.execution?.proposal?.state === "accepted" ? "proposal_accepted" : "proposal_rejected", request: changed })); return;
       }
-      const proposalActions = { "proposal-generate": options.requests?.beginProposalGeneration, "proposal-reconcile": options.requests?.reconcileProposal } as const;
+      const proposalActions = { "proposal-generate": options.requests?.generateProposal ?? options.requests?.beginProposalGeneration, "proposal-reconcile": options.requests?.reconcileProposal } as const;
       const proposalAction = requestRoute?.[2] as keyof typeof proposalActions | undefined;
       if (request.method === "POST" && proposalAction && proposalActions[proposalAction]) {
         requireIdempotencyKey(request); if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }

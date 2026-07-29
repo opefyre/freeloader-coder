@@ -43,6 +43,7 @@ import {
   type LocalTopology,
   type LocalRequest,
   type LocalRequestCollection,
+  type LocalProposalGeneration,
 } from "../../../packages/runtime/src/local-requests.js";
 import {
   compileExecutionManifest,
@@ -1512,10 +1513,67 @@ export class LocalRequestStore {
       if (!execution || !proposal || proposal.state !== "requested") throw new LocalRequestError("invalid_transition", "Compile a grounded proposal prompt first.");
       const now = Date.now();
       const request = localRequestSchema.parse({ ...record.request, updatedAt: now,
-        execution: { ...execution, proposal: { ...proposal, state: "generating", safeMessage: "Waiting for one eligible free provider response." } },
+        execution: { ...execution, proposal: { ...proposal, state: "generating", safeMessage: "Waiting for one eligible free provider response.", generation: {
+          schemaVersion: 1, promptDigest: proposal.prompt.digest, state: "running", attempts: [],
+          selectedProviderId: null, selectedModelId: null, retryAt: null,
+          safeMessage: "Selecting an eligible free provider.", updatedAt: now,
+        } } },
         run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "proposal_generating", now, "Grounded prompt handed to the provider runtime; provider output remains untrusted data.") },
       });
       await this.#replace(store, request); return request;
+    });
+  }
+
+  recordProposalGeneration(
+    requestId: string,
+    generation: LocalProposalGeneration
+  ): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const proposal = execution?.proposal;
+      if (!execution || !proposal || !["generating", "deferred", "needs_user"].includes(proposal.state)) {
+        throw new LocalRequestError("invalid_transition", "Proposal generation is not active.");
+      }
+      if (proposal.prompt.digest !== generation.promptDigest) {
+        throw new LocalRequestError("stale_revision", "Generation evidence belongs to a stale prompt.");
+      }
+      const state = generation.state === "deferred"
+        ? "deferred"
+        : generation.state === "needs_user"
+          ? "needs_user"
+          : "generating";
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        execution: {
+          ...execution,
+          proposal: {
+            ...proposal,
+            state,
+            generation,
+            retryAt: generation.retryAt,
+            safeMessage: generation.safeMessage,
+          },
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            generation.state === "deferred"
+              ? "proposal_deferred"
+              : generation.state === "needs_user"
+                ? "proposal_needs_user"
+                : "proposal_generating",
+            now,
+            generation.safeMessage
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
     });
   }
 

@@ -158,6 +158,7 @@ export async function executeProposalAdapter(input: {
   prompt: LocalProposalPrompt;
   modelId: string;
   timeoutMs?: number;
+  maxOutputTokens?: number;
 }): Promise<LocalProposalImport> {
   const response = await input.adapter.chat(input.credential, {
     requestId: `proposal-${input.prompt.digest.slice(0, 24)}`,
@@ -166,7 +167,7 @@ export async function executeProposalAdapter(input: {
       { role: "system", content: input.prompt.system },
       { role: "user", content: `${input.prompt.instruction}\n\nBOUNDED SOURCES:\n${JSON.stringify(input.prompt.sources)}` },
     ],
-    maxOutputTokens: 16_384,
+    maxOutputTokens: input.maxOutputTokens ?? 8_192,
     temperature: 0,
     responseSchema: {
       type: "object", additionalProperties: false, required: ["summary", "operations"],

@@ -294,13 +294,15 @@ export function providerIdempotencyKey(input: {
   readonly candidateId: string;
   readonly runNumber: number;
 }): string {
-  return [
+  const identity = [
     input.taskId,
     input.workUnitId,
     input.requestDigest,
     input.candidateId,
     `run-${input.runNumber}`
   ].join(":");
+  if (identity.length <= 160) return identity;
+  return `provider:${createHash("sha256").update(identity).digest("hex")}`;
 }
 
 function providerErrorDetails(error: unknown): {
@@ -366,3 +368,4 @@ function explainUnavailableRoute(
   }
   return "No eligible provider is configured for this work.";
 }
+import { createHash } from "node:crypto";

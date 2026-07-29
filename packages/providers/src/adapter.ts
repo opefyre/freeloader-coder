@@ -81,13 +81,31 @@ export interface ProviderCompatibilityEvidence {
 
 export class ProviderAdapterFailure extends Error {
   public readonly detail: ProviderAdapterError;
+  public readonly code: string;
+  public readonly retryAt: number | null;
+  public readonly status: number | null;
 
   public constructor(detail: ProviderAdapterError) {
     const parsed = providerAdapterErrorSchema.parse(detail);
     super(parsed.safeMessage);
     this.name = "ProviderAdapterFailure";
     this.detail = parsed;
+    this.code = parsed.code;
+    this.retryAt = parsed.retryAt;
+    this.status = statusForCode(parsed.code);
   }
+}
+
+function statusForCode(code: ProviderAdapterError["code"]): number | null {
+  if (code === "authentication_denied") return 401;
+  if (code === "permission_denied") return 403;
+  if (code === "model_unavailable" || code === "model_retired") return 404;
+  if (code === "quota_exhausted" || code === "rate_limited") return 429;
+  if (code === "provider_unavailable") return 503;
+  if (["unsupported_schema", "malformed_response", "request_rejected"].includes(code)) {
+    return 400;
+  }
+  return null;
 }
 
 export function createRecordedProviderAdapter(fixture: ProviderAdapterFixture): ProviderAdapter {

@@ -66,6 +66,7 @@ export class ProviderRuntimeService {
     readonly connections: readonly ProviderConnection[];
     readonly priorityByConnectionId: Readonly<Record<string, number>>;
     readonly usageByConnectionId: Readonly<Record<string, ProviderCapacityUsage>>;
+    readonly circuitOpenUntilByConnectionId?: Readonly<Record<string, number>> | undefined;
     readonly requiredCapabilities: readonly ProviderCapability[];
     readonly routeRequest: RouteRequest;
     readonly executor: ProviderExecutor;
@@ -85,7 +86,8 @@ export class ProviderRuntimeService {
       now: input.routeRequest.now,
       requiredCapabilities: input.requiredCapabilities,
       priorityByConnectionId: input.priorityByConnectionId,
-      usageByConnectionId: input.usageByConnectionId
+      usageByConnectionId: input.usageByConnectionId,
+      circuitOpenUntilByConnectionId: input.circuitOpenUntilByConnectionId
     });
     if (resolution.candidates.length === 0) {
       const retryAt = resolution.excluded
