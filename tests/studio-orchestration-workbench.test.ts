@@ -8,8 +8,9 @@ const source = readFileSync(
 );
 const app = readFileSync("apps/studio/src/App.tsx", "utf8");
 
-test("Work route mounts the orchestration workbench", () => {
-  assert.match(app, /<OrchestrationWorkbench \/>/);
+test("Work route replaces the orchestration preview with the live coordinator", () => {
+  assert.match(app, /<AutonomousWorkCenter endpoint=\{controlPlaneEndpoint\} \/>/);
+  assert.doesNotMatch(app, /<OrchestrationWorkbench \/>/);
   assert.match(source, /Intent becomes an explicit decision/);
   assert.match(source, /Dependency-aware task plan/);
   assert.match(source, /Canonical grounding/);

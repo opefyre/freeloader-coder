@@ -103,9 +103,9 @@ const LocalRequestPanel = lazy(() =>
     default: module.LocalRequestPanel,
   }))
 );
-const ExecutionSafetyPanel = lazy(() =>
-  import("./components/execution/execution-safety-panel.js").then((module) => ({
-    default: module.ExecutionSafetyPanel,
+const AutonomousWorkCenter = lazy(() =>
+  import("./components/orchestration/autonomous-work-center.js").then((module) => ({
+    default: module.AutonomousWorkCenter,
   }))
 );
 const HelpCenter = lazy(() =>
@@ -121,11 +121,6 @@ const LaunchCenter = lazy(() =>
 const IntegrationWorkbench = lazy(() =>
   import("./components/integrations/integration-workbench.js").then((module) => ({
     default: module.IntegrationWorkbench,
-  }))
-);
-const OrchestrationWorkbench = lazy(() =>
-  import("./components/orchestration/orchestration-workbench.js").then((module) => ({
-    default: module.OrchestrationWorkbench,
   }))
 );
 const EvidenceCenter = lazy(() =>
@@ -485,7 +480,7 @@ function App() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {activeView !== "overview" && (
+              {activeView !== "overview" && activeView !== "work" && (
                 <Button variant="secondary">
                   <Pause />
                   Pause after step
@@ -1033,17 +1028,8 @@ function WorkspaceSurface({
   if (view === "work") {
     return (
       <div className="min-w-0 space-y-4">
+        <AutonomousWorkCenter endpoint={controlPlaneEndpoint} />
         <LocalRequestPanel mode="queue" />
-        <div className="px-1 pt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge>Guided interaction preview</Badge>
-            <span className="text-xs text-muted-foreground">
-              The orchestration controls below are an interactive preview, not active work.
-            </span>
-          </div>
-        </div>
-        <ExecutionSafetyPanel />
-        <OrchestrationWorkbench />
       </div>
     );
   }

@@ -19,6 +19,7 @@ import {
   ProviderCredentialVaultBridge,
 } from "../../../packages/vault/src/vault.js";
 import { buildLiveOperationsSnapshot } from "./live-operations.js";
+import { LocalAutonomyService } from "./local-autonomy-service.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -95,6 +96,27 @@ const providerConnectionService = new ProviderConnectionService(
     }
   }
 );
+const autonomy = new LocalAutonomyService(
+  stateDirectory,
+  () => localRequests.list(),
+  {
+    ground_request: async (requestId) =>
+      localRequests.ground(
+        requestId,
+        await localProjects.grounding(
+          (await localRequests.list()).requests.find((request) => request.id === requestId)?.projectId ?? ""
+        )
+      ),
+    claim_lease: (requestId) => localRequests.claim(requestId),
+    checkpoint_lease: (requestId) => localRequests.checkpoint(requestId),
+    release_lease: (requestId) => localRequests.release(requestId),
+    prepare_execution: (requestId) => localRequests.prepareExecution(requestId),
+    start_execution: (requestId) => localRequests.startExecution(requestId),
+    validate_execution: (requestId) => localRequests.validateExecution(requestId),
+    reconcile_execution: (requestId) => localRequests.reconcileExecution(requestId),
+    reconcile_expired_lease: (requestId) => localRequests.reconcile(requestId),
+  }
+);
 
 async function setupObservation() {
   try {
@@ -169,6 +191,13 @@ const controlPlane = createControlPlaneServer({
       requests: await localRequests.list(),
       providers: await providerConnectionService.list(),
     }),
+  autonomy: {
+    snapshot: () => autonomy.snapshot(),
+    setProjectMode: (projectId, input) => autonomy.setProjectMode(projectId, input),
+    setProjectPaused: (projectId, input) => autonomy.setProjectPaused(projectId, input),
+    setRequestMode: (requestId, input) => autonomy.setRequestMode(requestId, input),
+    advance: (requestId, input) => autonomy.advance(requestId, input),
+  },
   providerConnections: {
     list: () => providerConnectionService.list(),
     connect: (input) => providerConnectionService.connect(input),
@@ -242,6 +271,7 @@ const controlPlane = createControlPlaneServer({
 
 const boundPort = await controlPlane.listen();
 await proposalGenerator.resumePending();
+autonomy.start();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
 console.log(
   "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state."
@@ -251,6 +281,7 @@ let closing = false;
 async function close(signal: string) {
   if (closing) return;
   closing = true;
+  autonomy.stop();
   console.log(`Stopping local control plane (${signal}).`);
   await controlPlane.close();
 }

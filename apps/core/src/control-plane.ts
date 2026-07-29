@@ -52,6 +52,16 @@ import {
   liveOperationsSnapshotSchema,
   type LiveOperationsSnapshot,
 } from "../../../packages/runtime/src/live-operations.js";
+import {
+  autonomyAdvanceRequestSchema,
+  autonomyModeChangeSchema,
+  autonomyMutationResponseSchema,
+  autonomyPauseChangeSchema,
+  autonomySnapshotSchema,
+  type AutonomyMutationResponse,
+  type AutonomySnapshot,
+} from "../../../packages/runtime/src/autonomy.js";
+import { LocalAutonomyError } from "./local-autonomy-service.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -64,6 +74,13 @@ export type ControlPlaneServerOptions = {
   health: () => ControlPlaneHealth | Promise<ControlPlaneHealth>;
   snapshot: () => ControlPlaneSnapshot | Promise<ControlPlaneSnapshot>;
   liveOperations?: () => LiveOperationsSnapshot | Promise<LiveOperationsSnapshot>;
+  autonomy?: {
+    snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
+    setProjectMode: (projectId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
+    setProjectPaused: (projectId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
+    setRequestMode: (requestId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
+    advance: (requestId: string, input: unknown) => AutonomyMutationResponse | Promise<AutonomyMutationResponse>;
+  };
   providerConnections?: {
     list: () => PublicProviderConnectionCollection | Promise<PublicProviderConnectionCollection>;
     connect: (input: unknown) => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>;
@@ -191,6 +208,59 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             await options.providerConnections.list()
           )
         );
+        return;
+      }
+      if (
+        url.pathname === "/api/v1/autonomy" &&
+        request.method !== "GET"
+      ) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/autonomy" &&
+        options.autonomy
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(response, 200, autonomySnapshotSchema.parse(await options.autonomy.snapshot()));
+        return;
+      }
+      const autonomyProjectRoute = url.pathname.match(
+        /^\/api\/v1\/autonomy\/projects\/(project_[a-f0-9]{16})\/(mode|pause)$/
+      );
+      if (request.method === "POST" && autonomyProjectRoute && options.autonomy) {
+        requireIdempotencyKey(request);
+        const result = autonomyProjectRoute[2] === "mode"
+          ? await options.autonomy.setProjectMode(
+              autonomyProjectRoute[1] ?? "",
+              autonomyModeChangeSchema.parse(await readJsonBody(request))
+            )
+          : await options.autonomy.setProjectPaused(
+              autonomyProjectRoute[1] ?? "",
+              autonomyPauseChangeSchema.parse(await readJsonBody(request))
+            );
+        sendJson(response, 200, autonomyMutationResponseSchema.parse(result));
+        return;
+      }
+      const autonomyRequestRoute = url.pathname.match(
+        /^\/api\/v1\/autonomy\/requests\/(request_[a-f0-9]{20})\/(mode|advance)$/
+      );
+      if (request.method === "POST" && autonomyRequestRoute && options.autonomy) {
+        requireIdempotencyKey(request);
+        const result = autonomyRequestRoute[2] === "mode"
+          ? await options.autonomy.setRequestMode(
+              autonomyRequestRoute[1] ?? "",
+              autonomyModeChangeSchema.parse(await readJsonBody(request))
+            )
+          : await options.autonomy.advance(
+              autonomyRequestRoute[1] ?? "",
+              autonomyAdvanceRequestSchema.parse(await readJsonBody(request))
+            );
+        sendJson(response, 200, autonomyMutationResponseSchema.parse(result));
         return;
       }
       if (
@@ -810,6 +880,16 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           error.code === "workspace_conflict"
             ? 409
             : 400;
+        sendJson(response, status, { error: error.message, code: error.code });
+      } else if (error instanceof LocalAutonomyError) {
+        const status =
+          error.code === "not_found"
+            ? 404
+            : ["stale_revision", "lease_active", "confirmation_required"].includes(error.code)
+              ? 409
+              : error.code === "state_invalid"
+                ? 503
+                : 400;
         sendJson(response, status, { error: error.message, code: error.code });
       } else if (
         error instanceof ProviderConnectionLifecycleError ||

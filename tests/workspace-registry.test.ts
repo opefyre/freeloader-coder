@@ -47,10 +47,11 @@ test("duplicate paths and incomplete copy fail registry validation", () => {
   ]);
 });
 
-test("demo-sensitive registry copy never presents synthetic counts or connections as live", () => {
+test("registry copy distinguishes live-backed surfaces from demo-sensitive surfaces", () => {
   assert.match(workspaceDefinitions.overview.description, /Live projects/);
   assert.doesNotMatch(workspaceDefinitions.overview.description, /synthetic/);
-  assert.match(workspaceDefinitions.work.eyebrow, /Demo:/);
+  assert.match(workspaceDefinitions.work.eyebrow, /Live local coordination/);
+  assert.doesNotMatch(workspaceDefinitions.work.eyebrow, /Demo:/);
   assert.match(workspaceDefinitions.integrations.eyebrow, /Demo connection/);
   assert.match(workspaceDefinitions.evidence.eyebrow, /Demo:/);
 });

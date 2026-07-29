@@ -16,8 +16,9 @@ const panelSource = readFileSync(
   "utf8"
 );
 
-test("Work screen mounts the safe execution console", () => {
-  assert.match(appSource, /<ExecutionSafetyPanel \/>/);
+test("Work screen mounts the live autonomous coordinator while retaining safety contracts", () => {
+  assert.match(appSource, /<AutonomousWorkCenter endpoint=\{controlPlaneEndpoint\} \/>/);
+  assert.doesNotMatch(appSource, /<ExecutionSafetyPanel \/>/);
   assert.match(panelSource, /Safe execution console/);
   assert.match(panelSource, /Strong isolation/);
 });

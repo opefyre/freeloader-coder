@@ -78,7 +78,7 @@ test("Studio separates real request state from guided orchestration examples", a
   const app = await readFile("apps/studio/src/App.tsx", "utf8");
   assert.equal(app.includes('LocalRequestPanel mode="compose"'), true);
   assert.equal(app.includes('LocalRequestPanel mode="queue"'), true);
-  assert.equal(app.includes("interactive preview, not active work"), true);
+  assert.equal(app.includes("<AutonomousWorkCenter endpoint={controlPlaneEndpoint} />"), true);
   const controlPlane = await readFile("apps/core/src/control-plane.ts", "utf8");
   assert.equal(controlPlane.includes("const MAX_REQUEST_BYTES = 900_000"), true);
 });

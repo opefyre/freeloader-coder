@@ -67,6 +67,15 @@ metrics for missing runtime data. The response remains loopback-only,
 schema-validated, bounded, privacy-redacted, and fixed at a zero-dollar
 automatic spend limit.
 
+The Work route is also live. Its local safe-step coordinator derives one
+revision-bound next action per durable request, persists project modes, pauses,
+leases, schedules, and receipts in private local state, and advances only
+actions already permitted by existing authority. Guided mode is the default.
+Broader modes require confirmation and still stop before request, plan,
+execution, proposal, change, commit, and integration approvals. Provider waits
+use observed retry times instead of constant retries, and automatic spend is
+structurally fixed at zero.
+
 Projects can now register an existing local Git worktree through the loopback
 control plane. Registration performs a deterministic, bounded metadata scan and
 stores the canonical path only in the private ignored local state directory.
