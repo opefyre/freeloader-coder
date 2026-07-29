@@ -27,3 +27,4 @@ export * from "./lifecycle.js";
 export * from "./router.js";
 export * from "./telemetry.js";
 export * from "./wizard.js";
+export * from "./optional-paid.js";

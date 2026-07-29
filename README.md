@@ -63,6 +63,11 @@ under **Evidence → Release registry** maps onboarding, policy, provider,
 execution, packaging, and update claims to current proof and safe negative
 fixtures.
 
+Optional OpenAI API, Anthropic API, and Codex integrations are documented in
+the [paid-provider architecture](docs/architecture/optional-paid-providers.md).
+They ship disabled and cannot execute without a later explicit credential,
+route, role, hard budget, and final approval.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.
