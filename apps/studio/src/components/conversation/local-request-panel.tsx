@@ -27,9 +27,12 @@ import {
   advanceLocalExecution,
   advanceLocalRequest,
   authorizeLocalExecution,
+  advanceLocalPatch,
+  approveLocalPatch,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
+  previewLocalPatch,
   updateLocalPlan,
 } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
@@ -59,6 +62,9 @@ export function LocalRequestPanel(props: {
   const [notice, setNotice] = useState(
     "Loading live local projects and durable request state…"
   );
+  const [patchDrafts, setPatchDrafts] = useState<
+    Record<string, { path: string; content: string }>
+  >({});
   const disposed = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -270,6 +276,80 @@ export function LocalRequestPanel(props: {
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Execution action failed safely.");
+    }
+  }
+
+  async function previewPatch(request: LocalRequest) {
+    const execution = request.execution;
+    const draft = patchDrafts[request.id];
+    if (!execution?.run || !draft?.path || draft.content.length > 65_536) {
+      setNotice("Choose one approved file and keep replacement text within 64 KiB.");
+      return;
+    }
+    setStatus("working");
+    try {
+      await previewLocalPatch({
+        endpoint,
+        requestId: request.id,
+        proposal: {
+          schemaVersion: 1,
+          expectedAuthorityDigest: execution.authority.digest,
+          expectedRunDigest: execution.run.digest,
+          path: draft.path,
+          expectedBeforeDigest: null,
+          replacementContent: draft.content,
+        },
+        idempotencyKey: `patch-preview:${request.id}:${execution.run.digest}:${draft.path}`,
+      });
+      await refresh();
+      setNotice("Exact replacement preview recorded. No source file was written.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Patch preview failed safely.");
+    }
+  }
+
+  async function approvePatch(request: LocalRequest) {
+    const preview = request.execution?.patch?.preview;
+    if (!preview) return;
+    setStatus("working");
+    try {
+      await approveLocalPatch({
+        endpoint,
+        requestId: request.id,
+        approval: { schemaVersion: 1, expectedPreviewDigest: preview.digest },
+        idempotencyKey: `patch-approve:${request.id}:${preview.digest}`,
+      });
+      await refresh();
+      setNotice("Exact isolated patch approved. Application has not started.");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Patch approval failed safely.");
+    }
+  }
+
+  async function mutatePatch(
+    request: LocalRequest,
+    action: "apply" | "rollback" | "reconcile"
+  ) {
+    setStatus("working");
+    try {
+      await advanceLocalPatch({
+        endpoint,
+        requestId: request.id,
+        action,
+        idempotencyKey: `patch-${action}:${request.id}:${request.execution?.patch?.preview.digest ?? "none"}`,
+      });
+      await refresh();
+      setNotice({
+        apply:
+          "Approved replacement applied and verified inside the isolated worktree only.",
+        rollback: "Exact pre-patch isolated bytes restored and verified.",
+        reconcile: "Interrupted patch preserved for explicit inspection.",
+      }[action]);
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Patch action failed safely.");
     }
   }
 
@@ -556,6 +636,121 @@ export function LocalRequestPanel(props: {
                                 )}
                               </div>
                             )}
+                            {request.execution.run?.state === "ready" &&
+                              !request.execution.patch && (
+                                <div className="mt-3 bg-primary/[.055] p-3">
+                                  <p className="text-[11px] font-semibold">
+                                    Exact isolated replacement
+                                  </p>
+                                  <div className="mt-3 grid gap-2">
+                                    <select
+                                      aria-label="Approved patch target"
+                                      value={patchDrafts[request.id]?.path ?? ""}
+                                      onChange={(event) =>
+                                        setPatchDrafts((current) => ({
+                                          ...current,
+                                          [request.id]: {
+                                            path: event.target.value,
+                                            content: current[request.id]?.content ?? "",
+                                          },
+                                        }))
+                                      }
+                                      className="h-10 rounded-xl bg-background/80 px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+                                    >
+                                      <option value="">Choose an approved file</option>
+                                      {[
+                                        ...new Set(
+                                          request.execution.authority.manifest.tasks.flatMap(
+                                            (task) => task.allowedFiles
+                                          )
+                                        ),
+                                      ].map((path) => (
+                                        <option key={path} value={path}>
+                                          {path}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <textarea
+                                      aria-label="Replacement text"
+                                      value={patchDrafts[request.id]?.content ?? ""}
+                                      onChange={(event) =>
+                                        setPatchDrafts((current) => ({
+                                          ...current,
+                                          [request.id]: {
+                                            path: current[request.id]?.path ?? "",
+                                            content: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                      maxLength={65_536}
+                                      rows={6}
+                                      placeholder="Paste the complete replacement text…"
+                                      className="resize-y rounded-xl bg-background/80 p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-primary"
+                                    />
+                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                      <span>Single existing UTF-8 file · 64 KiB maximum</span>
+                                      <span>
+                                        {new TextEncoder().encode(
+                                          patchDrafts[request.id]?.content ?? ""
+                                        ).length.toLocaleString()}{" "}
+                                        bytes
+                                      </span>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => void previewPatch(request)}
+                                      disabled={
+                                        status === "working" ||
+                                        !patchDrafts[request.id]?.path
+                                      }
+                                    >
+                                      <Fingerprint />
+                                      Preview exact replacement
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            {request.execution.patch && (
+                              <div className="mt-3 bg-primary/[.055] p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <strong className="text-[11px]">
+                                    {request.execution.patch.preview.path}
+                                  </strong>
+                                  <Badge
+                                    tone={
+                                      request.execution.patch.state === "applied"
+                                        ? "positive"
+                                        : request.execution.patch.state === "interrupted"
+                                          ? "critical"
+                                          : "active"
+                                    }
+                                  >
+                                    {request.execution.patch.state}
+                                  </Badge>
+                                </div>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                  <DecisionFact
+                                    label="Before"
+                                    value={request.execution.patch.preview.beforeDigest.slice(0, 10)}
+                                  />
+                                  <DecisionFact
+                                    label="After"
+                                    value={request.execution.patch.preview.afterDigest.slice(0, 10)}
+                                  />
+                                  <DecisionFact
+                                    label="Byte delta"
+                                    value={String(
+                                      request.execution.patch.preview.afterBytes -
+                                        request.execution.patch.preview.beforeBytes
+                                    )}
+                                  />
+                                </div>
+                                <p className="mt-2 text-[10px] text-muted-foreground">
+                                  Applied means isolated bytes verified · never committed, merged,
+                                  pushed, published, or deployed
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
                         <p className="mt-3 text-[10px] text-muted-foreground">
@@ -635,14 +830,60 @@ export function LocalRequestPanel(props: {
                       )}
                       {request.execution?.state === "ready" &&
                         request.execution.run?.state === "ready" && (
-                          <Button
-                            size="sm"
-                            onClick={() => void mutateExecution(request, "validate")}
-                            disabled={status === "working"}
-                          >
-                            <CheckCircle />
-                            Run deterministic validation
-                          </Button>
+                          <>
+                            {request.execution.patch?.state === "previewed" && (
+                              <Button
+                                size="sm"
+                                onClick={() => void approvePatch(request)}
+                                disabled={status === "working"}
+                              >
+                                <LockKey />
+                                Approve exact patch
+                              </Button>
+                            )}
+                            {request.execution.patch?.state === "approved" && (
+                              <Button
+                                size="sm"
+                                onClick={() => void mutatePatch(request, "apply")}
+                                disabled={status === "working"}
+                              >
+                                <FloppyDisk />
+                                Apply inside worktree
+                              </Button>
+                            )}
+                            {request.execution.patch?.state === "applied" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => void mutateExecution(request, "validate")}
+                                  disabled={status === "working"}
+                                >
+                                  <CheckCircle />
+                                  Validate isolated patch
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => void mutatePatch(request, "rollback")}
+                                  disabled={status === "working"}
+                                >
+                                  <ArrowClockwise />
+                                  Roll back isolated patch
+                                </Button>
+                              </>
+                            )}
+                            {request.execution.patch?.state === "applying" && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void mutatePatch(request, "reconcile")}
+                                disabled={status === "working"}
+                              >
+                                <ArrowClockwise />
+                                Reconcile patch interruption
+                              </Button>
+                            )}
+                          </>
                         )}
                       {[
                         "authorized",

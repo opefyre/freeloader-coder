@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +19,12 @@ import {
   observeBoundedChanges,
   runBoundedValidation,
 } from "../apps/core/src/local-validation.js";
+import {
+  applyReplacement,
+  LocalPatchError,
+  previewReplacement,
+  rollbackReplacement,
+} from "../apps/core/src/local-patch.js";
 import {
   localDraftPlanSchema,
   localExecutionAuthoritySchema,
@@ -128,7 +135,40 @@ test("clean Git preflight and isolated worktree preserve the canonical worktree"
     assert.equal(cleanAttempt.state, "passed");
     assert.deepEqual(cleanAttempt.command.arguments, ["diff", "--check"]);
     assert.equal(cleanAttempt.outputDigest.length, 64);
-    await writeFile(join(workspacePath, "README.md"), "# Isolated change\n", "utf8");
+    const patchRun = {
+      schemaVersion: 1 as const,
+      id: `execution_${"2".repeat(20)}`,
+      digest: "2".repeat(64),
+      state: "ready" as const,
+      authorityDigest: authority.digest,
+      manifestDigest: authority.manifest.digest,
+      workspaceRef: workspace.workspaceRef,
+      baseline: workspace.baseline,
+      maximumCostUsd: 0 as const,
+      startedAt: Date.now(),
+      completedAt: null,
+      attempts: [],
+      changes: null,
+    };
+    const preview = await previewReplacement({
+      workspacePath,
+      authority,
+      run: patchRun,
+      path: "README.md",
+      expectedBeforeDigest: sha256("# Test\n"),
+      replacementContent: "# Isolated change\n",
+    });
+    assert.equal(preview.beforeBytes, 7);
+    assert.equal(preview.afterDigest, sha256("# Isolated change\n"));
+    assert.equal(await readFile(join(workspacePath, "README.md"), "utf8"), "# Test\n");
+    const receipt = await applyReplacement({
+      workspacePath,
+      canonicalRoot: repository,
+      recoveryDirectory: join(state, "recovery"),
+      authority,
+      preview,
+    });
+    assert.equal(receipt.observedDigest, preview.afterDigest);
     const changes = await observeBoundedChanges({
       workspacePath,
       canonicalRoot: repository,
@@ -137,6 +177,40 @@ test("clean Git preflight and isolated worktree preserve the canonical worktree"
     assert.equal(changes.allowed, true);
     assert.deepEqual(changes.changedPaths, [{ path: "README.md", state: "modified" }]);
     assert.doesNotMatch(JSON.stringify(changes), new RegExp(repository));
+    await assert.rejects(
+      () =>
+        previewReplacement({
+          workspacePath,
+          authority,
+          run: patchRun,
+          path: "../README.md",
+          expectedBeforeDigest: null,
+          replacementContent: "escape",
+        }),
+      (error: unknown) => error instanceof LocalPatchError && error.code === "path_denied"
+    );
+    await writeFile(join(workspacePath, "README.md"), "# Changed after apply\n", "utf8");
+    await assert.rejects(
+      () =>
+        rollbackReplacement({
+          workspacePath,
+          recoveryDirectory: join(state, "recovery"),
+          authority,
+          preview,
+          receipt,
+        }),
+      (error: unknown) =>
+        error instanceof LocalPatchError && error.code === "rollback_denied"
+    );
+    await writeFile(join(workspacePath, "README.md"), "# Isolated change\n", "utf8");
+    await rollbackReplacement({
+      workspacePath,
+      recoveryDirectory: join(state, "recovery"),
+      authority,
+      preview,
+      receipt,
+    });
+    assert.equal(await readFile(join(workspacePath, "README.md"), "utf8"), "# Test\n");
     await writeFile(join(workspacePath, "outside.txt"), "not approved\n", "utf8");
     const denied = await observeBoundedChanges({
       workspacePath,
@@ -191,4 +265,8 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
     },
   });
   return result.stdout;
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }

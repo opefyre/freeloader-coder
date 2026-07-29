@@ -17,9 +17,16 @@ test("Studio separates real request state from guided orchestration examples", a
     "Authorize isolated preparation",
     "Prepare isolated workspace",
     "Start bounded run",
-    "Run deterministic validation",
     "git diff --check · fixed argv · 10s limit · 64 KiB output cap",
     "Observed changes",
+    "Exact isolated replacement",
+    "Choose an approved file",
+    "Preview exact replacement",
+    "Approve exact patch",
+    "Apply inside worktree",
+    "Validate isolated patch",
+    "Roll back isolated patch",
+    "Applied means isolated bytes verified",
     "Cancel and preserve",
     "Record zero-effect checkpoint",
     "Release proof lease",
@@ -38,4 +45,6 @@ test("Studio separates real request state from guided orchestration examples", a
   assert.equal(app.includes('LocalRequestPanel mode="compose"'), true);
   assert.equal(app.includes('LocalRequestPanel mode="queue"'), true);
   assert.equal(app.includes("interactive preview, not active work"), true);
+  const controlPlane = await readFile("apps/core/src/control-plane.ts", "utf8");
+  assert.equal(controlPlane.includes("const MAX_REQUEST_BYTES = 98_304"), true);
 });

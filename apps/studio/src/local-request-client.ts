@@ -2,6 +2,8 @@ import {
   localPlanApprovalSchema,
   localPlanEditSchema,
   localExecutionAuthorizationRequestSchema,
+  localPatchApprovalRequestSchema,
+  localPatchPreviewRequestSchema,
   localRequestCollectionSchema,
   localRequestMutationResponseSchema,
   type LocalRequestCollection,
@@ -148,6 +150,65 @@ export async function advanceLocalExecution(input: {
     await request({
       endpoint: input.endpoint,
       path: `/api/v1/requests/${input.requestId}/execution-${input.action}`,
+      method: "POST",
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
+export async function previewLocalPatch(input: {
+  endpoint: string;
+  requestId: string;
+  proposal: unknown;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/requests/${input.requestId}/patch-preview`,
+      method: "POST",
+      body: localPatchPreviewRequestSchema.parse(input.proposal),
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
+export async function approveLocalPatch(input: {
+  endpoint: string;
+  requestId: string;
+  approval: unknown;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/requests/${input.requestId}/patch-approve`,
+      method: "POST",
+      body: localPatchApprovalRequestSchema.parse(input.approval),
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
+export async function advanceLocalPatch(input: {
+  endpoint: string;
+  requestId: string;
+  action: "apply" | "rollback" | "reconcile";
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/requests/${input.requestId}/patch-${input.action}`,
       method: "POST",
       idempotencyKey: input.idempotencyKey,
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),

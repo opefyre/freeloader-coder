@@ -68,6 +68,12 @@ export const localRunEventSchema = z.strictObject({
     "validation_started",
     "validation_completed",
     "validation_failed",
+    "patch_previewed",
+    "patch_approved",
+    "patch_applying",
+    "patch_applied",
+    "patch_rolled_back",
+    "patch_reconciled",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
@@ -286,6 +292,70 @@ export const localExecutionRunSchema = z.strictObject({
   changes: localChangeObservationSchema.nullable(),
 });
 
+export const localPatchPreviewRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedAuthorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  expectedRunDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  path: relativePath,
+  expectedBeforeDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  replacementContent: z.string().max(65_536).refine(
+    (value) => !value.includes("\0"),
+    "Replacement must be UTF-8 text without NUL bytes."
+  ),
+});
+
+export const localPatchPreviewSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("bounded_local_replacement_preview"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  authorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  runDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  path: relativePath,
+  beforeDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  afterDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  beforeBytes: z.number().int().nonnegative().max(65_536),
+  afterBytes: z.number().int().nonnegative().max(65_536),
+  beforeLines: z.number().int().nonnegative().max(20_000),
+  afterLines: z.number().int().nonnegative().max(20_000),
+  replacementContent: z.string().max(65_536),
+  previewedAt: z.number().int().nonnegative(),
+  blockers: z.tuple([]),
+  maximumCostUsd: z.literal(0),
+});
+
+export const localPatchApprovalRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedPreviewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const localPatchApprovalSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  approvedAt: z.number().int().nonnegative(),
+});
+
+export const localPatchReceiptSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  path: relativePath,
+  beforeDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  afterDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  observedDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  appliedAt: z.number().int().nonnegative(),
+  canonicalUntouched: z.literal(true),
+});
+
+export const localPatchSessionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  state: z.enum(["previewed", "approved", "applying", "applied", "rolled_back", "interrupted"]),
+  preview: localPatchPreviewSchema,
+  approval: localPatchApprovalSchema.nullable(),
+  receipt: localPatchReceiptSchema.nullable(),
+  rolledBackAt: z.number().int().nonnegative().nullable(),
+});
+
 export const localExecutionSessionSchema = z.strictObject({
   schemaVersion: z.literal(1),
   state: z.enum([
@@ -303,6 +373,7 @@ export const localExecutionSessionSchema = z.strictObject({
   authority: localExecutionAuthoritySchema,
   workspace: localExecutionWorkspaceSchema.nullable(),
   run: localExecutionRunSchema.nullable().default(null),
+  patch: localPatchSessionSchema.nullable().default(null),
 });
 
 export const localPlanningSnapshotSchema = z.strictObject({
@@ -375,6 +446,11 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "execution_reconciled",
     "execution_started",
     "execution_validated",
+    "patch_previewed",
+    "patch_approved",
+    "patch_applied",
+    "patch_rolled_back",
+    "patch_reconciled",
     "cancelled",
     "archived",
   ]),
@@ -401,6 +477,11 @@ export type LocalExecutionSession = z.infer<typeof localExecutionSessionSchema>;
 export type LocalExecutionRun = z.infer<typeof localExecutionRunSchema>;
 export type LocalValidationAttempt = z.infer<typeof localValidationAttemptSchema>;
 export type LocalChangeObservation = z.infer<typeof localChangeObservationSchema>;
+export type LocalPatchPreviewRequest = z.infer<typeof localPatchPreviewRequestSchema>;
+export type LocalPatchPreview = z.infer<typeof localPatchPreviewSchema>;
+export type LocalPatchApproval = z.infer<typeof localPatchApprovalSchema>;
+export type LocalPatchReceipt = z.infer<typeof localPatchReceiptSchema>;
+export type LocalPatchSession = z.infer<typeof localPatchSessionSchema>;
 
 export function validateLocalRequestCollection(input: unknown): LocalRequestCollection {
   const collection = localRequestCollectionSchema.parse(input);
@@ -502,6 +583,40 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
         ["validating", "validated", "review_ready", "failed"].includes(execution.state)
       ) {
         throw new Error("Local execution state requires a bounded run.");
+      }
+      if (execution.patch) {
+        const patch = execution.patch;
+        if (
+          !execution.run ||
+          patch.preview.authorityDigest !== execution.authority.digest ||
+          patch.preview.runDigest !== execution.run.digest ||
+          patch.preview.maximumCostUsd !== 0 ||
+          patch.preview.blockers.length !== 0
+        ) {
+          throw new Error("Local patch preview does not match the bounded execution run.");
+        }
+        if (
+          ["approved", "applying", "applied", "rolled_back", "interrupted"].includes(
+            patch.state
+          ) &&
+          (!patch.approval || patch.approval.previewDigest !== patch.preview.digest)
+        ) {
+          throw new Error("Local patch state requires approval of the exact preview.");
+        }
+        if (
+          ["applied", "rolled_back"].includes(patch.state) &&
+          (!patch.receipt ||
+            patch.receipt.previewDigest !== patch.preview.digest ||
+            patch.receipt.path !== patch.preview.path ||
+            patch.receipt.beforeDigest !== patch.preview.beforeDigest ||
+            patch.receipt.afterDigest !== patch.preview.afterDigest ||
+            patch.receipt.observedDigest !== patch.preview.afterDigest)
+        ) {
+          throw new Error("Local patch receipt does not match its exact preview.");
+        }
+        if (patch.state === "rolled_back" && patch.rolledBackAt === null) {
+          throw new Error("Rolled-back patch requires a verified rollback time.");
+        }
       }
     }
   }

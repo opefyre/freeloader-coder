@@ -19,6 +19,8 @@ import {
   localPlanApprovalSchema,
   localPlanEditSchema,
   localExecutionAuthorizationRequestSchema,
+  localPatchApprovalRequestSchema,
+  localPatchPreviewRequestSchema,
   localRequestCreationSchema,
   localRequestMutationResponseSchema,
   validateLocalRequestCollection,
@@ -29,7 +31,7 @@ import { LocalRequestError } from "./local-request-store.js";
 import { LocalExecutionError } from "./local-execution.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
-const MAX_REQUEST_BYTES = 24_576;
+const MAX_REQUEST_BYTES = 98_304;
 const REQUEST_TIMEOUT_MS = 5_000;
 
 export type ControlPlaneServerOptions = {
@@ -62,6 +64,11 @@ export type ControlPlaneServerOptions = {
     reconcileExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     startExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     validateExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    previewPatch?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    approvePatch?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    applyPatch?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    rollbackPatch?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    reconcilePatch?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -158,8 +165,66 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "patch-preview" &&
+        options.requests?.previewPatch
+      ) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.previewPatch(
+          requestRoute[1] ?? "",
+          localPatchPreviewRequestSchema.parse(await readJsonBody(request))
+        );
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: "patch_previewed",
+          request: changed,
+        }));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "patch-approve" &&
+        options.requests?.approvePatch
+      ) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.approvePatch(
+          requestRoute[1] ?? "",
+          localPatchApprovalRequestSchema.parse(await readJsonBody(request))
+        );
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: "patch_approved",
+          request: changed,
+        }));
+        return;
+      }
+      const patchActions = {
+        "patch-apply": options.requests?.applyPatch,
+        "patch-rollback": options.requests?.rollbackPatch,
+        "patch-reconcile": options.requests?.reconcilePatch,
+      } as const;
+      const patchAction = requestRoute?.[2] as keyof typeof patchActions | undefined;
+      if (request.method === "POST" && patchAction && patchActions[patchAction]) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const changed = await patchActions[patchAction]!(requestRoute?.[1] ?? "");
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: ({
+            "patch-apply": "patch_applied",
+            "patch-rollback": "patch_rolled_back",
+            "patch-reconcile": "patch_reconciled",
+          } as const)[patchAction],
+          request: changed,
+        }));
+        return;
+      }
       if (
         request.method === "POST" &&
         requestRoute?.[2] === "execution-authorize" &&

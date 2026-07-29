@@ -18,6 +18,9 @@ import {
   localExecutionAuthorizationRequestSchema,
   localExecutionAuthoritySchema,
   localExecutionRunSchema,
+  localPatchApprovalRequestSchema,
+  localPatchApprovalSchema,
+  localPatchPreviewRequestSchema,
   localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
@@ -38,6 +41,11 @@ import {
   observeBoundedChanges,
   runBoundedValidation,
 } from "./local-validation.js";
+import {
+  applyReplacement,
+  previewReplacement,
+  rollbackReplacement,
+} from "./local-patch.js";
 
 const MAX_REQUESTS = 500;
 const sensitiveMaterial =
@@ -958,6 +966,280 @@ export class LocalRequestStore {
     });
   }
 
+  previewPatch(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const proposal = localPatchPreviewRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      if (
+        !execution ||
+        execution.state !== "ready" ||
+        !execution.workspace ||
+        !execution.run ||
+        execution.run.state !== "ready"
+      ) {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Start a ready bounded run before previewing a patch."
+        );
+      }
+      if (
+        proposal.expectedAuthorityDigest !== execution.authority.digest ||
+        proposal.expectedRunDigest !== execution.run.digest
+      ) {
+        throw new LocalRequestError("stale_revision", "Execution changed before patch preview.");
+      }
+      if (execution.patch) {
+        if (
+          execution.patch.preview.path === proposal.path &&
+          (proposal.expectedBeforeDigest === null ||
+            execution.patch.preview.beforeDigest === proposal.expectedBeforeDigest) &&
+          execution.patch.preview.replacementContent === proposal.replacementContent
+        ) {
+          return record.request;
+        }
+        throw new LocalRequestError(
+          "plan_immutable",
+          "A patch already exists for this run. Roll it back or start a new run."
+        );
+      }
+      const workspacePath = locateIsolatedWorktree({
+        stateDirectory: this.#stateDirectory,
+        requestId,
+        authority: execution.authority,
+      });
+      const preview = await previewReplacement({
+        workspacePath,
+        authority: execution.authority,
+        run: execution.run,
+        path: proposal.path,
+        expectedBeforeDigest: proposal.expectedBeforeDigest,
+        replacementContent: proposal.replacementContent,
+      });
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        execution: {
+          ...execution,
+          patch: {
+            schemaVersion: 1,
+            state: "previewed",
+            preview,
+            approval: null,
+            receipt: null,
+            rolledBackAt: null,
+          },
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "patch_previewed",
+            now,
+            `Bounded replacement previewed for ${preview.path}; no file was written.`
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  approvePatch(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const approvalRequest = localPatchApprovalRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const patch = record.request.execution?.patch;
+      if (patch?.state === "approved") return record.request;
+      if (!patch || patch.state !== "previewed") {
+        throw new LocalRequestError("invalid_transition", "Preview the exact patch first.");
+      }
+      if (patch.preview.digest !== approvalRequest.expectedPreviewDigest) {
+        throw new LocalRequestError("stale_revision", "Patch preview changed before approval.");
+      }
+      const approvedAt = Date.now();
+      const approval = localPatchApprovalSchema.parse({
+        schemaVersion: 1,
+        previewDigest: patch.preview.digest,
+        approvedAt,
+        digest: digest(`${patch.preview.digest}:${approvedAt}:isolated_replacement_only`),
+      });
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: approvedAt,
+        execution: {
+          ...record.request.execution,
+          patch: { ...patch, state: "approved", approval },
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "patch_approved",
+            approvedAt,
+            "Exact isolated replacement approved; application has not started."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  applyPatch(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const patch = execution?.patch;
+      if (patch?.state === "applied") return record.request;
+      if (
+        !execution ||
+        !execution.workspace ||
+        !execution.run ||
+        !patch ||
+        patch.state !== "approved" ||
+        !patch.approval ||
+        patch.approval.previewDigest !== patch.preview.digest
+      ) {
+        throw new LocalRequestError("invalid_transition", "Approve the current patch preview first.");
+      }
+      const applyingAt = Date.now();
+      const applying = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: applyingAt,
+        execution: { ...execution, patch: { ...patch, state: "applying" } },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "patch_applying",
+            applyingAt,
+            "Applying one approved replacement inside the isolated worktree."
+          ),
+        },
+      });
+      await this.#replace(store, applying);
+      const workspacePath = locateIsolatedWorktree({
+        stateDirectory: this.#stateDirectory,
+        requestId,
+        authority: execution.authority,
+      });
+      const receipt = await applyReplacement({
+        workspacePath,
+        canonicalRoot: await this.#projectRoot(record.request.projectId),
+        recoveryDirectory: resolve(this.#stateDirectory, "patch-recovery", requestId),
+        authority: execution.authority,
+        preview: patch.preview,
+      });
+      const appliedAt = Date.now();
+      const applied = localRequestSchema.parse({
+        ...applying,
+        updatedAt: appliedAt,
+        execution: {
+          ...applying.execution,
+          patch: { ...applying.execution?.patch, state: "applied", receipt },
+        },
+        run: {
+          ...applying.run,
+          events: appendEvent(
+            applying.run?.events ?? [],
+            "patch_applied",
+            appliedAt,
+            "Isolated replacement bytes verified; no commit, merge, push, or publication occurred."
+          ),
+        },
+      });
+      await this.#replace(await this.#load(), applied);
+      return applied;
+    });
+  }
+
+  rollbackPatch(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const patch = execution?.patch;
+      if (patch?.state === "rolled_back") return record.request;
+      if (
+        !execution ||
+        !patch ||
+        patch.state !== "applied" ||
+        !patch.receipt
+      ) {
+        throw new LocalRequestError("invalid_transition", "Only an applied patch can be rolled back.");
+      }
+      await rollbackReplacement({
+        workspacePath: locateIsolatedWorktree({
+          stateDirectory: this.#stateDirectory,
+          requestId,
+          authority: execution.authority,
+        }),
+        recoveryDirectory: resolve(this.#stateDirectory, "patch-recovery", requestId),
+        authority: execution.authority,
+        preview: patch.preview,
+        receipt: patch.receipt,
+      });
+      const rolledBackAt = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: rolledBackAt,
+        execution: {
+          ...execution,
+          patch: { ...patch, state: "rolled_back", rolledBackAt },
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "patch_rolled_back",
+            rolledBackAt,
+            "Exact pre-patch isolated bytes restored and verified."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  reconcilePatch(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      const patch = execution?.patch;
+      if (patch?.state === "interrupted") return record.request;
+      if (!execution || !patch || patch.state !== "applying") {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Only an interrupted patch application can be reconciled."
+        );
+      }
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        execution: { ...execution, patch: { ...patch, state: "interrupted" } },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "patch_reconciled",
+            now,
+            "Interrupted patch preserved for explicit file and recovery-evidence inspection."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
   archive(requestId: string): Promise<void> {
     return this.#serialize(async () => {
       const store = await this.#load();
@@ -1106,7 +1388,13 @@ function event(
     | "execution_started"
     | "validation_started"
     | "validation_completed"
-    | "validation_failed",
+    | "validation_failed"
+    | "patch_previewed"
+    | "patch_approved"
+    | "patch_applying"
+    | "patch_applied"
+    | "patch_rolled_back"
+    | "patch_reconciled",
   observedAt: number,
   detail: string
 ) {
