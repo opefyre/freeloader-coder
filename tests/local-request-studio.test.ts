@@ -18,6 +18,9 @@ test("Studio separates real request state from guided orchestration examples", a
     "Record zero-effect checkpoint",
     "Release proof lease",
     "Maximum cost",
+    "Ground and draft plan",
+    "Real grounding and draft plan",
+    "not AI decomposition",
   ]) {
     assert.equal(panel.includes(phrase), true, `Missing truthful UI contract: ${phrase}`);
   }

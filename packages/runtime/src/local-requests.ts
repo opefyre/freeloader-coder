@@ -49,9 +49,50 @@ export const localRunEventSchema = z.strictObject({
     "checkpoint_observed",
     "lease_released",
     "lease_expired",
+    "grounding_created",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
+});
+
+export const localGroundingSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  projectId,
+  provenance: z.literal("bounded_local_files"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  observedAt: z.number().int().nonnegative(),
+  sources: z.array(z.strictObject({
+    path: z.string().trim().min(1).max(240).refine(
+      (value) =>
+        !value.startsWith("/") &&
+        !value.startsWith("\\") &&
+        !value.split(/[\\/]/).includes(".."),
+      "Grounding source must be project-relative."
+    ),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    bytes: z.number().int().nonnegative().max(65_536),
+    classification: z.enum(["guidance", "manifest", "documentation"]),
+    excerpt: z.string().max(2_000),
+  })).min(1).max(12),
+  limitations: z.array(z.string().trim().min(1).max(300)).min(1).max(10),
+});
+
+export const localDraftPlanSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("deterministic_local_plan"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  groundingDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  state: z.literal("draft"),
+  tasks: z.array(z.strictObject({
+    id: z.string().regex(/^task_[a-f0-9]{12}$/),
+    title: z.string().trim().min(1).max(160),
+    outcome: boundedOutcome,
+    allowedFiles: z.array(z.string().trim().min(1).max(240)).min(1).max(12),
+    acceptanceCriteria: z.array(z.string().trim().min(1).max(300)).min(1).max(10),
+    exclusions: z.array(z.string().trim().min(1).max(300)).min(1).max(10),
+    checks: z.array(z.string().trim().min(1).max(160)).min(1).max(10),
+    risk: z.enum(["low", "medium", "high"]),
+  })).min(1).max(6),
 });
 
 export const localRunSchema = z.strictObject({
@@ -87,6 +128,8 @@ export const localRequestSchema = z.strictObject({
   findings: z.array(localReadinessFindingSchema).max(20),
   workPreview: localWorkPreviewSchema.nullable(),
   run: localRunSchema.nullable(),
+  grounding: localGroundingSchema.optional(),
+  plan: localDraftPlanSchema.optional(),
 });
 
 export const localRequestCollectionSchema = z.strictObject({
@@ -105,6 +148,7 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "checkpointed",
     "released",
     "reconciled",
+    "grounded",
     "cancelled",
     "archived",
   ]),
@@ -115,6 +159,8 @@ export type LocalRequestCreation = z.infer<typeof localRequestCreationSchema>;
 export type LocalRequest = z.infer<typeof localRequestSchema>;
 export type LocalRequestCollection = z.infer<typeof localRequestCollectionSchema>;
 export type LocalRequestMutationResponse = z.infer<typeof localRequestMutationResponseSchema>;
+export type LocalGrounding = z.infer<typeof localGroundingSchema>;
+export type LocalDraftPlan = z.infer<typeof localDraftPlanSchema>;
 
 export function validateLocalRequestCollection(input: unknown): LocalRequestCollection {
   const collection = localRequestCollectionSchema.parse(input);
@@ -123,6 +169,16 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
     throw new Error("Local request collection contains duplicate identities.");
   }
   for (const request of collection.requests) {
+    if (request.plan || request.grounding) {
+      if (
+        !request.plan ||
+        !request.grounding ||
+        request.grounding.projectId !== request.projectId ||
+        request.plan.groundingDigest !== request.grounding.digest
+      ) {
+        throw new Error("Local plan does not match its grounding snapshot.");
+      }
+    }
     if (request.run) {
       if (
         request.run.contract.requestId !== request.id ||

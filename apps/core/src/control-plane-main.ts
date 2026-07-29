@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 import { createControlPlaneServer } from "./control-plane.js";
 import { LocalProjectRegistry } from "./local-project-registry.js";
-import { LocalRequestStore } from "./local-request-store.js";
+import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -103,6 +103,14 @@ const controlPlane = createControlPlaneServer({
     checkpoint: (requestId) => localRequests.checkpoint(requestId),
     release: (requestId) => localRequests.release(requestId),
     reconcile: (requestId) => localRequests.reconcile(requestId),
+    ground: async (requestId) => {
+      const request = (await localRequests.list()).requests.find(
+        (candidate) => candidate.id === requestId
+      );
+      if (!request) throw new LocalRequestError("not_found", "Request was not found.");
+      const grounding = await localProjects.grounding(request.projectId);
+      return localRequests.ground(requestId, grounding);
+    },
     archive: (requestId) => localRequests.archive(requestId),
   },
 });

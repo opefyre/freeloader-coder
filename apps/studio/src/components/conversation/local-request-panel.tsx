@@ -133,7 +133,7 @@ export function LocalRequestPanel(props: {
 
   async function advance(
     request: LocalRequest,
-    action: "approve" | "claim" | "checkpoint" | "release" | "reconcile"
+    action: "approve" | "ground" | "claim" | "checkpoint" | "release" | "reconcile"
   ) {
     setStatus("working");
     try {
@@ -146,6 +146,7 @@ export function LocalRequestPanel(props: {
       await refresh();
       setNotice({
         approve: "Zero-effect contract approved. No work has started.",
+        ground: "Bounded local grounding and deterministic draft plan created.",
         claim: "Local coordinator lease claimed. No command or provider was invoked.",
         checkpoint: "Zero external effects observed and checkpoint evidence recorded.",
         release: "Lease released. The zero-effect lifecycle proof is complete.",
@@ -291,6 +292,37 @@ export function LocalRequestPanel(props: {
                         </ol>
                       </div>
                     )}
+                    {request.grounding && request.plan && (
+                      <div className="mt-4 rounded-2xl bg-primary/[.055] p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <strong className="text-xs">Real grounding and draft plan</strong>
+                          <span className="text-[10px] uppercase tracking-[.13em] text-muted-foreground">
+                            {request.grounding.digest.slice(0, 12)}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {request.grounding.sources.map((source) => (
+                            <span key={source.path} className="rounded-full bg-background px-2.5 py-1 text-[10px]">
+                              {source.path} · {source.classification}
+                            </span>
+                          ))}
+                        </div>
+                        {request.plan.tasks.map((task) => (
+                          <div key={task.id} className="mt-3 rounded-2xl bg-background/70 p-3">
+                            <strong className="text-xs">{task.title}</strong>
+                            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                              Files · {task.allowedFiles.join(" · ")}
+                            </p>
+                            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                              Checks · {task.checks.join(" · ")}
+                            </p>
+                          </div>
+                        ))}
+                        <p className="mt-3 text-[10px] text-muted-foreground">
+                          Deterministic local draft · not AI decomposition · no execution authority
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <span className="text-[10px] text-muted-foreground">
                     {new Date(request.createdAt).toLocaleTimeString([], {
@@ -316,7 +348,13 @@ export function LocalRequestPanel(props: {
                       </Button>
                     </>
                   )}
-                  {request.state === "approved" && (
+                  {request.state === "approved" && !request.plan && (
+                    <Button size="sm" onClick={() => void advance(request, "ground")} disabled={status === "working"}>
+                      <Fingerprint />
+                      Ground and draft plan
+                    </Button>
+                  )}
+                  {request.state === "approved" && request.plan && (
                     <Button size="sm" onClick={() => void advance(request, "claim")} disabled={status === "working"}>
                       <Play />
                       Claim proof lease

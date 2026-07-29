@@ -49,6 +49,7 @@ export type ControlPlaneServerOptions = {
     checkpoint?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     release?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     reconcile?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    ground?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -145,7 +146,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
       const requestActions = {
         approve: options.requests?.approve,
@@ -153,6 +154,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         checkpoint: options.requests?.checkpoint,
         release: options.requests?.release,
         reconcile: options.requests?.reconcile,
+        ground: options.requests?.ground,
       } as const;
       const lifecycleAction = requestRoute?.[2] as keyof typeof requestActions | undefined;
       if (
@@ -175,6 +177,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             outcome:
               ({
                 approve: "approved",
+                ground: "grounded",
                 claim: "claimed",
                 checkpoint: "checkpointed",
                 release: "released",

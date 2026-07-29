@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import {
   localRequestCreationSchema,
+  localGroundingSchema,
   localRequestSchema,
   validateLocalRequestCollection,
   type LocalRequest,
@@ -148,7 +149,7 @@ export class LocalRequestStore {
       const record = store.requests.find((item) => item.request.id === requestId);
       if (!record) throw new LocalRequestError("not_found", "Request was not found.");
       if (record.request.state === "cancelled") return record.request;
-      if (!["queued", "approved"].includes(record.request.state)) {
+      if (record.request.state !== "queued") {
         throw new LocalRequestError("invalid_transition", "Only queued work can be cancelled.");
       }
       const request = localRequestSchema.parse({
@@ -348,6 +349,83 @@ export class LocalRequestStore {
     });
   }
 
+  ground(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const grounding = localGroundingSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      if (!record.request.run || record.request.state !== "approved") {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Approve the zero-effect contract before grounding the request."
+        );
+      }
+      if (grounding.projectId !== record.request.projectId) {
+        throw new LocalRequestError("grounding_mismatch", "Grounding does not match the request project.");
+      }
+      if (record.request.grounding) {
+        if (record.request.grounding.digest !== grounding.digest) {
+          throw new LocalRequestError(
+            "stale_source",
+            "Project grounding changed. Create a new approval before replacing the plan."
+          );
+        }
+        return record.request;
+      }
+      const allowedFiles = grounding.sources.map((source) => source.path);
+      const planBody = {
+        provenance: "deterministic_local_plan",
+        groundingDigest: grounding.digest,
+        outcome: record.request.outcome,
+        allowedFiles,
+      };
+      const planDigest = digest(JSON.stringify(planBody));
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        grounding,
+        plan: {
+          schemaVersion: 1,
+          provenance: "deterministic_local_plan",
+          digest: planDigest,
+          groundingDigest: grounding.digest,
+          state: "draft",
+          tasks: [{
+            id: `task_${planDigest.slice(0, 12)}`,
+            title:
+              record.request.outcome.length > 100
+                ? `${record.request.outcome.slice(0, 97)}…`
+                : record.request.outcome,
+            outcome: record.request.outcome,
+            allowedFiles,
+            acceptanceCriteria: [
+              "The requested outcome is implemented using observed project guidance.",
+              "Repository-defined checks pass before completion is claimed.",
+            ],
+            exclusions: [
+              "This draft does not authorize source changes.",
+              "No model, provider, command, or Git operation has run.",
+            ],
+            checks: record.request.run.contract.checks,
+            risk: "medium",
+          }],
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run.events,
+            "grounding_created",
+            now,
+            "Bounded local grounding and deterministic draft plan created."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
   archive(requestId: string): Promise<void> {
     return this.#serialize(async () => {
       const store = await this.#load();
@@ -400,7 +478,9 @@ export class LocalRequestStore {
       if (
         error instanceof SyntaxError ||
         error instanceof z.ZodError ||
-        (error instanceof Error && error.message.startsWith("Local run"))
+        (error instanceof Error &&
+          (error.message.startsWith("Local run") ||
+            error.message.startsWith("Local plan")))
       ) {
         throw new LocalRequestError(
           "store_invalid",
@@ -444,6 +524,8 @@ export class LocalRequestError extends Error {
       | "invalid_transition"
       | "lease_expired"
       | "lease_active"
+      | "grounding_mismatch"
+      | "stale_source"
       | "store_invalid",
     message: string
   ) {
@@ -478,7 +560,8 @@ function event(
     | "lease_claimed"
     | "checkpoint_observed"
     | "lease_released"
-    | "lease_expired",
+    | "lease_expired"
+    | "grounding_created",
   observedAt: number,
   detail: string
 ) {

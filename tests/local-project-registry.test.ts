@@ -30,6 +30,10 @@ test("registry persists an idempotent bounded repository observation across rest
     assert.equal(collection.projects.length, 1);
     assert.equal(JSON.stringify(collection).includes(fixture.repository), false);
     assert.equal(JSON.stringify(collection).includes("secret-value"), false);
+    const grounding = await restarted.grounding(first.id);
+    assert.equal(grounding.sources.some((source) => source.path === "package.json"), true);
+    assert.equal(JSON.stringify(grounding).includes(fixture.repository), false);
+    assert.equal(JSON.stringify(grounding).includes("secret-value"), false);
 
     await restarted.forget(first.id);
     assert.equal((await restarted.list()).projects.length, 0);

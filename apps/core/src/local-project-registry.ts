@@ -8,6 +8,7 @@ import {
   realpath,
   rename,
   stat,
+  lstat,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -20,6 +21,10 @@ import {
   type LocalProjectCollection,
   type LocalProjectSnapshot,
 } from "../../../packages/runtime/src/local-projects.js";
+import {
+  localGroundingSchema,
+  type LocalGrounding,
+} from "../../../packages/runtime/src/local-requests.js";
 
 const MAX_ENTRIES = 4_000;
 const MAX_MANIFEST_BYTES = 256_000;
@@ -47,6 +52,18 @@ const manifestNames = new Set([
   "requirements.txt",
 ]);
 const registrySchemaVersion = 1 as const;
+const groundingFiles = [
+  "AGENTS.md",
+  "CLAUDE.md",
+  "CONTRIBUTING.md",
+  "README.md",
+  "README",
+  "package.json",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "tsconfig.json",
+] as const;
 
 type PrivateProjectRecord = {
   schemaVersion: 1;
@@ -83,6 +100,67 @@ export class LocalProjectRegistry {
     assertProjectId(projectId);
     const registry = await this.#load();
     return registry.projects.some((project) => project.id === projectId);
+  }
+
+  async grounding(projectId: string): Promise<LocalGrounding> {
+    assertProjectId(projectId);
+    const registry = await this.#load();
+    const record = registry.projects.find((project) => project.id === projectId);
+    if (!record) {
+      throw new LocalProjectError("not_found", "Project registration was not found.");
+    }
+    const canonicalPath = await validateRepositoryRoot(record.canonicalPath);
+    const sources: LocalGrounding["sources"][number][] = [];
+    let totalBytes = 0;
+    for (const name of groundingFiles) {
+      const absolute = join(canonicalPath, name);
+      try {
+        const info = await lstat(absolute);
+        if (!info.isFile() || info.isSymbolicLink() || info.size > 65_536) continue;
+        totalBytes += info.size;
+        if (totalBytes > 196_608) {
+          throw new LocalProjectError("scan_limit", "Grounding exceeded the safe byte limit.");
+        }
+        const content = await readFile(absolute, "utf8");
+        if (looksSensitive(content)) continue;
+        sources.push({
+          path: name,
+          sha256: hash(content),
+          bytes: info.size,
+          classification:
+            name === "AGENTS.md" || name === "CLAUDE.md" || name === "CONTRIBUTING.md"
+              ? "guidance"
+              : name.startsWith("README")
+                ? "documentation"
+                : "manifest",
+          excerpt: content.slice(0, 2_000),
+        });
+      } catch (error) {
+        if (error instanceof LocalProjectError) throw error;
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw new LocalProjectError("scan_failed", `Could not read bounded grounding source ${name}.`);
+        }
+      }
+    }
+    if (sources.length === 0) {
+      throw new LocalProjectError(
+        "scan_failed",
+        "No safe root guidance, documentation, or manifest was available for grounding."
+      );
+    }
+    const body = { projectId, sources };
+    return localGroundingSchema.parse({
+      schemaVersion: 1,
+      projectId,
+      provenance: "bounded_local_files",
+      digest: hash(JSON.stringify(body)),
+      observedAt: Date.now(),
+      sources,
+      limitations: [
+        "Only explicitly allowlisted root files were read.",
+        "Symlinks, sensitive-shaped content, source directories, and command output were excluded.",
+      ],
+    });
   }
 
   async register(input: unknown): Promise<LocalProjectSnapshot> {
@@ -480,4 +558,10 @@ function assertProjectId(value: string): void {
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function looksSensitive(value: string): boolean {
+  return /(api[_-]?key|password|private[_-]?key|access[_-]?token)\s*[:=]\s*[^\s"',}]+/i.test(
+    value
+  );
 }

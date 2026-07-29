@@ -41,20 +41,39 @@ test("request store persists idempotently, serializes mutations, and archives te
     assert.equal(approved.run?.contract.allowedEffects.length, 0);
     assert.equal(approved.run?.contract.maximumCostUsd, 0);
     assert.equal((await store.approve(lifecycle.id)).run?.contract.digest, approved.run?.contract.digest);
+    const grounding = {
+      schemaVersion: 1 as const,
+      projectId,
+      provenance: "bounded_local_files" as const,
+      digest: "a".repeat(64),
+      observedAt: 10_000,
+      sources: [{
+        path: "package.json",
+        sha256: "b".repeat(64),
+        bytes: 120,
+        classification: "manifest" as const,
+        excerpt: "{\"scripts\":{\"test\":\"node --test\"}}",
+      }],
+      limitations: ["Only allowlisted root files were read."],
+    };
+    const grounded = await store.ground(lifecycle.id, grounding);
+    assert.equal(grounded.plan?.groundingDigest, grounding.digest);
+    assert.equal(grounded.plan?.tasks[0]?.allowedFiles[0], "package.json");
+    assert.equal((await store.ground(lifecycle.id, grounding)).run?.events.length, 2);
     const claimed = await store.claim(lifecycle.id);
     assert.equal(claimed.state, "claimed");
     assert.equal(claimed.run?.lease?.owner, "local_zero_effect_coordinator");
     assert.equal((await store.claim(lifecycle.id)).run?.lease?.id, claimed.run?.lease?.id);
     const checkpointed = await store.checkpoint(lifecycle.id);
     assert.equal(checkpointed.state, "checkpointed");
-    assert.equal((await store.checkpoint(lifecycle.id)).run?.events.length, 3);
+    assert.equal((await store.checkpoint(lifecycle.id)).run?.events.length, 4);
     const completed = await store.release(lifecycle.id);
     assert.equal(completed.state, "completed");
-    assert.equal((await store.release(lifecycle.id)).run?.events.length, 4);
+    assert.equal((await store.release(lifecycle.id)).run?.events.length, 5);
     assert.equal(completed.run?.lease, null);
     assert.deepEqual(
       completed.run?.events.map((event) => event.sequence),
-      [1, 2, 3, 4]
+      [1, 2, 3, 4, 5]
     );
     await store.archive(lifecycle.id);
     assert.equal((await store.list()).requests.length, 0);

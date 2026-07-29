@@ -57,7 +57,7 @@ export async function cancelLocalRequest(input: {
 export async function advanceLocalRequest(input: {
   endpoint: string;
   requestId: string;
-  action: "approve" | "claim" | "checkpoint" | "release" | "reconcile";
+  action: "approve" | "ground" | "claim" | "checkpoint" | "release" | "reconcile";
   idempotencyKey: string;
   fetcher?: typeof fetch;
 }): Promise<LocalRequestMutationResponse> {
