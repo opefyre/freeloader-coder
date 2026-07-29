@@ -9,6 +9,7 @@ export const studioViews = [
   "help",
   "releases",
   "trust",
+  "accessibility",
   "settings"
 ] as const;
 
@@ -25,6 +26,7 @@ const routes: Record<StudioView, string> = {
   help: "/help",
   releases: "/releases",
   trust: "/trust",
+  accessibility: "/accessibility",
   settings: "/settings"
 };
 

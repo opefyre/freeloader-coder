@@ -9,6 +9,7 @@ import { Lifebuoy } from "@phosphor-icons/react/Lifebuoy";
 import { LinkSimple } from "@phosphor-icons/react/LinkSimple";
 import { LockKey } from "@phosphor-icons/react/LockKey";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
+import { PersonArmsSpread } from "@phosphor-icons/react/PersonArmsSpread";
 import { Scales } from "@phosphor-icons/react/Scales";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Sparkle } from "@phosphor-icons/react/Sparkle";
@@ -177,7 +178,7 @@ export function HelpCenter() {
             </label>
           </div>
           <div className="grid grid-cols-3 gap-2 lg:w-72">
-            <HeroMetric value="11" label="Guides" />
+            <HeroMetric value="12" label="Guides" />
             <HeroMetric value="7" label="Journeys" />
             <HeroMetric value="0" label="Data sent" />
           </div>
@@ -572,6 +573,13 @@ export function HelpCenter() {
             >
               <Scales weight="fill" />
               Trust Center
+            </a>
+            <a
+              href="/accessibility"
+              className="inline-flex h-9 items-center gap-2 rounded-full bg-secondary px-4 text-sm font-medium hover:bg-secondary/75"
+            >
+              <PersonArmsSpread weight="fill" />
+              Accessibility
             </a>
             <a
               href="https://github.com/opefyre/freeloader-coder/blob/main/CONTRIBUTING.md"

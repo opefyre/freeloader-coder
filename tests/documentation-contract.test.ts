@@ -35,6 +35,9 @@ test("relative Markdown links in the sprint documentation resolve", async () => 
     "docs/governance/privacy-data-ai.md",
     "docs/governance/disclosures.md",
     "CODE_OF_CONDUCT.md",
+    "docs/quality/accessibility-release-gate.md",
+    "docs/evidence/PIPE-41-GITHUB-ENTRY.md",
+    "docs/evidence/PIPE-35-117-124-ACCESSIBILITY-FOUNDATION.md",
   ];
   for (const document of documents) {
     const absolute = resolve(root, document);

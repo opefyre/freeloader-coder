@@ -19,6 +19,7 @@ import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
 import { Moon } from "@phosphor-icons/react/Moon";
 import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { Pause } from "@phosphor-icons/react/Pause";
+import { PersonArmsSpread } from "@phosphor-icons/react/PersonArmsSpread";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
 import { Question } from "@phosphor-icons/react/Question";
 import { RocketLaunch } from "@phosphor-icons/react/RocketLaunch";
@@ -42,6 +43,7 @@ import { HelpCenter } from "./components/help/help-center.js";
 import { IntegrationWorkbench } from "./components/integrations/integration-workbench.js";
 import { OrchestrationWorkbench } from "./components/orchestration/orchestration-workbench.js";
 import { EvidenceCenter } from "./components/quality/evidence-center.js";
+import { AccessibilityCenter } from "./components/quality/accessibility-center.js";
 import { ReleaseCenter } from "./components/releases/release-center.js";
 import { TrustCenter } from "./components/governance/trust-center.js";
 import { ControlCenter } from "./components/control-center/control-center.js";
@@ -160,6 +162,11 @@ const viewCopy: Record<
     eyebrow: "Open source · Inspectable · No legal claim",
     title: "Trust that links back to source",
     description: "Inspect governance, release safeguards, data journeys, and responsible-AI choices in one place.",
+  },
+  accessibility: {
+    eyebrow: "WCAG 2.2 AA · Release-blocking evidence",
+    title: "Accessibility is a release decision",
+    description: "Inspect automated checks, named manual evidence, chart alternatives, and foundation proof before promotion.",
   },
   settings: {
     eyebrow: "Local-first configuration",
@@ -306,6 +313,12 @@ function App() {
         label: "Trust",
         note: "Governance, supply chain, and data use",
         icon: Scales,
+      },
+      {
+        id: "accessibility" as const,
+        label: "Accessibility",
+        note: "Release gates and foundation evidence",
+        icon: PersonArmsSpread,
       },
       {
         id: "settings" as const,
@@ -466,6 +479,20 @@ function App() {
 
         <button
           type="button"
+          onClick={() => navigate("accessibility")}
+          aria-current={activeView === "accessibility" ? "page" : undefined}
+          className={cn(
+            "mt-1 flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+            activeView === "accessibility" &&
+              "bg-sidebar-accent text-sidebar-accent-foreground"
+          )}
+        >
+          <PersonArmsSpread size={18} />
+          Accessibility
+        </button>
+
+        <button
+          type="button"
           onClick={() => navigate("settings")}
           aria-current={activeView === "settings" ? "page" : undefined}
           className={cn(
@@ -532,7 +559,7 @@ function App() {
         </header>
 
         <div className="mx-auto max-w-[96rem] px-4 pb-28 sm:px-7 lg:px-9 lg:pb-12">
-          <div className="flex flex-col gap-4 pb-6 pt-4 sm:flex-row sm:items-end sm:justify-between sm:pt-7">
+          <div className="flex flex-col gap-4 pb-6 pt-4 sm:pt-7 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <FolderOpen size={15} />
@@ -545,7 +572,7 @@ function App() {
                 {activeCopy.description}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="secondary">
                 <Pause />
                 Pause after step
@@ -1242,6 +1269,10 @@ function WorkspaceSurface({
 
   if (view === "trust") {
     return <TrustCenter />;
+  }
+
+  if (view === "accessibility") {
+    return <AccessibilityCenter />;
   }
 
   return (

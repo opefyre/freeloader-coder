@@ -23,9 +23,10 @@ acceptance.
 
 ### AC2 — Icon consistency and accessibility
 
-Passed. The browser build imports only Lucide. Icons that repeat adjacent text
-are hidden from assistive technology. The reusable contract rejects meaningful
-icons without an accessible name. No icon CDN or placeholder glyph is used.
+Passed. The current browser build imports only the approved Phosphor package.
+Icons that repeat adjacent text are decorative; meaningful icon-only controls
+have accessible names. No icon CDN, React Icons, Lucide, Heroicons, Font
+Awesome, or placeholder glyph is used.
 
 ### AC3 — Automated design guardrails
 
@@ -34,7 +35,7 @@ Passed. Repository lint rejects:
 - feature-level font declarations that bypass the Onest token;
 - raw feature color literals;
 - decorative CSS borders;
-- React Icons, Heroicons, Phosphor, and Font Awesome imports.
+- React Icons, Lucide, Heroicons, and Font Awesome imports.
 
 ## Additional trust evidence
 
@@ -42,6 +43,8 @@ Passed. Repository lint rejects:
 - Visual interaction testing confirmed failure cards render both messages.
 - Browser console inspection found no application errors.
 - Reduced-motion and forced-color fallbacks are present.
+- The hard accessibility gate covers keyboard use, focus, semantics, contrast,
+  200% zoom, responsive reflow, and chart alternatives.
 - The local font and icon assets build without a remote runtime dependency.
 
 ## Verification

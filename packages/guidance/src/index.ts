@@ -197,6 +197,23 @@ const rawArticles: readonly HelpArticle[] = [
     jiraKey: "PIPE-108"
   }),
   article({
+    id: "inspect-accessibility-evidence",
+    title: "Inspect accessibility evidence",
+    summary: "Confirm keyboard, focus, semantics, contrast, motion, zoom, reflow, and chart alternatives before a release proceeds.",
+    category: "safety",
+    journeys: [],
+    keywords: ["accessibility", "wcag", "keyboard", "focus", "contrast", "zoom", "chart"],
+    steps: [
+      "Open Accessibility and review all eight required WCAG 2.2 AA dimensions.",
+      "Confirm automated results and named manual evidence are current for critical workflows.",
+      "Use the chart-alternative failure fixture to confirm one critical issue blocks release.",
+      "Open Foundation evidence to trace each acceptance claim to a test, negative fixture, owner, and source artifact."
+    ],
+    safeAlternative: "Keep the candidate blocked when any required check is failed, missing, not run, stale, or lacks meaningful evidence.",
+    sourcePath: "docs/quality/accessibility-release-gate.md",
+    jiraKey: "PIPE-35"
+  }),
+  article({
     id: "share-a-safe-support-report",
     title: "Share a safe support report",
     summary: "Create a reproducible report without credentials, source code, personal paths, or private account data.",

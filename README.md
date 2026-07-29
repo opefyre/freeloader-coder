@@ -53,6 +53,11 @@ governance decisions, supply-chain gates, privacy choices, data journeys, and
 responsible-AI rules to their versioned sources. It makes no legal approval
 claim and performs no external action.
 
+The local [Accessibility Center](docs/quality/accessibility-release-gate.md) at
+`/accessibility` makes WCAG 2.2 AA evidence release-blocking and links
+foundation claims to reproducible tests, negative fixtures, and named manual
+review.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.
