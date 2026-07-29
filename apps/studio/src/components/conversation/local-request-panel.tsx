@@ -9,6 +9,7 @@ import { GitBranch } from "@phosphor-icons/react/GitBranch";
 import { HourglassMedium } from "@phosphor-icons/react/HourglassMedium";
 import { LockKey } from "@phosphor-icons/react/LockKey";
 import { Play } from "@phosphor-icons/react/Play";
+import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Stop } from "@phosphor-icons/react/Stop";
 import { Trash } from "@phosphor-icons/react/Trash";
 import { Warning } from "@phosphor-icons/react/Warning";
@@ -23,7 +24,9 @@ import { listLocalProjects } from "../../local-project-client.js";
 import {
   archiveLocalRequest,
   approveLocalPlan,
+  advanceLocalExecution,
   advanceLocalRequest,
+  authorizeLocalExecution,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
@@ -213,6 +216,56 @@ export function LocalRequestPanel(props: {
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Plan approval failed safely.");
+    }
+  }
+
+  async function authorizeExecution(request: LocalRequest) {
+    if (!request.plan || request.plan.state !== "approved") return;
+    setStatus("working");
+    try {
+      await authorizeLocalExecution({
+        endpoint,
+        requestId: request.id,
+        authorization: {
+          schemaVersion: 1,
+          expectedPlanRevision: request.plan.revision,
+          expectedPlanDigest: request.plan.digest,
+          isolationProfile: "native_bounded_worktree",
+        },
+        idempotencyKey: `execution-authorize:${request.id}:${request.plan.digest}`,
+      });
+      await refresh();
+      setNotice(
+        "Clean Git baseline verified and isolated-worktree-only authority recorded. No workspace or task started."
+      );
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Execution authorization failed safely.");
+    }
+  }
+
+  async function mutateExecution(
+    request: LocalRequest,
+    action: "prepare" | "cancel" | "reconcile"
+  ) {
+    setStatus("working");
+    try {
+      await advanceLocalExecution({
+        endpoint,
+        requestId: request.id,
+        action,
+        idempotencyKey: `execution-${action}:${request.id}:${request.execution?.authority.digest ?? "none"}`,
+      });
+      await refresh();
+      setNotice({
+        prepare:
+          "Private Git worktree prepared and baseline verified. No task, model, network, or arbitrary command started.",
+        cancel: "Execution cancelled. The isolated workspace was preserved for explicit recovery.",
+        reconcile: "Interrupted preparation reconciled without claiming completion.",
+      }[action]);
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Execution action failed safely.");
     }
   }
 
@@ -420,6 +473,46 @@ export function LocalRequestPanel(props: {
                             </span>
                           </div>
                         )}
+                        {request.execution && (
+                          <div className="mt-3 rounded-2xl bg-background/70 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="flex items-center gap-2 text-[11px] font-semibold">
+                                <ShieldCheck className="text-primary" />
+                                Execution authority
+                              </span>
+                              <Badge tone={request.execution.state === "ready" ? "positive" : "active"}>
+                                {request.execution.state}
+                              </Badge>
+                            </div>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                              <DecisionFact
+                                label="Baseline"
+                                value={request.execution.authority.preflight.baseline.slice(0, 10)}
+                              />
+                              <DecisionFact
+                                label="Permitted files"
+                                value={String(
+                                  new Set(
+                                    request.execution.authority.manifest.tasks.flatMap(
+                                      (task) => task.allowedFiles
+                                    )
+                                  ).size
+                                )}
+                              />
+                              <DecisionFact label="Maximum cost" value="$0.00" />
+                            </div>
+                            <p className="mt-3 text-[10px] leading-5 text-muted-foreground">
+                              Allows one private Git worktree only · excludes canonical writes,
+                              network, providers, credentials, paid usage, publishing, and deployment
+                            </p>
+                            {request.execution.workspace && (
+                              <p className="mt-2 text-[10px] font-medium">
+                                {request.execution.workspace.branch} · workspace{" "}
+                                {request.execution.workspace.state}
+                              </p>
+                            )}
+                          </div>
+                        )}
                         <p className="mt-3 text-[10px] text-muted-foreground">
                           Grounding citations explain why · topology paths define proposed targets · no
                           model or worker has run
@@ -464,10 +557,52 @@ export function LocalRequestPanel(props: {
                     </Button>
                   )}
                   {request.state === "approved" && request.plan?.state === "approved" && (
-                    <Button size="sm" onClick={() => void advance(request, "claim")} disabled={status === "working"}>
-                      <Play />
-                      Claim proof lease
-                    </Button>
+                    <>
+                      {!request.execution && (
+                        <Button
+                          size="sm"
+                          onClick={() => void authorizeExecution(request)}
+                          disabled={status === "working"}
+                        >
+                          <ShieldCheck />
+                          Authorize isolated preparation
+                        </Button>
+                      )}
+                      {request.execution?.state === "authorized" && (
+                        <Button
+                          size="sm"
+                          onClick={() => void mutateExecution(request, "prepare")}
+                          disabled={status === "working"}
+                        >
+                          <Play />
+                          Prepare isolated workspace
+                        </Button>
+                      )}
+                      {["authorized", "preparing", "ready"].includes(
+                        request.execution?.state ?? ""
+                      ) && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void mutateExecution(request, "cancel")}
+                          disabled={status === "working"}
+                        >
+                          <Stop />
+                          Cancel and preserve
+                        </Button>
+                      )}
+                      {request.execution?.state === "preparing" && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => void mutateExecution(request, "reconcile")}
+                          disabled={status === "working"}
+                        >
+                          <ArrowClockwise />
+                          Reconcile interruption
+                        </Button>
+                      )}
+                    </>
                   )}
                   {request.state === "claimed" && (
                     <Button size="sm" onClick={() => void advance(request, "checkpoint")} disabled={status === "working"}>

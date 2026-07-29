@@ -18,7 +18,8 @@ const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
 const localRequests = new LocalRequestStore(
   stateDirectory,
-  (projectId) => localProjects.has(projectId)
+  (projectId) => localProjects.has(projectId),
+  (projectId) => localProjects.canonicalRoot(projectId)
 );
 
 async function setupObservation() {
@@ -113,6 +114,11 @@ const controlPlane = createControlPlaneServer({
     },
     updatePlan: (requestId, input) => localRequests.updatePlan(requestId, input),
     approvePlan: (requestId, input) => localRequests.approvePlan(requestId, input),
+    authorizeExecution: (requestId, input) =>
+      localRequests.authorizeExecution(requestId, input),
+    prepareExecution: (requestId) => localRequests.prepareExecution(requestId),
+    cancelExecution: (requestId) => localRequests.cancelExecution(requestId),
+    reconcileExecution: (requestId) => localRequests.reconcileExecution(requestId),
     archive: (requestId) => localRequests.archive(requestId),
   },
 });
@@ -120,7 +126,7 @@ const controlPlane = createControlPlaneServer({
 const boundPort = await controlPlane.listen();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
 console.log(
-  "Loopback API. Project registration and request queue are real local metadata; execution surfaces remain synthetic fixtures."
+  "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state."
 );
 
 let closing = false;

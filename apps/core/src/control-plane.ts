@@ -18,6 +18,7 @@ import { LocalProjectError } from "./local-project-registry.js";
 import {
   localPlanApprovalSchema,
   localPlanEditSchema,
+  localExecutionAuthorizationRequestSchema,
   localRequestCreationSchema,
   localRequestMutationResponseSchema,
   validateLocalRequestCollection,
@@ -25,6 +26,7 @@ import {
   type LocalRequestCollection,
 } from "../../../packages/runtime/src/local-requests.js";
 import { LocalRequestError } from "./local-request-store.js";
+import { LocalExecutionError } from "./local-execution.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 24_576;
@@ -54,6 +56,10 @@ export type ControlPlaneServerOptions = {
     ground?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     updatePlan?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
     approvePlan?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    authorizeExecution?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    prepareExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    cancelExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    reconcileExecution?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -150,8 +156,53 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-cancel|execution-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "execution-authorize" &&
+        options.requests?.authorizeExecution
+      ) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.authorizeExecution(
+          requestRoute[1] ?? "",
+          localExecutionAuthorizationRequestSchema.parse(await readJsonBody(request))
+        );
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: "execution_authorized",
+          request: changed,
+        }));
+        return;
+      }
+      const executionActions = {
+        "execution-prepare": options.requests?.prepareExecution,
+        "execution-cancel": options.requests?.cancelExecution,
+        "execution-reconcile": options.requests?.reconcileExecution,
+      } as const;
+      const executionAction = requestRoute?.[2] as keyof typeof executionActions | undefined;
+      if (
+        request.method === "POST" &&
+        executionAction &&
+        executionActions[executionAction]
+      ) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const changed = await executionActions[executionAction]!(requestRoute?.[1] ?? "");
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: ({
+            "execution-prepare": "workspace_prepared",
+            "execution-cancel": "execution_cancelled",
+            "execution-reconcile": "execution_reconciled",
+          } as const)[executionAction],
+          request: changed,
+        }));
+        return;
+      }
       if (
         request.method === "POST" &&
         requestRoute?.[2] === "plan-edit" &&
@@ -391,6 +442,14 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
                 error.code === "lease_active"
               ? 409
               : 400;
+        sendJson(response, status, { error: error.message, code: error.code });
+      } else if (error instanceof LocalExecutionError) {
+        const status =
+          error.code === "repository_dirty" ||
+          error.code === "repository_mismatch" ||
+          error.code === "workspace_conflict"
+            ? 409
+            : 400;
         sendJson(response, status, { error: error.message, code: error.code });
       } else if (error instanceof ControlPlaneRequestError || error instanceof ZodError) {
         sendJson(response, 400, {

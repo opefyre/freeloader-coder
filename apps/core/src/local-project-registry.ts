@@ -107,6 +107,16 @@ export class LocalProjectRegistry {
     return registry.projects.some((project) => project.id === projectId);
   }
 
+  async canonicalRoot(projectId: string): Promise<string> {
+    assertProjectId(projectId);
+    const registry = await this.#load();
+    const record = registry.projects.find((project) => project.id === projectId);
+    if (!record) {
+      throw new LocalProjectError("not_found", "Project registration was not found.");
+    }
+    return validateRepositoryRoot(record.canonicalPath);
+  }
+
   async grounding(projectId: string): Promise<LocalPlanningSnapshot> {
     assertProjectId(projectId);
     const registry = await this.#load();

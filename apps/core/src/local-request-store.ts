@@ -15,6 +15,8 @@ import {
   localRequestCreationSchema,
   localPlanApprovalSchema,
   localPlanEditSchema,
+  localExecutionAuthorizationRequestSchema,
+  localExecutionAuthoritySchema,
   localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
@@ -24,6 +26,12 @@ import {
   type LocalRequest,
   type LocalRequestCollection,
 } from "../../../packages/runtime/src/local-requests.js";
+import {
+  compileExecutionManifest,
+  inspectGitRepository,
+  prepareIsolatedWorktree,
+  preserveWorkspace,
+} from "./local-execution.js";
 
 const MAX_REQUESTS = 500;
 const sensitiveMaterial =
@@ -42,15 +50,20 @@ type PrivateStore = z.infer<typeof privateStoreSchema>;
 
 export class LocalRequestStore {
   readonly #storePath: string;
+  readonly #stateDirectory: string;
   readonly #projectExists: (projectId: string) => Promise<boolean>;
+  readonly #projectRoot: (projectId: string) => Promise<string>;
   #writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     stateDirectory: string,
-    projectExists: (projectId: string) => Promise<boolean>
+    projectExists: (projectId: string) => Promise<boolean>,
+    projectRoot: (projectId: string) => Promise<string> = async () => process.cwd()
   ) {
+    this.#stateDirectory = resolve(stateDirectory);
     this.#storePath = resolve(stateDirectory, "local-requests.json");
     this.#projectExists = projectExists;
+    this.#projectRoot = projectRoot;
   }
 
   async list(): Promise<LocalRequestCollection> {
@@ -535,6 +548,229 @@ export class LocalRequestStore {
     });
   }
 
+  authorizeExecution(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const authorization = localExecutionAuthorizationRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      if (record.request.execution) return record.request;
+      const plan = record.request.plan;
+      if (
+        record.request.state !== "approved" ||
+        !record.request.run ||
+        !plan ||
+        plan.state !== "approved" ||
+        !plan.approval
+      ) {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Approve and freeze the grounded plan before authorizing execution."
+        );
+      }
+      if (
+        plan.revision !== authorization.expectedPlanRevision ||
+        plan.digest !== authorization.expectedPlanDigest
+      ) {
+        throw new LocalRequestError(
+          "stale_revision",
+          "The approved plan changed. Refresh before authorizing execution."
+        );
+      }
+      if (!record.request.grounding || !record.request.topology) {
+        throw new LocalRequestError("grounding_mismatch", "Execution requires current grounding.");
+      }
+      const root = await this.#projectRoot(record.request.projectId);
+      const preflight = await inspectGitRepository(root);
+      const manifest = compileExecutionManifest(plan, preflight.baseline);
+      const authorizedAt = Date.now();
+      const canonical = JSON.stringify({
+        requestId: record.request.id,
+        projectId: record.request.projectId,
+        planDigest: plan.digest,
+        planRevision: plan.revision,
+        planApprovalDigest: plan.approval.digest,
+        groundingDigest: record.request.grounding.digest,
+        topologyDigest: record.request.topology.digest,
+        preflightDigest: preflight.digest,
+        manifestDigest: manifest.digest,
+        isolationProfile: authorization.isolationProfile,
+        maximumCostUsd: 0,
+      });
+      const authorityDigest = digest(canonical);
+      const authority = localExecutionAuthoritySchema.parse({
+        schemaVersion: 1,
+        id: `authority_${authorityDigest.slice(0, 20)}`,
+        digest: authorityDigest,
+        requestId: record.request.id,
+        projectId: record.request.projectId,
+        planDigest: plan.digest,
+        planRevision: plan.revision,
+        planApprovalDigest: plan.approval.digest,
+        groundingDigest: record.request.grounding.digest,
+        topologyDigest: record.request.topology.digest,
+        preflight,
+        manifest,
+        isolationProfile: authorization.isolationProfile,
+        maximumCostUsd: 0,
+        authorizedAt,
+        expiresAt: authorizedAt + 15 * 60_000,
+      });
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: authorizedAt,
+        execution: {
+          schemaVersion: 1,
+          state: "authorized",
+          authority,
+          workspace: null,
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run.events,
+            "execution_authorized",
+            authorizedAt,
+            "Clean baseline and isolated-worktree-only authority approved."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  prepareExecution(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      if (record.request.execution?.state === "ready") return record.request;
+      if (
+        !record.request.execution ||
+        record.request.execution.state !== "authorized" ||
+        Date.now() >= record.request.execution.authority.expiresAt
+      ) {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Execution authority is missing or expired. Authorize the current plan again."
+        );
+      }
+      const preparingAt = Date.now();
+      const preparing = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: preparingAt,
+        execution: { ...record.request.execution, state: "preparing" },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "workspace_preparing",
+            preparingAt,
+            "Preparing a private isolated Git worktree from the verified baseline."
+          ),
+        },
+      });
+      await this.#replace(store, preparing);
+      const root = await this.#projectRoot(record.request.projectId);
+      const workspace = await prepareIsolatedWorktree({
+        stateDirectory: this.#stateDirectory,
+        canonicalRoot: root,
+        requestId: record.request.id,
+        authority: record.request.execution.authority,
+      });
+      const readyAt = Date.now();
+      const ready = localRequestSchema.parse({
+        ...preparing,
+        updatedAt: readyAt,
+        execution: { ...preparing.execution, state: "ready", workspace },
+        run: {
+          ...preparing.run,
+          events: appendEvent(
+            preparing.run?.events ?? [],
+            "workspace_ready",
+            readyAt,
+            "Isolated worktree verified; no task, provider, network, or command execution started."
+          ),
+        },
+      });
+      await this.#replace(await this.#load(), ready);
+      return ready;
+    });
+  }
+
+  cancelExecution(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      if (record.request.execution?.state === "cancelled") return record.request;
+      if (
+        !record.request.execution ||
+        !["authorized", "ready", "preparing"].includes(record.request.execution.state)
+      ) {
+        throw new LocalRequestError("invalid_transition", "No active execution session can be cancelled.");
+      }
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        execution: {
+          ...record.request.execution,
+          state: "cancelled",
+          workspace: record.request.execution.workspace
+            ? preserveWorkspace(record.request.execution.workspace, "preserved")
+            : null,
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "execution_cancelled",
+            now,
+            "Execution cancelled; any isolated workspace was preserved for explicit recovery."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
+  reconcileExecution(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      if (record.request.execution?.state === "interrupted") return record.request;
+      if (!record.request.execution || record.request.execution.state !== "preparing") {
+        throw new LocalRequestError(
+          "invalid_transition",
+          "Only an interrupted preparation can be reconciled."
+        );
+      }
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request,
+        updatedAt: now,
+        execution: {
+          ...record.request.execution,
+          state: "interrupted",
+          workspace: record.request.execution.workspace
+            ? preserveWorkspace(record.request.execution.workspace, "interrupted")
+            : null,
+        },
+        run: {
+          ...record.request.run,
+          events: appendEvent(
+            record.request.run?.events ?? [],
+            "execution_reconciled",
+            now,
+            "Interrupted preparation preserved; explicit user recovery is required."
+          ),
+        },
+      });
+      await this.#replace(store, request);
+      return request;
+    });
+  }
+
   archive(requestId: string): Promise<void> {
     return this.#serialize(async () => {
       const store = await this.#load();
@@ -674,7 +910,12 @@ function event(
     | "lease_expired"
     | "grounding_created"
     | "plan_updated"
-    | "plan_approved",
+    | "plan_approved"
+    | "execution_authorized"
+    | "workspace_preparing"
+    | "workspace_ready"
+    | "execution_cancelled"
+    | "execution_reconciled",
   observedAt: number,
   detail: string
 ) {

@@ -59,6 +59,11 @@ export const localRunEventSchema = z.strictObject({
     "grounding_created",
     "plan_updated",
     "plan_approved",
+    "execution_authorized",
+    "workspace_preparing",
+    "workspace_ready",
+    "execution_cancelled",
+    "execution_reconciled",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
@@ -151,6 +156,88 @@ export const localPlanApprovalSchema = z.strictObject({
   expectedRevision: z.number().int().positive().max(100),
 });
 
+export const localExecutionAuthorizationRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedPlanRevision: z.number().int().positive().max(100),
+  expectedPlanDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  isolationProfile: z.literal("native_bounded_worktree"),
+});
+
+export const localRepositoryPreflightSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("bounded_git_observation"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  observedAt: z.number().int().nonnegative(),
+  baseline: z.string().regex(/^[a-f0-9]{40,64}$/),
+  branch: z.string().trim().min(1).max(200).nullable(),
+  clean: z.literal(true),
+  repositoryRootMatched: z.literal(true),
+  gitAvailable: z.literal(true),
+  limitations: z.array(z.string().trim().min(1).max(300)).min(1).max(10),
+});
+
+export const localExecutionManifestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  planDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  baseline: z.string().regex(/^[a-f0-9]{40,64}$/),
+  order: z.array(z.string().regex(/^task_[a-f0-9]{12}$/)).min(1).max(8),
+  tasks: z.array(z.strictObject({
+    id: z.string().regex(/^task_[a-f0-9]{12}$/),
+    title: z.string().trim().min(1).max(160),
+    allowedFiles: z.array(relativePath).min(1).max(12),
+    dependsOn: z.array(z.string().regex(/^task_[a-f0-9]{12}$/)).max(7),
+    checks: z.array(z.string().trim().min(1).max(160)).min(1).max(10),
+  })).min(1).max(8),
+  allowedEffects: z.tuple([z.literal("create_isolated_worktree")]),
+  excludedEffects: z.tuple([
+    z.literal("canonical_worktree_write"),
+    z.literal("network"),
+    z.literal("provider"),
+    z.literal("credential"),
+    z.literal("paid_usage"),
+    z.literal("publish"),
+    z.literal("deploy"),
+  ]),
+  maximumCostUsd: z.literal(0),
+});
+
+export const localExecutionAuthoritySchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^authority_[a-f0-9]{20}$/),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  requestId,
+  projectId,
+  planDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  planRevision: z.number().int().positive().max(100),
+  planApprovalDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  groundingDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  topologyDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  preflight: localRepositoryPreflightSchema,
+  manifest: localExecutionManifestSchema,
+  isolationProfile: z.literal("native_bounded_worktree"),
+  maximumCostUsd: z.literal(0),
+  authorizedAt: z.number().int().nonnegative(),
+  expiresAt: z.number().int().positive(),
+});
+
+export const localExecutionWorkspaceSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  workspaceRef: z.string().regex(/^workspace_[a-f0-9]{20}$/),
+  branch: z.string().regex(/^studio\/request-[a-f0-9]{12}-[a-f0-9]{10}$/),
+  baseline: z.string().regex(/^[a-f0-9]{40,64}$/),
+  state: z.enum(["ready", "preserved", "interrupted"]),
+  createdAt: z.number().int().nonnegative(),
+  stateDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const localExecutionSessionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  state: z.enum(["authorized", "preparing", "ready", "cancelled", "interrupted", "blocked"]),
+  authority: localExecutionAuthoritySchema,
+  workspace: localExecutionWorkspaceSchema.nullable(),
+});
+
 export const localPlanningSnapshotSchema = z.strictObject({
   schemaVersion: z.literal(1),
   grounding: localGroundingSchema,
@@ -193,6 +280,7 @@ export const localRequestSchema = z.strictObject({
   grounding: localGroundingSchema.optional(),
   topology: localTopologySchema.optional(),
   plan: localDraftPlanSchema.optional(),
+  execution: localExecutionSessionSchema.optional(),
 });
 
 export const localRequestCollectionSchema = z.strictObject({
@@ -214,6 +302,10 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "grounded",
     "plan_updated",
     "plan_approved",
+    "execution_authorized",
+    "workspace_prepared",
+    "execution_cancelled",
+    "execution_reconciled",
     "cancelled",
     "archived",
   ]),
@@ -229,6 +321,14 @@ export type LocalTopology = z.infer<typeof localTopologySchema>;
 export type LocalDraftPlan = z.infer<typeof localDraftPlanSchema>;
 export type LocalPlanEdit = z.infer<typeof localPlanEditSchema>;
 export type LocalPlanningSnapshot = z.infer<typeof localPlanningSnapshotSchema>;
+export type LocalExecutionAuthorizationRequest = z.infer<
+  typeof localExecutionAuthorizationRequestSchema
+>;
+export type LocalRepositoryPreflight = z.infer<typeof localRepositoryPreflightSchema>;
+export type LocalExecutionManifest = z.infer<typeof localExecutionManifestSchema>;
+export type LocalExecutionAuthority = z.infer<typeof localExecutionAuthoritySchema>;
+export type LocalExecutionWorkspace = z.infer<typeof localExecutionWorkspaceSchema>;
+export type LocalExecutionSession = z.infer<typeof localExecutionSessionSchema>;
 
 export function validateLocalRequestCollection(input: unknown): LocalRequestCollection {
   const collection = localRequestCollectionSchema.parse(input);
@@ -271,6 +371,37 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
       )
     ) {
       throw new Error("Local run state requires an execution contract.");
+    }
+    if (request.execution) {
+      const execution = request.execution;
+      if (
+        !request.plan ||
+        request.plan.state !== "approved" ||
+        !request.plan.approval ||
+        execution.authority.requestId !== request.id ||
+        execution.authority.projectId !== request.projectId ||
+        execution.authority.planDigest !== request.plan.digest ||
+        execution.authority.planRevision !== request.plan.revision ||
+        execution.authority.planApprovalDigest !== request.plan.approval.digest ||
+        execution.authority.groundingDigest !== request.grounding?.digest ||
+        execution.authority.topologyDigest !== request.topology?.digest ||
+        execution.authority.manifest.planDigest !== request.plan.digest ||
+        execution.authority.manifest.baseline !== execution.authority.preflight.baseline ||
+        execution.authority.maximumCostUsd !== 0
+      ) {
+        throw new Error("Local execution authority does not match the approved plan.");
+      }
+      if (
+        (execution.state === "ready" && execution.workspace?.state !== "ready") ||
+        (execution.state === "cancelled" &&
+          execution.workspace !== null &&
+          execution.workspace.state !== "preserved") ||
+        (execution.state === "interrupted" &&
+          execution.workspace !== null &&
+          execution.workspace.state !== "interrupted")
+      ) {
+        throw new Error("Local execution workspace does not match its session state.");
+      }
     }
   }
   return collection;

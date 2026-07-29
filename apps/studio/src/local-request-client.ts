@@ -1,6 +1,7 @@
 import {
   localPlanApprovalSchema,
   localPlanEditSchema,
+  localExecutionAuthorizationRequestSchema,
   localRequestCollectionSchema,
   localRequestMutationResponseSchema,
   type LocalRequestCollection,
@@ -109,6 +110,45 @@ export async function approveLocalPlan(input: {
       path: `/api/v1/requests/${input.requestId}/plan-approve`,
       method: "POST",
       body: localPlanApprovalSchema.parse(input.approval),
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
+export async function authorizeLocalExecution(input: {
+  endpoint: string;
+  requestId: string;
+  authorization: unknown;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/requests/${input.requestId}/execution-authorize`,
+      method: "POST",
+      body: localExecutionAuthorizationRequestSchema.parse(input.authorization),
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
+export async function advanceLocalExecution(input: {
+  endpoint: string;
+  requestId: string;
+  action: "prepare" | "cancel" | "reconcile";
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/requests/${input.requestId}/execution-${input.action}`,
+      method: "POST",
       idempotencyKey: input.idempotencyKey,
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
     })
