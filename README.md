@@ -128,3 +128,16 @@ deployment, campaign, analytics transmission, or provider request.
 
 Implementation is tracked in the
 [PIPE Jira project](https://opefyre.atlassian.net/jira/software/projects/PIPE/backlog).
+
+## Documentation
+
+The
+[PIPE Confluence documentation hub](https://opefyre.atlassian.net/wiki/spaces/PI/pages/27951631/Pipeline+Studio+Documentation+Hub)
+is the system of record for durable product, architecture, governance,
+operations, research, and delivery-evidence documentation. Jira remains the
+work record, and completion comments must link the relevant Confluence page.
+
+Repository entry documents and code-adjacent material required by GitHub,
+builds, releases, security, or open-source workflows remain in Git. Existing
+files under `docs/` are historical migration mirrors; do not add new sprint
+evidence or general product documentation there.
