@@ -7,6 +7,7 @@ import { LocalProjectRegistry } from "./local-project-registry.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
 import { LocalSensitiveCommandRunner } from "./sensitive-command-runner.js";
+import { ProviderConnectionService } from "./provider-connection-service.js";
 import { JsonProviderConnectionRepository } from "../../../packages/storage/src/provider-connections.js";
 import { createOpenAiCompatibleAdapter } from "../../../packages/providers/src/openai-compatible.js";
 import {
@@ -76,6 +77,23 @@ const proposalGenerator = new LocalProposalGenerator(
     },
   }
 );
+const providerConnectionService = new ProviderConnectionService(
+  providerConnections,
+  credentialVault,
+  {
+    adapter(providerId) {
+      try {
+        const current = adapterCache.get(providerId);
+        if (current) return current;
+        const adapter = createOpenAiCompatibleAdapter({ providerId });
+        adapterCache.set(providerId, adapter);
+        return adapter;
+      } catch {
+        return null;
+      }
+    }
+  }
+);
 
 async function setupObservation() {
   try {
@@ -143,6 +161,15 @@ const controlPlane = createControlPlaneServer({
         },
       ],
     };
+  },
+  providerConnections: {
+    list: () => providerConnectionService.list(),
+    connect: (input) => providerConnectionService.connect(input),
+    reProbe: (connectionId) => providerConnectionService.reProbe(connectionId),
+    replaceModel: (connectionId, input) =>
+      providerConnectionService.replaceModel(connectionId, input),
+    revoke: (connectionId) => providerConnectionService.revoke(connectionId),
+    disconnect: (connectionId) => providerConnectionService.disconnect(connectionId)
   },
   projects: {
     list: () => localProjects.list(),

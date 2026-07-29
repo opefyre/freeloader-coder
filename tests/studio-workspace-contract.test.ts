@@ -83,20 +83,17 @@ test("workspace renders provider evidence as interactive, explicitly demo-scoped
   assert.doesNotMatch(fixture, /from "\.\.\/\.\.\/\.\.\/packages\/providers\/src\/index\.js"/);
 });
 
-test("provider setup exposes verified sources, implementation work, and honest admission states", async () => {
+test("provider setup mounts the live loopback workflow and removes fixture connection claims", async () => {
   const workspace = await readFile("apps/studio/src/App.tsx", "utf8");
-  for (const ticket of ["PIPE-179", "PIPE-180", "PIPE-181", "PIPE-182", "PIPE-183"]) {
-    assert.match(workspace, new RegExp(ticket));
-  }
-  assert.match(workspace, /Open implementation ticket/);
-  assert.match(workspace, /Free-tier proof/);
-  assert.match(workspace, /Run a bounded live canary/);
-  assert.match(workspace, /Prove free status and account limits/);
-  assert.match(workspace, /Promotional credit requires a separate balance-safe policy/);
-  assert.match(workspace, /Advanced · sanitized admission evidence/);
-  assert.match(workspace, /Required before dispatch/);
-  assert.match(workspace, /Excluded from permanent free/);
-  assert.match(workspace, /onClick=\{onSelect\}/);
+  const wizard = await readFile("apps/studio/src/components/providers/provider-connection-wizard.tsx", "utf8");
+  const client = await readFile("apps/studio/src/provider-connection-client.ts", "utf8");
+  assert.match(workspace, /ProviderConnectionWizard endpoint=\{controlPlaneEndpoint\}/);
+  assert.match(wizard, /Official source/);
+  assert.match(wizard, /structured-output evidence/);
+  assert.match(wizard, /Current local evidence only/);
+  assert.match(wizard, /Paid, promotional-credit, billing-enabled, stale, revoked, and unproven routes fail closed/);
+  assert.match(client, /\/api\/v1\/provider-connections/);
+  assert.doesNotMatch(workspace, /Demo evidence marks this connection ready/);
 });
 
 test("workspace exposes an interactive denial-of-wallet proof instead of a cost promise", async () => {

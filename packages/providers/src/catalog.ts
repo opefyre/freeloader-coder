@@ -17,6 +17,8 @@ export interface ProviderCatalogEntry {
   readonly id: string;
   readonly label: string;
   readonly apiBaseUrl: string;
+  readonly modelsPath?: string | undefined;
+  readonly chatCompletionsPath?: string | undefined;
   readonly dashboardUrl: string;
   readonly apiKeyEnvironmentVariable: string;
   readonly protocol: "openai_compatible";
@@ -35,6 +37,112 @@ export interface ProviderCatalogEntry {
 }
 
 export const verifiedProviderCatalog: readonly ProviderCatalogEntry[] = [
+  {
+    id: "groq",
+    label: "Groq",
+    apiBaseUrl: "https://api.groq.com/openai/v1",
+    dashboardUrl: "https://console.groq.com/keys",
+    apiKeyEnvironmentVariable: "GROQ_API_KEY",
+    protocol: "openai_compatible",
+    freeAccess: "account_limited",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "Fast developer-tier inference admitted only after a live model and structured-output canary.",
+    sourceUrls: [
+      "https://console.groq.com/docs/models",
+      "https://console.groq.com/docs/rate-limits"
+    ],
+    models: [
+      {
+        id: "openai/gpt-oss-120b",
+        label: "GPT OSS 120B",
+        contextWindowTokens: 131_072,
+        maxOutputTokens: 65_536,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
+  },
+  {
+    id: "gemini",
+    label: "Google Gemini",
+    apiBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    dashboardUrl: "https://aistudio.google.com/apikey",
+    apiKeyEnvironmentVariable: "GEMINI_API_KEY",
+    protocol: "openai_compatible",
+    freeAccess: "account_limited",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "Google AI Studio free-project access; billing-enabled projects are excluded by user attestation.",
+    sourceUrls: [
+      "https://ai.google.dev/gemini-api/docs/openai",
+      "https://ai.google.dev/gemini-api/docs/rate-limits"
+    ],
+    models: [
+      {
+        id: "gemini-2.5-flash-lite",
+        label: "Gemini 2.5 Flash-Lite",
+        contextWindowTokens: 1_048_576,
+        maxOutputTokens: 65_536,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    apiBaseUrl: "https://openrouter.ai/api/v1",
+    dashboardUrl: "https://openrouter.ai/settings/keys",
+    apiKeyEnvironmentVariable: "OPENROUTER_API_KEY",
+    protocol: "openai_compatible",
+    freeAccess: "account_limited",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "Rotating free-model routing; only the explicit zero-cost router is eligible.",
+    sourceUrls: [
+      "https://openrouter.ai/docs/api/reference/overview",
+      "https://openrouter.ai/models?max_price=0"
+    ],
+    models: [
+      {
+        id: "openrouter/free",
+        label: "OpenRouter Free Router",
+        contextWindowTokens: 131_072,
+        maxOutputTokens: 16_384,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
+  },
+  {
+    id: "github-models",
+    label: "GitHub Models",
+    apiBaseUrl: "https://models.github.ai",
+    modelsPath: "/catalog/models",
+    chatCompletionsPath: "/inference/chat/completions",
+    dashboardUrl: "https://github.com/marketplace/models",
+    apiKeyEnvironmentVariable: "GITHUB_TOKEN",
+    protocol: "openai_compatible",
+    freeAccess: "account_limited",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "Account-limited model inference with repository write access neither requested nor required.",
+    sourceUrls: [
+      "https://docs.github.com/en/rest/models/catalog",
+      "https://docs.github.com/en/github-models"
+    ],
+    models: [
+      {
+        id: "openai/gpt-4.1-mini",
+        label: "GPT-4.1 Mini",
+        contextWindowTokens: 1_048_576,
+        maxOutputTokens: 32_768,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
+  },
   {
     id: "cerebras",
     label: "Cerebras",

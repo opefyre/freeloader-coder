@@ -38,6 +38,16 @@ import {
 } from "../../../packages/runtime/src/local-requests.js";
 import { LocalRequestError } from "./local-request-store.js";
 import { LocalExecutionError } from "./local-execution.js";
+import {
+  providerConnectRequestSchema,
+  providerModelChangeRequestSchema,
+  publicProviderConnectionCollectionSchema,
+  providerConnectionMutationResponseSchema,
+  type PublicProviderConnectionCollection,
+  type ProviderConnectionMutationResponse
+} from "../../../packages/runtime/src/provider-connections.js";
+import { ProviderConnectionLifecycleError } from "../../../packages/providers/src/lifecycle.js";
+import { ProviderConnectionServiceError } from "./provider-connection-service.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -49,6 +59,14 @@ export type ControlPlaneServerOptions = {
   allowedOrigins: readonly string[];
   health: () => ControlPlaneHealth | Promise<ControlPlaneHealth>;
   snapshot: () => ControlPlaneSnapshot | Promise<ControlPlaneSnapshot>;
+  providerConnections?: {
+    list: () => PublicProviderConnectionCollection | Promise<PublicProviderConnectionCollection>;
+    connect: (input: unknown) => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>;
+    reProbe: (connectionId: string) => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>;
+    replaceModel: (connectionId: string, input: unknown) => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>;
+    revoke: (connectionId: string) => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>;
+    disconnect: (connectionId: string) => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>;
+  };
   projects?: {
     list: () => LocalProjectCollection | Promise<LocalProjectCollection>;
     register: (input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
@@ -152,6 +170,88 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const url = new URL(request.url ?? "/", `http://${options.host}`);
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/provider-connections" &&
+        options.providerConnections
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(
+          response,
+          200,
+          publicProviderConnectionCollectionSchema.parse(
+            await options.providerConnections.list()
+          )
+        );
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/provider-connections" &&
+        options.providerConnections
+      ) {
+        requireIdempotencyKey(request);
+        response.setTimeout(90_000, () => response.destroy());
+        const body = providerConnectRequestSchema.parse(await readJsonBody(request));
+        sendJson(
+          response,
+          200,
+          providerConnectionMutationResponseSchema.parse(
+            await options.providerConnections.connect(body)
+          )
+        );
+        return;
+      }
+      const providerConnectionRoute = url.pathname.match(
+        /^\/api\/v1\/provider-connections\/([a-zA-Z0-9][a-zA-Z0-9._-]{0,119})\/(reprobe|model|revoke|registration)$/
+      );
+      if (
+        request.method === "POST" &&
+        providerConnectionRoute &&
+        options.providerConnections
+      ) {
+        requireIdempotencyKey(request);
+        response.setTimeout(90_000, () => response.destroy());
+        const id = providerConnectionRoute[1] ?? "";
+        const action = providerConnectionRoute[2];
+        const result =
+          action === "reprobe"
+            ? await bodylessProviderAction(request, () => options.providerConnections!.reProbe(id))
+            : action === "model"
+              ? await options.providerConnections.replaceModel(
+                  id,
+                  providerModelChangeRequestSchema.parse(await readJsonBody(request))
+                )
+              : action === "revoke"
+                ? await bodylessProviderAction(request, () => options.providerConnections!.revoke(id))
+                : null;
+        if (result) {
+          sendJson(response, 200, providerConnectionMutationResponseSchema.parse(result));
+          return;
+        }
+      }
+      if (
+        request.method === "DELETE" &&
+        providerConnectionRoute?.[2] === "registration" &&
+        options.providerConnections
+      ) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(
+          response,
+          200,
+          providerConnectionMutationResponseSchema.parse(
+            await options.providerConnections.disconnect(providerConnectionRoute[1] ?? "")
+          )
+        );
+        return;
+      }
       if (
         ["/api/v1/health", "/api/v1/snapshot"].includes(url.pathname) &&
         request.method !== "GET"
@@ -683,6 +783,19 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             ? 409
             : 400;
         sendJson(response, status, { error: error.message, code: error.code });
+      } else if (
+        error instanceof ProviderConnectionLifecycleError ||
+        error instanceof ProviderConnectionServiceError
+      ) {
+        const status =
+          ["connection-missing"].includes(error.code)
+            ? 404
+            : ["connection-conflict"].includes(error.code)
+              ? 409
+              : ["probe-failed", "adapter-unavailable"].includes(error.code)
+                ? 503
+                : 400;
+        sendJson(response, status, { error: error.message, code: error.code });
       } else if (error instanceof ControlPlaneRequestError || error instanceof ZodError) {
         sendJson(response, 400, {
           error:
@@ -752,6 +865,16 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
 }
 
 class ControlPlaneRequestError extends Error {}
+
+async function bodylessProviderAction(
+  request: IncomingMessage,
+  action: () => ProviderConnectionMutationResponse | Promise<ProviderConnectionMutationResponse>
+): Promise<ProviderConnectionMutationResponse> {
+  if (requestBodyDeclared(request)) {
+    throw new ControlPlaneRequestError("Request body is not accepted.");
+  }
+  return action();
+}
 
 function validateOrigin(origin: string): string {
   const url = new URL(origin);

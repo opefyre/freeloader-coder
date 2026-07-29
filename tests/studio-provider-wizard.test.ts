@@ -5,12 +5,15 @@ import test from "node:test";
 const path =
   "apps/studio/src/components/providers/provider-connection-wizard.tsx";
 
-test("provider wizard exposes secure connection, trust, repair, and revocation states", async () => {
+test("provider wizard exposes secure live admission, recovery, and revocation states", async () => {
   const source = await readFile(path, "utf8");
-  assert.match(source, /Connect a provider without editing files/);
-  assert.match(source, /Operating-system vault/);
-  assert.match(source, /Preview a repair path/);
-  assert.match(source, /Revoke local access/);
+  assert.match(source, /Connect, prove, and route/);
+  assert.match(source, /operating-system vault/);
+  assert.match(source, /Running admission checks/);
+  assert.match(source, /Re-check/);
+  assert.match(source, /Revoke key/);
+  assert.match(source, /mutateProviderConnection/);
+  assert.doesNotMatch(source, /demoFingerprint|recordProviderValidation/);
 });
 
 test("provider wizard uses approved components and icon family", async () => {
@@ -24,9 +27,8 @@ test("provider wizard uses approved components and icon family", async () => {
 
 test("provider wizard has keyboard semantics and responsive layout", async () => {
   const source = await readFile(path, "utf8");
-  assert.match(source, /aria-label="Guided provider connection"/);
+  assert.match(source, /aria-label="Live provider connections"/);
   assert.match(source, /aria-pressed=/);
   assert.match(source, /xl:grid-cols/);
   assert.match(source, /focus-visible:ring/);
 });
-

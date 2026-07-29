@@ -20,7 +20,16 @@ test("only verified permanent or account-limited providers enter free routing", 
   const eligible = verifiedProviderCatalog
     .filter((provider) => provider.zeroCostEligible)
     .map((provider) => provider.id);
-  assert.deepEqual(eligible, ["cerebras", "mistral", "zhipu", "sambanova"]);
+  assert.deepEqual(eligible, [
+    "groq",
+    "gemini",
+    "openrouter",
+    "github-models",
+    "cerebras",
+    "mistral",
+    "zhipu",
+    "sambanova"
+  ]);
   assert.equal(catalogProvider("deepseek").freeAccess, "promotional_credit");
   assert.throws(
     () => createFreeCatalogCandidate({

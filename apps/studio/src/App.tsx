@@ -235,71 +235,6 @@ const providerColor: Record<string, string> = {
   sambanova: "bg-chart-1",
 };
 
-const connectionProfiles = [
-  {
-    id: "groq",
-    name: "Groq",
-    state: "Connected",
-    dashboardUrl: "https://console.groq.com",
-    sourceUrl: "https://console.groq.com/docs/rate-limits",
-    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
-    access: "Free account",
-  },
-  {
-    id: "cloudflare",
-    name: "Cloudflare Workers AI",
-    state: "Connected",
-    dashboardUrl: "https://dash.cloudflare.com",
-    sourceUrl: "https://developers.cloudflare.com/workers-ai/platform/pricing/",
-    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
-    access: "Free allowance",
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    state: "Connected",
-    dashboardUrl: "https://aistudio.google.com/apikey",
-    sourceUrl: "https://ai.google.dev/gemini-api/docs/rate-limits",
-    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
-    access: "Free project only",
-  },
-  {
-    id: "openrouter",
-    name: "OpenRouter",
-    state: "Connected",
-    dashboardUrl: "https://openrouter.ai/settings/keys",
-    sourceUrl: "https://openrouter.ai/models?max_price=0",
-    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
-    access: "Free models only",
-  },
-  {
-    id: "github",
-    name: "GitHub Models",
-    state: "Setup needed",
-    dashboardUrl: "https://github.com/marketplace/models",
-    sourceUrl: "https://docs.github.com/en/github-models",
-    workItemUrl: "https://opefyre.atlassian.net/browse/PIPE-49",
-    access: "Account limited",
-  },
-  ...verifiedProviderSnapshot.map((provider) => ({
-    id: provider.id,
-    name: provider.label,
-    state: provider.zeroCostEligible ? "Setup needed" : "Credit only",
-    dashboardUrl: provider.dashboardUrl,
-    sourceUrl: provider.sourceUrl,
-    workItemUrl: `https://opefyre.atlassian.net/browse/${
-      {
-        cerebras: "PIPE-179",
-        mistral: "PIPE-180",
-        zhipu: "PIPE-181",
-        sambanova: "PIPE-182",
-        deepseek: "PIPE-183",
-      }[provider.id] ?? "PIPE-178"
-    }`,
-    access: provider.zeroCostEligible ? "Verified free candidate" : "Not a permanent free tier",
-  })),
-] as const;
-
 const summaryMetrics = {
   active: controlCenterMetric("active_leases"),
   queue: controlCenterMetric("queue"),
@@ -981,6 +916,7 @@ function App() {
                 <SyntheticRouteFailure active={simulateRouteFailure} />
                 <WorkspaceSurface
                   view={activeView}
+                  controlPlaneEndpoint={controlPlane.endpoint}
                   selectedProvider={selectedProvider}
                   setSelectedProvider={setSelectedProvider}
                   selectedConnection={selectedConnection}
@@ -1048,6 +984,7 @@ function App() {
 
 function WorkspaceSurface({
   view,
+  controlPlaneEndpoint,
   selectedProvider,
   setSelectedProvider,
   selectedConnection,
@@ -1059,6 +996,7 @@ function WorkspaceSurface({
   navigate,
 }: {
   view: Exclude<StudioView, "overview">;
+  controlPlaneEndpoint: string;
   selectedProvider: string;
   setSelectedProvider: (provider: string) => void;
   selectedConnection: string;
@@ -1289,6 +1227,7 @@ function WorkspaceSurface({
 
   return (
     <SettingsWorkspace
+      controlPlaneEndpoint={controlPlaneEndpoint}
       selectedConnection={selectedConnection}
       setSelectedConnection={setSelectedConnection}
     />
@@ -1789,9 +1728,11 @@ function PlanGroup({ label, items }: { label: string; items: readonly string[] }
 }
 
 function SettingsWorkspace({
+  controlPlaneEndpoint,
   selectedConnection,
   setSelectedConnection,
 }: {
+  controlPlaneEndpoint: string;
   selectedConnection: string;
   setSelectedConnection: (provider: string) => void;
 }) {
@@ -2013,60 +1954,7 @@ function SettingsWorkspace({
       </TabsContent>
 
       <TabsContent value="connections">
-        <div className="mb-4">
-          <ProviderConnectionWizard />
-        </div>
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Provider connections</CardTitle>
-              <CardDescription>
-                Keys stay local and are never placed in prompts, logs, or exports.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="mt-6 space-y-2">
-              {connectionProfiles.map((connection) => (
-                <ConnectionRow
-                  key={connection.id}
-                  name={connection.name}
-                  state={connection.state}
-                  selected={selectedConnection === connection.id}
-                  onSelect={() => setSelectedConnection(connection.id)}
-                />
-              ))}
-            </CardContent>
-          </Card>
-          <div className="space-y-4">
-            <ConnectionSetup providerId={selectedConnection} />
-            <Card>
-              <CardHeader>
-                <CardTitle>Denial of wallet</CardTitle>
-                <CardDescription>
-                  Free-only is enforced as policy, not presented as a promise.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="mt-6">
-                <div className="rounded-3xl bg-emerald-400/[.07] p-6">
-                  <span className="text-xs text-muted-foreground">
-                    Maximum automatic spend
-                  </span>
-                  <strong className="mt-2 block text-4xl tracking-tight">$0.00</strong>
-                  <Badge tone="positive" className="mt-5">
-                    Enforced
-                  </Badge>
-                </div>
-                <ul className="mt-5 space-y-3 text-sm text-muted-foreground">
-                  {costSafetySummary.safeguards.map((safeguard) => (
-                    <li key={safeguard} className="flex items-center gap-2">
-                      <Check className="text-emerald-600 dark:text-emerald-300" weight="bold" />
-                      {safeguard}
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
       </TabsContent>
     </Tabs>
     </>
@@ -2289,136 +2177,6 @@ function Checkpoint({
       </span>
       <Badge tone="positive">{status}</Badge>
     </div>
-  );
-}
-
-function ConnectionSetup({ providerId }: { providerId: string }) {
-  const connection =
-    connectionProfiles.find((candidate) => candidate.id === providerId) ??
-    connectionProfiles[0]!;
-  const ready = connection.state === "Connected";
-  const creditOnly = connection.state === "Credit only";
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle>{connection.name}</CardTitle>
-          <Badge tone={ready ? "positive" : creditOnly ? "caution" : "neutral"}>
-            {connection.state}
-          </Badge>
-        </div>
-        <CardDescription>{connection.access}</CardDescription>
-      </CardHeader>
-      <CardContent className="mt-5 space-y-4">
-        <div className="space-y-2">
-          {[
-            ready ? "Credential reference stored" : "Add a key to the local credential vault",
-            ready ? "Live route observed" : "Run a bounded live canary",
-            ready ? "Capacity tracked" : "Prove free status and account limits",
-          ].map((step, index) => (
-            <div key={step} className="flex items-start gap-3 rounded-2xl bg-muted/45 p-3">
-              <span className="grid size-6 shrink-0 place-items-center rounded-full bg-background text-[10px] font-semibold">
-                {index + 1}
-              </span>
-              <span className="text-xs leading-5 text-muted-foreground">{step}</span>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs leading-5 text-muted-foreground">
-          {creditOnly
-            ? "This provider stays outside permanent free routing. Promotional credit requires a separate balance-safe policy."
-            : ready
-              ? "Demo evidence marks this connection ready. Production readiness still depends on current, sanitized canary evidence."
-              : "Catalog verification is complete. The route remains inactive until its credential, cost, quota, model, and capability evidence pass."}
-        </p>
-        <details className="rounded-2xl bg-muted/45 p-4">
-          <summary className="cursor-pointer text-xs font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/30">
-            Advanced · sanitized admission evidence
-          </summary>
-          <dl className="mt-4 grid gap-3 text-xs">
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted-foreground">Credential</dt>
-              <dd>{ready ? "vault:•••• / fingerprint only" : "Not stored"}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted-foreground">Live canary</dt>
-              <dd>{ready ? "Fresh · chat proven" : "Required before dispatch"}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted-foreground">Account limits</dt>
-              <dd>{ready ? "Observed · freshness tracked" : "Not observed"}</dd>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted-foreground">Routing</dt>
-              <dd>{creditOnly ? "Excluded from permanent free" : ready ? "Admitted" : "Held safely"}</dd>
-            </div>
-          </dl>
-        </details>
-        <div className="grid grid-cols-2 gap-2">
-          <a
-            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "w-full")}
-            href={connection.dashboardUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Dashboard
-            <ArrowRight />
-          </a>
-          <a
-            className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "w-full")}
-            href={connection.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Free-tier proof
-          </a>
-        </div>
-        <a
-          className={cn(buttonVariants({ size: "sm" }), "w-full")}
-          href={connection.workItemUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open implementation ticket
-          <ArrowRight />
-        </a>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ConnectionRow({
-  name,
-  state,
-  selected,
-  onSelect,
-}: {
-  name: string;
-  state: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const connected = state === "Connected";
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-2xl bg-muted/45 p-4 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
-        selected && "bg-primary/[.08] ring-1 ring-primary/15"
-      )}
-    >
-      <span
-        className={cn(
-          "size-2 rounded-full",
-          connected ? "bg-emerald-400" : "bg-amber-400"
-        )}
-      />
-      <strong className="min-w-0 flex-1 truncate text-sm">{name}</strong>
-      <Badge tone={connected ? "positive" : "caution"}>{state}</Badge>
-      <ArrowRight className="text-muted-foreground" />
-    </button>
   );
 }
 

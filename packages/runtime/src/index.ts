@@ -4,4 +4,5 @@ export * from "./local-projects.js";
 export * from "./local-requests.js";
 export * from "./lifecycle.js";
 export * from "./preflight.js";
+export * from "./provider-connections.js";
 export * from "./sandbox.js";

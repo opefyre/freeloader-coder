@@ -47,7 +47,7 @@ export function createOpenAiCompatibleAdapter(input: {
 
   async function authorizedJson(
     credential: ProviderCredentialInput,
-    path: "/models" | "/chat/completions",
+    path: string,
     init: RequestInit,
     timeoutMs: number
   ): Promise<{ value: unknown; headers: Headers }> {
@@ -56,6 +56,9 @@ export function createOpenAiCompatibleAdapter(input: {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     timer.unref?.();
     try {
+      if (!/^\/[a-z0-9_./-]+$/i.test(path) || path.includes("..")) {
+        throw new Error("Provider adapter path is not catalog-safe.");
+      }
       const response = await request(`${apiBaseUrl}${path}`, {
         ...init,
         redirect: "error",
@@ -108,7 +111,12 @@ export function createOpenAiCompatibleAdapter(input: {
     manifest,
     async validateCredential(credential) {
       try {
-        await authorizedJson(credential, "/models", { method: "GET" }, 15_000);
+        await authorizedJson(
+          credential,
+          provider.modelsPath ?? "/models",
+          { method: "GET" },
+          15_000
+        );
         return { valid: true, accountLabel: provider.label, error: null };
       } catch (error) {
         if (!(error instanceof ProviderAdapterFailure)) throw error;
@@ -118,7 +126,7 @@ export function createOpenAiCompatibleAdapter(input: {
     async discoverModels(credential) {
       const { value } = await authorizedJson(
         credential,
-        "/models",
+        provider.modelsPath ?? "/models",
         { method: "GET" },
         20_000
       );
@@ -155,7 +163,7 @@ export function createOpenAiCompatibleAdapter(input: {
     async chat(credential, chatRequest) {
       const { value, headers } = await authorizedJson(
         credential,
-        "/chat/completions",
+        provider.chatCompletionsPath ?? "/chat/completions",
         {
           method: "POST",
           body: JSON.stringify(toProviderRequest(chatRequest)),
@@ -316,7 +324,13 @@ async function readBoundedBody(response: Response, limit: number): Promise<strin
 
 function modelIds(value: unknown): Set<string> {
   const root = record(value);
-  const data = Array.isArray(root.data) ? root.data : [];
+  const data = Array.isArray(value)
+    ? value
+    : Array.isArray(root.data)
+      ? root.data
+      : Array.isArray(root.models)
+        ? root.models
+        : [];
   return new Set(
     data.flatMap((item) => {
       const id = record(item).id;
@@ -370,4 +384,3 @@ function failure(
     extensions: [],
   });
 }
-
