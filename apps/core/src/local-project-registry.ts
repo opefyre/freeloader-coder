@@ -79,6 +79,12 @@ export class LocalProjectRegistry {
     });
   }
 
+  async has(projectId: string): Promise<boolean> {
+    assertProjectId(projectId);
+    const registry = await this.#load();
+    return registry.projects.some((project) => project.id === projectId);
+  }
+
   async register(input: unknown): Promise<LocalProjectSnapshot> {
     const request = localProjectRegistrationSchema.parse(input);
     const canonicalPath = await validateRepositoryRoot(request.path);

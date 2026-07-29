@@ -15,9 +15,17 @@ import {
   type LocalProjectSnapshot,
 } from "../../../packages/runtime/src/local-projects.js";
 import { LocalProjectError } from "./local-project-registry.js";
+import {
+  localRequestCreationSchema,
+  localRequestMutationResponseSchema,
+  validateLocalRequestCollection,
+  type LocalRequest,
+  type LocalRequestCollection,
+} from "../../../packages/runtime/src/local-requests.js";
+import { LocalRequestError } from "./local-request-store.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
-const MAX_REQUEST_BYTES = 1_024;
+const MAX_REQUEST_BYTES = 24_576;
 const REQUEST_TIMEOUT_MS = 5_000;
 
 export type ControlPlaneServerOptions = {
@@ -31,6 +39,12 @@ export type ControlPlaneServerOptions = {
     register: (input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     rescan: (projectId: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     forget: (projectId: string) => void | Promise<void>;
+  };
+  requests?: {
+    list: () => LocalRequestCollection | Promise<LocalRequestCollection>;
+    create: (input: unknown, idempotencyKey: string) => LocalRequest | Promise<LocalRequest>;
+    cancel: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    archive: (requestId: string) => void | Promise<void>;
   };
 };
 
@@ -88,6 +102,88 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         request.method !== "GET"
       ) {
         sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/requests" &&
+        options.requests
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(
+          response,
+          200,
+          validateLocalRequestCollection(await options.requests.list())
+        );
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/requests" &&
+        options.requests
+      ) {
+        const idempotencyKey = requireIdempotencyKey(request);
+        const body = localRequestCreationSchema.parse(await readJsonBody(request));
+        const created = await options.requests.create(body, idempotencyKey);
+        sendJson(
+          response,
+          200,
+          localRequestMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "created",
+            request: created,
+          })
+        );
+        return;
+      }
+      const requestRoute = url.pathname.match(
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(cancel|archive)$/
+      );
+      if (
+        request.method === "POST" &&
+        requestRoute?.[2] === "cancel" &&
+        options.requests
+      ) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const cancelled = await options.requests.cancel(requestRoute[1] ?? "");
+        sendJson(
+          response,
+          200,
+          localRequestMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "cancelled",
+            request: cancelled,
+          })
+        );
+        return;
+      }
+      if (
+        request.method === "DELETE" &&
+        requestRoute?.[2] === "archive" &&
+        options.requests
+      ) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        await options.requests.archive(requestRoute[1] ?? "");
+        sendJson(
+          response,
+          200,
+          localRequestMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "archived",
+            request: null,
+          })
+        );
         return;
       }
       if (request.method === "GET" && url.pathname === "/api/v1/health") {
@@ -200,6 +296,16 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
               ? 409
               : 400;
         sendJson(response, status, { error: error.message, code: error.code });
+      } else if (error instanceof LocalRequestError) {
+        const status =
+          error.code === "not_found" || error.code === "project_not_found"
+            ? 404
+            : error.code === "idempotency_conflict" ||
+                error.code === "invalid_transition" ||
+                error.code === "capacity"
+              ? 409
+              : 400;
+        sendJson(response, status, { error: error.message, code: error.code });
       } else if (error instanceof ControlPlaneRequestError || error instanceof ZodError) {
         sendJson(response, 400, {
           error:
@@ -238,7 +344,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
   };
 }
 
-function requireIdempotencyKey(request: IncomingMessage): void {
+function requireIdempotencyKey(request: IncomingMessage): string {
   const value = request.headers["idempotency-key"];
   if (
     typeof value !== "string" ||
@@ -246,6 +352,7 @@ function requireIdempotencyKey(request: IncomingMessage): void {
   ) {
     throw new ControlPlaneRequestError("A valid idempotency key is required.");
   }
+  return value;
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {

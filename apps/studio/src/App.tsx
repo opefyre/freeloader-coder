@@ -98,6 +98,11 @@ const ConversationWorkbench = lazy(() =>
     default: module.ConversationWorkbench,
   }))
 );
+const LocalRequestPanel = lazy(() =>
+  import("./components/conversation/local-request-panel.js").then((module) => ({
+    default: module.LocalRequestPanel,
+  }))
+);
 const ExecutionSafetyPanel = lazy(() =>
   import("./components/execution/execution-safety-panel.js").then((module) => ({
     default: module.ExecutionSafetyPanel,
@@ -1069,12 +1074,34 @@ function WorkspaceSurface({
   }
 
   if (view === "conversation") {
-    return <ConversationWorkbench navigate={navigate} />;
+    return (
+      <div className="min-w-0 space-y-4">
+        <LocalRequestPanel mode="compose" navigate={navigate} />
+        <div className="px-1 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge>Guided interaction preview</Badge>
+            <span className="text-xs text-muted-foreground">
+              Explore advanced conversation controls without creating active work.
+            </span>
+          </div>
+        </div>
+        <ConversationWorkbench navigate={navigate} />
+      </div>
+    );
   }
 
   if (view === "work") {
     return (
       <div className="min-w-0 space-y-4">
+        <LocalRequestPanel mode="queue" />
+        <div className="px-1 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge>Guided interaction preview</Badge>
+            <span className="text-xs text-muted-foreground">
+              The orchestration controls below are an interactive preview, not active work.
+            </span>
+          </div>
+        </div>
         <ExecutionSafetyPanel />
         <OrchestrationWorkbench />
       </div>

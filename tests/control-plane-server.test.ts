@@ -219,3 +219,113 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
     await controlPlane.close();
   }
 });
+
+test("request endpoints expose only durable queue metadata with guarded mutations", async () => {
+  const queued = {
+    schemaVersion: 1 as const,
+    id: "request_0123456789abcdef0123",
+    projectId: "project_0123456789abcdef",
+    outcome: "Build request intake.",
+    readiness: "ready" as const,
+    state: "queued" as const,
+    provenance: "local_request" as const,
+    createdAt: observedAt,
+    updatedAt: observedAt,
+    findings: [],
+    workPreview: {
+      provenance: "deterministic_local_preview" as const,
+      title: "Build request intake.",
+      outcome: "Build request intake.",
+      assumptions: [],
+      exclusions: ["No provider selected."],
+      checks: ["Run tests"],
+      estimatedMinutes: 45,
+    },
+  };
+  const calls: string[] = [];
+  const controlPlane = createControlPlaneServer({
+    host: "127.0.0.1",
+    port: 0,
+    allowedOrigins: ["http://127.0.0.1:4310"],
+    health: () => health,
+    snapshot: () => snapshot,
+    requests: {
+      list: () => ({
+        schemaVersion: 1,
+        provenance: "local_observation",
+        observedAt,
+        requests: [queued],
+      }),
+      create: (input, key) => {
+        calls.push(`create:${key}:${JSON.stringify(input)}`);
+        return queued;
+      },
+      cancel: (id) => {
+        calls.push(`cancel:${id}`);
+        return { ...queued, state: "cancelled" as const };
+      },
+      archive: (id) => {
+        calls.push(`archive:${id}`);
+      },
+    },
+  });
+  const port = await controlPlane.listen();
+  const base = `http://127.0.0.1:${port}`;
+  const headers = { Origin: "http://127.0.0.1:4310" };
+  try {
+    assert.equal((await fetch(`${base}/api/v1/requests`, { headers })).status, 200);
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/requests`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            schemaVersion: 1,
+            projectId: queued.projectId,
+            outcome: queued.outcome,
+          }),
+        })
+      ).status,
+      400
+    );
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/requests`, {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            "Idempotency-Key": "request:0123456789",
+          },
+          body: JSON.stringify({
+            schemaVersion: 1,
+            projectId: queued.projectId,
+            outcome: queued.outcome,
+          }),
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/requests/${queued.id}/cancel`, {
+          method: "POST",
+          headers: { ...headers, "Idempotency-Key": "cancel:0123456789" },
+        })
+      ).status,
+      200
+    );
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/requests/${queued.id}/archive`, {
+          method: "DELETE",
+          headers: { ...headers, "Idempotency-Key": "archive:0123456789" },
+        })
+      ).status,
+      200
+    );
+    assert.equal(calls.length, 3);
+  } finally {
+    await controlPlane.close();
+  }
+});

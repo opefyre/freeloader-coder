@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { createControlPlaneServer } from "./control-plane.js";
 import { LocalProjectRegistry } from "./local-project-registry.js";
+import { LocalRequestStore } from "./local-request-store.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -15,6 +16,10 @@ const setupStatePath = resolve(stateDirectory, "setup-state.json");
 const instanceId = randomUUID();
 const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
+const localRequests = new LocalRequestStore(
+  stateDirectory,
+  (projectId) => localProjects.has(projectId)
+);
 
 async function setupObservation() {
   try {
@@ -89,12 +94,18 @@ const controlPlane = createControlPlaneServer({
     rescan: (projectId) => localProjects.rescan(projectId),
     forget: (projectId) => localProjects.forget(projectId),
   },
+  requests: {
+    list: () => localRequests.list(),
+    create: (input, idempotencyKey) => localRequests.create(input, idempotencyKey),
+    cancel: (requestId) => localRequests.cancel(requestId),
+    archive: (requestId) => localRequests.archive(requestId),
+  },
 });
 
 const boundPort = await controlPlane.listen();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
 console.log(
-  "Loopback API. Project registration reads repository metadata only; other feature surfaces remain synthetic fixtures."
+  "Loopback API. Project registration and request queue are real local metadata; execution surfaces remain synthetic fixtures."
 );
 
 let closing = false;
