@@ -25,6 +25,8 @@ import {
   localCommitPreviewRequestSchema,
   localIntegrationApprovalRequestSchema,
   localIntegrationPreviewRequestSchema,
+  localChangeSetApprovalRequestSchema,
+  localChangeSetPreviewRequestSchema,
   localRequestCreationSchema,
   localRequestMutationResponseSchema,
   validateLocalRequestCollection,
@@ -83,6 +85,11 @@ export type ControlPlaneServerOptions = {
     createIntegration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     undoIntegration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     reconcileIntegration?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    previewChangeSet?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    approveChangeSet?: (requestId: string, input: unknown) => LocalRequest | Promise<LocalRequest>;
+    applyChangeSet?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    rollbackChangeSet?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
+    reconcileChangeSet?: (requestId: string) => LocalRequest | Promise<LocalRequest>;
     archive: (requestId: string) => void | Promise<void>;
   };
 };
@@ -179,8 +186,34 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const requestRoute = url.pathname.match(
-        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|commit-preview|commit-approve|commit-create|commit-undo|commit-reconcile|integration-preview|integration-approve|integration-create|integration-undo|integration-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
+        /^\/api\/v1\/requests\/(request_[a-f0-9]{20})\/(approve|ground|plan-edit|plan-approve|execution-authorize|execution-prepare|execution-start|execution-validate|execution-cancel|execution-reconcile|patch-preview|patch-approve|patch-apply|patch-rollback|patch-reconcile|change-set-preview|change-set-approve|change-set-apply|change-set-rollback|change-set-reconcile|commit-preview|commit-approve|commit-create|commit-undo|commit-reconcile|integration-preview|integration-approve|integration-create|integration-undo|integration-reconcile|claim|checkpoint|release|reconcile|cancel|archive)$/
       );
+      if (request.method === "POST" && requestRoute?.[2] === "change-set-preview" && options.requests?.previewChangeSet) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.previewChangeSet(requestRoute[1] ?? "", localChangeSetPreviewRequestSchema.parse(await readJsonBody(request)));
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: "change_set_previewed", request: changed })); return;
+      }
+      if (request.method === "POST" && requestRoute?.[2] === "change-set-approve" && options.requests?.approveChangeSet) {
+        requireIdempotencyKey(request);
+        const changed = await options.requests.approveChangeSet(requestRoute[1] ?? "", localChangeSetApprovalRequestSchema.parse(await readJsonBody(request)));
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({ schemaVersion: 1, outcome: "change_set_approved", request: changed })); return;
+      }
+      const changeSetActions = {
+        "change-set-apply": options.requests?.applyChangeSet,
+        "change-set-rollback": options.requests?.rollbackChangeSet,
+        "change-set-reconcile": options.requests?.reconcileChangeSet,
+      } as const;
+      const changeSetAction = requestRoute?.[2] as keyof typeof changeSetActions | undefined;
+      if (request.method === "POST" && changeSetAction && changeSetActions[changeSetAction]) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        const changed = await changeSetActions[changeSetAction]!(requestRoute?.[1] ?? "");
+        sendJson(response, 200, localRequestMutationResponseSchema.parse({
+          schemaVersion: 1,
+          outcome: ({ "change-set-apply": "change_set_applied", "change-set-rollback": "change_set_rolled_back", "change-set-reconcile": "change_set_reconciled" } as const)[changeSetAction],
+          request: changed,
+        })); return;
+      }
       if (request.method === "POST" && requestRoute?.[2] === "integration-preview" && options.requests?.previewIntegration) {
         requireIdempotencyKey(request);
         const changed = await options.requests.previewIntegration(requestRoute[1] ?? "", localIntegrationPreviewRequestSchema.parse(await readJsonBody(request)));

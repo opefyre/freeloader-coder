@@ -9,12 +9,15 @@ import {
   approveLocalIntegration,
   approveLocalCommit,
   approveLocalPatch,
+  approveLocalChangeSet,
   cancelLocalRequest,
   createLocalRequest,
   listLocalRequests,
   previewLocalPatch,
+  previewLocalChangeSet,
   previewLocalCommit,
   previewLocalIntegration,
+  advanceLocalChangeSet,
 } from "../apps/studio/src/local-request-client.js";
 
 const request = {
@@ -198,6 +201,37 @@ test("request client sends exact patch lifecycle payloads to loopback routes", a
     ]
   );
   assert.match(observed[0]?.body ?? "", /README\.md/);
+});
+
+test("request client sends exact atomic change-set lifecycle payloads to loopback routes", async () => {
+  const observed: Array<{ path: string; body?: string }> = [];
+  const fetcher = async (url: URL | RequestInfo, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname;
+    observed.push({ path, ...(typeof init?.body === "string" ? { body: init.body } : {}) });
+    const outcome = path.endsWith("change-set-preview") ? "change_set_previewed"
+      : path.endsWith("change-set-approve") ? "change_set_approved"
+        : path.endsWith("change-set-reconcile") ? "change_set_reconciled"
+          : "change_set_applied";
+    return Response.json({ schemaVersion: 1, outcome, request });
+  };
+  await previewLocalChangeSet({ endpoint: "http://127.0.0.1:4312", requestId: request.id,
+    proposal: { schemaVersion: 1, expectedAuthorityDigest: "a".repeat(64), expectedRunDigest: "b".repeat(64),
+      operations: [{ type: "create", path: "new.txt", expectedBeforeDigest: null, content: "new\n" }] },
+    idempotencyKey: "change-set-preview:test", fetcher });
+  await approveLocalChangeSet({ endpoint: "http://127.0.0.1:4312", requestId: request.id,
+    approval: { schemaVersion: 1, expectedPreviewDigest: "c".repeat(64) },
+    idempotencyKey: "change-set-approve:test", fetcher });
+  await advanceLocalChangeSet({ endpoint: "http://127.0.0.1:4312", requestId: request.id,
+    action: "apply", idempotencyKey: "change-set-apply:test", fetcher });
+  await advanceLocalChangeSet({ endpoint: "http://127.0.0.1:4312", requestId: request.id,
+    action: "reconcile", idempotencyKey: "change-set-reconcile:test", fetcher });
+  assert.deepEqual(observed.map((entry) => entry.path), [
+    `/api/v1/requests/${request.id}/change-set-preview`,
+    `/api/v1/requests/${request.id}/change-set-approve`,
+    `/api/v1/requests/${request.id}/change-set-apply`,
+    `/api/v1/requests/${request.id}/change-set-reconcile`,
+  ]);
+  assert.match(observed[0]?.body ?? "", /new\.txt/);
 });
 
 test("request client targets bounded execution start and validation routes", async () => {

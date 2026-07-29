@@ -86,6 +86,12 @@ export const localRunEventSchema = z.strictObject({
     "integration_created",
     "integration_undone",
     "integration_reconciled",
+    "change_set_previewed",
+    "change_set_approved",
+    "change_set_applying",
+    "change_set_applied",
+    "change_set_rolled_back",
+    "change_set_reconciled",
   ]),
   observedAt: z.number().int().nonnegative(),
   detail: z.string().trim().min(1).max(300),
@@ -368,6 +374,84 @@ export const localPatchSessionSchema = z.strictObject({
   rolledBackAt: z.number().int().nonnegative().nullable(),
 });
 
+const changeSetContent = z.string().max(65_536).refine(
+  (value) => !value.includes("\0"),
+  "Change-set content must be UTF-8 text without NUL bytes."
+);
+
+export const localChangeSetOperationRequestSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("create"), path: relativePath, expectedBeforeDigest: z.null(), content: changeSetContent }),
+  z.strictObject({ type: z.literal("replace"), path: relativePath, expectedBeforeDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(), content: changeSetContent }),
+  z.strictObject({ type: z.literal("delete"), path: relativePath, expectedBeforeDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(), content: z.null() }),
+]);
+
+export const localChangeSetPreviewRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedAuthorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  expectedRunDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  operations: z.array(localChangeSetOperationRequestSchema).min(1).max(12),
+});
+
+export const localChangeSetOperationPreviewSchema = z.strictObject({
+  type: z.enum(["create", "replace", "delete"]),
+  path: relativePath,
+  beforeDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  afterDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  beforeBytes: z.number().int().nonnegative().max(65_536),
+  afterBytes: z.number().int().nonnegative().max(65_536),
+  beforeMode: z.number().int().min(0).max(0o777).nullable(),
+  content: changeSetContent.nullable(),
+});
+
+export const localChangeSetPreviewSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("bounded_local_change_set_preview"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  authorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  runDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  operations: z.array(localChangeSetOperationPreviewSchema).min(1).max(12),
+  changedPaths: z.array(relativePath).min(1).max(12),
+  totalBeforeBytes: z.number().int().nonnegative().max(786_432),
+  totalAfterBytes: z.number().int().nonnegative().max(786_432),
+  previewedAt: z.number().int().nonnegative(),
+  blockers: z.tuple([]),
+  maximumCostUsd: z.literal(0),
+});
+
+export const localChangeSetApprovalRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedPreviewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const localChangeSetApprovalSchema = z.strictObject({
+  schemaVersion: z.literal(1), digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/), approvedAt: z.number().int().nonnegative(),
+});
+
+export const localChangeSetOperationReceiptSchema = z.strictObject({
+  type: z.enum(["create", "replace", "delete"]), path: relativePath,
+  beforeDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  afterDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  observedDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+});
+
+export const localChangeSetReceiptSchema = z.strictObject({
+  schemaVersion: z.literal(1), digest: z.string().regex(/^[a-f0-9]{64}$/),
+  previewDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  operations: z.array(localChangeSetOperationReceiptSchema).min(1).max(12),
+  changedPaths: z.array(relativePath).min(1).max(12),
+  appliedAt: z.number().int().nonnegative(), canonicalUntouched: z.literal(true),
+});
+
+export const localChangeSetSessionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  state: z.enum(["previewed", "approved", "applying", "applied", "rolled_back", "interrupted"]),
+  preview: localChangeSetPreviewSchema,
+  approval: localChangeSetApprovalSchema.nullable(),
+  receipt: localChangeSetReceiptSchema.nullable(),
+  rolledBackAt: z.number().int().nonnegative().nullable(),
+});
+
 export const localCommitPreviewRequestSchema = z.strictObject({
   schemaVersion: z.literal(1),
   expectedAuthorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -384,7 +468,8 @@ export const localCommitPreviewSchema = z.strictObject({
   digest: z.string().regex(/^[a-f0-9]{64}$/),
   authorityDigest: z.string().regex(/^[a-f0-9]{64}$/),
   runDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  patchReceiptDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  patchReceiptDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
+  changeSetReceiptDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
   parentCommit: z.string().regex(/^[a-f0-9]{40,64}$/),
   branch: z.string().regex(/^studio\/request-[a-f0-9]{12}-[a-f0-9]{10}$/),
   message: z.string().trim().min(3).max(200),
@@ -513,6 +598,7 @@ export const localExecutionSessionSchema = z.strictObject({
   workspace: localExecutionWorkspaceSchema.nullable(),
   run: localExecutionRunSchema.nullable().default(null),
   patch: localPatchSessionSchema.nullable().default(null),
+  changeSet: localChangeSetSessionSchema.nullable().default(null),
   commit: localCommitSessionSchema.nullable().default(null),
   integration: localIntegrationSessionSchema.nullable().default(null),
 });
@@ -602,6 +688,11 @@ export const localRequestMutationResponseSchema = z.strictObject({
     "integration_created",
     "integration_undone",
     "integration_reconciled",
+    "change_set_previewed",
+    "change_set_approved",
+    "change_set_applied",
+    "change_set_rolled_back",
+    "change_set_reconciled",
     "cancelled",
     "archived",
   ]),
@@ -633,6 +724,11 @@ export type LocalPatchPreview = z.infer<typeof localPatchPreviewSchema>;
 export type LocalPatchApproval = z.infer<typeof localPatchApprovalSchema>;
 export type LocalPatchReceipt = z.infer<typeof localPatchReceiptSchema>;
 export type LocalPatchSession = z.infer<typeof localPatchSessionSchema>;
+export type LocalChangeSetPreviewRequest = z.infer<typeof localChangeSetPreviewRequestSchema>;
+export type LocalChangeSetPreview = z.infer<typeof localChangeSetPreviewSchema>;
+export type LocalChangeSetApproval = z.infer<typeof localChangeSetApprovalSchema>;
+export type LocalChangeSetReceipt = z.infer<typeof localChangeSetReceiptSchema>;
+export type LocalChangeSetSession = z.infer<typeof localChangeSetSessionSchema>;
 export type LocalCommitPreview = z.infer<typeof localCommitPreviewSchema>;
 export type LocalCommitApproval = z.infer<typeof localCommitApprovalSchema>;
 export type LocalCommitReceipt = z.infer<typeof localCommitReceiptSchema>;
@@ -777,14 +873,59 @@ export function validateLocalRequestCollection(input: unknown): LocalRequestColl
           throw new Error("Rolled-back patch requires a verified rollback time.");
         }
       }
-      if (execution.commit) {
-        const commit = execution.commit;
+      if (execution.patch && execution.changeSet) {
+        throw new Error("Legacy patch and multi-file change set cannot own the same execution run.");
+      }
+      if (execution.changeSet) {
+        const changeSet = execution.changeSet;
+        const paths = changeSet.preview.operations.map((item) => item.path);
         if (
           !execution.run ||
-          !execution.patch?.receipt ||
+          changeSet.preview.authorityDigest !== execution.authority.digest ||
+          changeSet.preview.runDigest !== execution.run.digest ||
+          changeSet.preview.maximumCostUsd !== 0 ||
+          changeSet.preview.blockers.length !== 0 ||
+          new Set(paths).size !== paths.length ||
+          paths.join("\0") !== changeSet.preview.changedPaths.join("\0")
+        ) {
+          throw new Error("Local change-set preview does not match the bounded execution run.");
+        }
+        if (
+          ["approved", "applying", "applied", "rolled_back", "interrupted"].includes(changeSet.state) &&
+          (!changeSet.approval || changeSet.approval.previewDigest !== changeSet.preview.digest)
+        ) {
+          throw new Error("Local change-set state requires approval of the exact preview.");
+        }
+        if (
+          ["applied", "rolled_back"].includes(changeSet.state) &&
+          (!changeSet.receipt ||
+            changeSet.receipt.previewDigest !== changeSet.preview.digest ||
+            changeSet.receipt.changedPaths.join("\0") !== changeSet.preview.changedPaths.join("\0") ||
+            changeSet.receipt.operations.length !== changeSet.preview.operations.length ||
+            changeSet.receipt.operations.some((item, index) => {
+              const preview = changeSet.preview.operations[index];
+              return !preview || item.path !== preview.path || item.type !== preview.type ||
+                item.beforeDigest !== preview.beforeDigest || item.afterDigest !== preview.afterDigest ||
+                item.observedDigest !== preview.afterDigest;
+            }))
+        ) {
+          throw new Error("Local change-set receipt does not match its exact preview.");
+        }
+        if (changeSet.state === "rolled_back" && changeSet.rolledBackAt === null) {
+          throw new Error("Rolled-back change set requires a verified rollback time.");
+        }
+      }
+      if (execution.commit) {
+        const commit = execution.commit;
+        const patchReceipt = execution.patch?.receipt;
+        const changeSetReceipt = execution.changeSet?.receipt;
+        if (
+          !execution.run ||
+          (Boolean(patchReceipt) === Boolean(changeSetReceipt)) ||
           commit.preview.authorityDigest !== execution.authority.digest ||
           commit.preview.runDigest !== execution.run.digest ||
-          commit.preview.patchReceiptDigest !== execution.patch.receipt.digest ||
+          commit.preview.patchReceiptDigest !== (patchReceipt?.digest ?? null) ||
+          commit.preview.changeSetReceiptDigest !== (changeSetReceipt?.digest ?? null) ||
           commit.preview.parentCommit !== execution.workspace?.baseline ||
           commit.preview.maximumCostUsd !== 0 ||
           !commit.preview.hooksDisabled ||

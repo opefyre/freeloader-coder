@@ -39,6 +39,9 @@ import {
   listLocalRequests,
   previewLocalPatch,
   previewLocalCommit,
+  advanceLocalChangeSet,
+  approveLocalChangeSet,
+  previewLocalChangeSet,
   updateLocalPlan,
 } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
@@ -72,6 +75,9 @@ export function LocalRequestPanel(props: {
     Record<string, { path: string; content: string }>
   >({});
   const [commitMessages, setCommitMessages] = useState<Record<string, string>>({});
+  const [changeSetDrafts, setChangeSetDrafts] = useState<Record<string, Array<{
+    type: "create" | "replace" | "delete"; path: string; content: string;
+  }>>>({});
   const disposed = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -385,6 +391,57 @@ export function LocalRequestPanel(props: {
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Commit preview failed safely.");
+    }
+  }
+
+  async function previewChangeSet(request: LocalRequest) {
+    const execution = request.execution;
+    const operations = changeSetDrafts[request.id] ?? [];
+    if (!execution?.run || operations.length === 0 || operations.some((item) => !item.path || (item.type !== "delete" && new TextEncoder().encode(item.content).length > 65_536))) {
+      setNotice("Add 1–12 complete file operations; each text file must remain within 64 KiB."); return;
+    }
+    setStatus("working");
+    try {
+      await previewLocalChangeSet({
+        endpoint, requestId: request.id,
+        proposal: {
+          schemaVersion: 1, expectedAuthorityDigest: execution.authority.digest,
+          expectedRunDigest: execution.run.digest,
+          operations: operations.map((item) => ({
+            type: item.type, path: item.path, expectedBeforeDigest: null,
+            content: item.type === "delete" ? null : item.content,
+          })),
+        },
+        idempotencyKey: `change-set-preview:${request.id}:${execution.run.digest}:${operations.length}`,
+      });
+      await refresh(); setNotice("Exact multi-file change-set preview recorded. No file was written.");
+    } catch (error) {
+      setStatus("ready"); setNotice(error instanceof Error ? error.message : "Change-set preview failed safely.");
+    }
+  }
+
+  async function approveChangeSet(request: LocalRequest) {
+    const preview = request.execution?.changeSet?.preview; if (!preview) return;
+    setStatus("working");
+    try {
+      await approveLocalChangeSet({ endpoint, requestId: request.id,
+        approval: { schemaVersion: 1, expectedPreviewDigest: preview.digest },
+        idempotencyKey: `change-set-approve:${request.id}:${preview.digest}` });
+      await refresh(); setNotice("Exact multi-file change set approved. Application has not started.");
+    } catch (error) {
+      setStatus("ready"); setNotice(error instanceof Error ? error.message : "Change-set approval failed safely.");
+    }
+  }
+
+  async function mutateChangeSet(request: LocalRequest, action: "apply" | "rollback" | "reconcile") {
+    setStatus("working");
+    try {
+      await advanceLocalChangeSet({ endpoint, requestId: request.id, action,
+        idempotencyKey: `change-set-${action}:${request.id}:${request.execution?.changeSet?.preview.digest ?? "none"}` });
+      await refresh();
+      setNotice({ apply: "All approved file operations applied and verified inside the isolated worktree.", rollback: "Every pre-change file state restored and verified.", reconcile: "Interrupted change set classified from filesystem truth without blind retry." }[action]);
+    } catch (error) {
+      setStatus("ready"); setNotice(error instanceof Error ? error.message : "Change-set action failed safely.");
     }
   }
 
@@ -770,7 +827,45 @@ export function LocalRequestPanel(props: {
                               </div>
                             )}
                             {request.execution.run?.state === "ready" &&
-                              !request.execution.patch && (
+                              !request.execution.patch && !request.execution.changeSet && (
+                                <div className="mt-3 bg-primary/[.055] p-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <p className="text-[11px] font-semibold">Atomic multi-file change set</p>
+                                      <p className="mt-1 text-[10px] text-muted-foreground">1–12 create, replace, or delete operations · previewed together · rolled back together</p>
+                                    </div>
+                                    <Button size="sm" variant="secondary" disabled={(changeSetDrafts[request.id]?.length ?? 0) >= 12} onClick={() => setChangeSetDrafts((current) => ({ ...current, [request.id]: [...(current[request.id] ?? []), { type: "replace", path: "", content: "" }] }))}>
+                                      Add operation
+                                    </Button>
+                                  </div>
+                                  <div className="mt-3 grid gap-3">
+                                    {(changeSetDrafts[request.id] ?? []).map((operation, index) => (
+                                      <div key={`${request.id}-change-${index}`} className="bg-background/65 p-3">
+                                        <div className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_auto]">
+                                          <select aria-label={`Operation ${index + 1} type`} value={operation.type} onChange={(event) => setChangeSetDrafts((current) => ({ ...current, [request.id]: (current[request.id] ?? []).map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value as "create" | "replace" | "delete" } : item) }))} className="h-10 rounded-xl bg-background/80 px-3 text-xs outline-none focus:ring-2 focus:ring-primary">
+                                            <option value="replace">Replace</option><option value="create">Create</option><option value="delete">Delete</option>
+                                          </select>
+                                          {operation.type === "create" ? (
+                                            <input aria-label={`Operation ${index + 1} approved path`} value={operation.path} onChange={(event) => setChangeSetDrafts((current) => ({ ...current, [request.id]: (current[request.id] ?? []).map((item, itemIndex) => itemIndex === index ? { ...item, path: event.target.value } : item) }))} placeholder="Approved new project-relative path" className="h-10 rounded-xl bg-background/80 px-3 text-xs outline-none focus:ring-2 focus:ring-primary" />
+                                          ) : (
+                                            <select aria-label={`Operation ${index + 1} approved path`} value={operation.path} onChange={(event) => setChangeSetDrafts((current) => ({ ...current, [request.id]: (current[request.id] ?? []).map((item, itemIndex) => itemIndex === index ? { ...item, path: event.target.value } : item) }))} className="h-10 rounded-xl bg-background/80 px-3 text-xs outline-none focus:ring-2 focus:ring-primary">
+                                              <option value="">Choose approved file</option>
+                                              {[...new Set(request.execution?.authority.manifest.tasks.flatMap((task) => task.allowedFiles) ?? [])].map((path) => <option key={path} value={path}>{path}</option>)}
+                                            </select>
+                                          )}
+                                          <Button size="sm" variant="secondary" aria-label={`Remove operation ${index + 1}`} onClick={() => setChangeSetDrafts((current) => ({ ...current, [request.id]: (current[request.id] ?? []).filter((_, itemIndex) => itemIndex !== index) }))}><Trash /></Button>
+                                        </div>
+                                        {operation.type !== "delete" && (
+                                          <textarea aria-label={`Operation ${index + 1} content`} value={operation.content} onChange={(event) => setChangeSetDrafts((current) => ({ ...current, [request.id]: (current[request.id] ?? []).map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item) }))} maxLength={65_536} rows={4} placeholder={operation.type === "create" ? "Complete new UTF-8 file content…" : "Complete replacement UTF-8 file content…"} className="mt-2 w-full resize-y rounded-xl bg-background/80 p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-primary" />
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <Button size="sm" className="mt-3" disabled={status === "working" || (changeSetDrafts[request.id]?.length ?? 0) === 0} onClick={() => void previewChangeSet(request)}><Fingerprint />Preview atomic change set</Button>
+                                </div>
+                              )}
+                            {request.execution.run?.state === "ready" &&
+                              !request.execution.patch && !request.execution.changeSet && (
                                 <div className="mt-3 bg-primary/[.055] p-3">
                                   <p className="text-[11px] font-semibold">
                                     Exact isolated replacement
@@ -882,6 +977,20 @@ export function LocalRequestPanel(props: {
                                   Applied means isolated bytes verified · never committed, merged,
                                   pushed, published, or deployed
                                 </p>
+                              </div>
+                            )}
+                            {request.execution.changeSet && (
+                              <div className="mt-3 bg-primary/[.055] p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <strong className="text-[11px]">Multi-file change set</strong>
+                                  <Badge tone={request.execution.changeSet.state === "applied" ? "positive" : request.execution.changeSet.state === "interrupted" ? "critical" : "active"}>{request.execution.changeSet.state}</Badge>
+                                </div>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                  <DecisionFact label="Operations" value={String(request.execution.changeSet.preview.operations.length)} />
+                                  <DecisionFact label="Before" value={`${request.execution.changeSet.preview.totalBeforeBytes.toLocaleString()} bytes`} />
+                                  <DecisionFact label="After" value={`${request.execution.changeSet.preview.totalAfterBytes.toLocaleString()} bytes`} />
+                                </div>
+                                <p className="mt-2 text-[10px] text-muted-foreground">{request.execution.changeSet.preview.operations.map((item) => `${item.type} ${item.path}`).join(" · ")}</p>
                               </div>
                             )}
                             {request.execution.state === "review_ready" &&
@@ -1100,6 +1209,58 @@ export function LocalRequestPanel(props: {
                               >
                                 <ArrowClockwise />
                                 Reconcile patch interruption
+                              </Button>
+                            )}
+                            {request.execution.changeSet?.state === "previewed" && (
+                              <Button
+                                size="sm"
+                                onClick={() => void approveChangeSet(request)}
+                                disabled={status === "working"}
+                              >
+                                <LockKey />
+                                Approve exact change set
+                              </Button>
+                            )}
+                            {request.execution.changeSet?.state === "approved" && (
+                              <Button
+                                size="sm"
+                                onClick={() => void mutateChangeSet(request, "apply")}
+                                disabled={status === "working"}
+                              >
+                                <FloppyDisk />
+                                Apply all files atomically
+                              </Button>
+                            )}
+                            {request.execution.changeSet?.state === "applied" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => void mutateExecution(request, "validate")}
+                                  disabled={status === "working"}
+                                >
+                                  <CheckCircle />
+                                  Validate complete change set
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => void mutateChangeSet(request, "rollback")}
+                                  disabled={status === "working"}
+                                >
+                                  <ArrowClockwise />
+                                  Roll back every file
+                                </Button>
+                              </>
+                            )}
+                            {request.execution.changeSet?.state === "applying" && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void mutateChangeSet(request, "reconcile")}
+                                disabled={status === "working"}
+                              >
+                                <ArrowClockwise />
+                                Reconcile interrupted change set
                               </Button>
                             )}
                           </>

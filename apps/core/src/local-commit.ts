@@ -11,6 +11,7 @@ import {
   type LocalExecutionAuthority,
   type LocalExecutionRun,
   type LocalPatchReceipt,
+  type LocalChangeSetReceipt,
 } from "../../../packages/runtime/src/local-requests.js";
 import { inspectGitRepository } from "./local-execution.js";
 
@@ -37,9 +38,13 @@ export async function previewIsolatedCommit(input: {
   canonicalRoot: string;
   authority: LocalExecutionAuthority;
   run: LocalExecutionRun;
-  patchReceipt: LocalPatchReceipt;
+  patchReceipt?: LocalPatchReceipt;
+  changeSetReceipt?: LocalChangeSetReceipt;
   message: string;
 }): Promise<LocalCommitPreview> {
+  if (Boolean(input.patchReceipt) === Boolean(input.changeSetReceipt)) {
+    throw new LocalCommitError("commit_state_invalid", "Exactly one verified change receipt is required.");
+  }
   const workspacePath = await realpath(input.workspacePath);
   const canonical = await inspectGitRepository(input.canonicalRoot);
   if (canonical.baseline !== input.authority.preflight.baseline) {
@@ -57,14 +62,16 @@ export async function previewIsolatedCommit(input: {
   if (staged.length > 0) {
     throw new LocalCommitError("staged_changes", "Unexpected staged changes block preview.");
   }
-  const changedPaths = parseNullPaths(
-    await git(workspacePath, ["diff", "--name-only", "-z", parentCommit, "--"])
-  );
+  const changedPaths = [...new Set([
+    ...parseNullPaths(await git(workspacePath, ["diff", "--name-only", "-z", parentCommit, "--"])),
+    ...parseNullPaths(await git(workspacePath, ["ls-files", "--others", "--exclude-standard", "-z"])),
+  ])].sort((left, right) => left.localeCompare(right));
   const allowed = new Set(input.run.changes?.changedPaths.map((change) => change.path) ?? []);
   if (
     changedPaths.length === 0 ||
     changedPaths.some((path) => !allowed.has(path)) ||
-    !changedPaths.includes(input.patchReceipt.path)
+    (input.patchReceipt ? !changedPaths.includes(input.patchReceipt.path) :
+      changedPaths.join("\0") !== [...(input.changeSetReceipt?.changedPaths ?? [])].sort((left, right) => left.localeCompare(right)).join("\0"))
   ) {
     throw new LocalCommitError(
       "path_denied",
@@ -80,7 +87,8 @@ export async function previewIsolatedCommit(input: {
     provenance: "bounded_isolated_commit_preview" as const,
     authorityDigest: input.authority.digest,
     runDigest: input.run.digest,
-    patchReceiptDigest: input.patchReceipt.digest,
+    patchReceiptDigest: input.patchReceipt?.digest ?? null,
+    changeSetReceiptDigest: input.changeSetReceipt?.digest ?? null,
     parentCommit,
     branch,
     message: input.message.trim(),

@@ -8,6 +8,8 @@ import {
   localCommitPreviewRequestSchema,
   localIntegrationApprovalRequestSchema,
   localIntegrationPreviewRequestSchema,
+  localChangeSetApprovalRequestSchema,
+  localChangeSetPreviewRequestSchema,
   localRequestCollectionSchema,
   localRequestMutationResponseSchema,
   type LocalRequestCollection,
@@ -302,6 +304,40 @@ export async function advanceLocalIntegration(input: {
   assertRequestId(input.requestId);
   return localRequestMutationResponseSchema.parse(await request({
     endpoint: input.endpoint, path: `/api/v1/requests/${input.requestId}/integration-${input.action}`,
+    method: "POST", idempotencyKey: input.idempotencyKey,
+    ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function previewLocalChangeSet(input: {
+  endpoint: string; requestId: string; proposal: unknown; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint, path: `/api/v1/requests/${input.requestId}/change-set-preview`,
+    method: "POST", body: localChangeSetPreviewRequestSchema.parse(input.proposal),
+    idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function approveLocalChangeSet(input: {
+  endpoint: string; requestId: string; approval: unknown; idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint, path: `/api/v1/requests/${input.requestId}/change-set-approve`,
+    method: "POST", body: localChangeSetApprovalRequestSchema.parse(input.approval),
+    idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+  }));
+}
+
+export async function advanceLocalChangeSet(input: {
+  endpoint: string; requestId: string; action: "apply" | "rollback" | "reconcile";
+  idempotencyKey: string; fetcher?: typeof fetch;
+}): Promise<LocalRequestMutationResponse> {
+  assertRequestId(input.requestId);
+  return localRequestMutationResponseSchema.parse(await request({
+    endpoint: input.endpoint, path: `/api/v1/requests/${input.requestId}/change-set-${input.action}`,
     method: "POST", idempotencyKey: input.idempotencyKey,
     ...(input.fetcher ? { fetcher: input.fetcher } : {}),
   }));

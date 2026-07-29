@@ -27,6 +27,10 @@ import {
   localIntegrationApprovalRequestSchema,
   localIntegrationApprovalSchema,
   localIntegrationPreviewRequestSchema,
+  localChangeSetApprovalRequestSchema,
+  localChangeSetApprovalSchema,
+  localChangeSetPreviewRequestSchema,
+  localChangeSetReceiptSchema,
   localPlanningSnapshotSchema,
   localRequestSchema,
   validateLocalRequestCollection,
@@ -63,6 +67,12 @@ import {
   reconcileLocalIntegration,
   undoLocalIntegration,
 } from "./local-integration.js";
+import {
+  applyChangeSet,
+  previewChangeSet,
+  reconcileChangeSet,
+  rollbackChangeSet,
+} from "./local-change-set.js";
 
 const MAX_REQUESTS = 500;
 const sensitiveMaterial =
@@ -1269,8 +1279,8 @@ export class LocalRequestStore {
         !execution.workspace ||
         !execution.run ||
         execution.run.state !== "passed" ||
-        !execution.patch?.receipt ||
-        execution.patch.state !== "applied"
+        (Boolean(execution.patch?.receipt && execution.patch.state === "applied") ===
+          Boolean(execution.changeSet?.receipt && execution.changeSet.state === "applied"))
       ) {
         throw new LocalRequestError(
           "invalid_transition",
@@ -1296,7 +1306,8 @@ export class LocalRequestStore {
         canonicalRoot: await this.#projectRoot(record.request.projectId),
         authority: execution.authority,
         run: execution.run,
-        patchReceipt: execution.patch.receipt,
+        ...(execution.patch?.receipt ? { patchReceipt: execution.patch.receipt } : {}),
+        ...(execution.changeSet?.receipt ? { changeSetReceipt: execution.changeSet.receipt } : {}),
         message: proposal.message,
       });
       const now = Date.now();
@@ -1326,6 +1337,130 @@ export class LocalRequestStore {
       });
       await this.#replace(store, request);
       return request;
+    });
+  }
+
+  previewChangeSet(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const proposal = localChangeSetPreviewRequestSchema.parse(input);
+      const store = await this.#load();
+      const record = findRecord(store, requestId);
+      const execution = record.request.execution;
+      if (!execution || execution.state !== "ready" || !execution.workspace || !execution.run || execution.run.state !== "ready") {
+        throw new LocalRequestError("invalid_transition", "Start a ready bounded run before previewing a change set.");
+      }
+      if (proposal.expectedAuthorityDigest !== execution.authority.digest || proposal.expectedRunDigest !== execution.run.digest) {
+        throw new LocalRequestError("stale_revision", "Execution changed before change-set preview.");
+      }
+      if (execution.patch) throw new LocalRequestError("plan_immutable", "A legacy patch already owns this run.");
+      if (execution.changeSet) return record.request;
+      const preview = await previewChangeSet({
+        workspacePath: locateIsolatedWorktree({ stateDirectory: this.#stateDirectory, requestId, authority: execution.authority }),
+        authority: execution.authority, run: execution.run, operations: proposal.operations,
+      });
+      const now = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: now,
+        execution: { ...execution, changeSet: { schemaVersion: 1, state: "previewed", preview, approval: null, receipt: null, rolledBackAt: null }},
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "change_set_previewed", now, `${preview.operations.length} exact file operations previewed; no files changed.`)},
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
+  approveChangeSet(requestId: string, input: unknown): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const proposal = localChangeSetApprovalRequestSchema.parse(input);
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const changeSet = execution?.changeSet;
+      if (changeSet?.state === "approved") return record.request;
+      if (!execution || !changeSet || changeSet.state !== "previewed") throw new LocalRequestError("invalid_transition", "Preview the exact change set first.");
+      if (proposal.expectedPreviewDigest !== changeSet.preview.digest) throw new LocalRequestError("stale_revision", "Change-set preview changed before approval.");
+      const approvedAt = Date.now();
+      const approval = localChangeSetApprovalSchema.parse({ schemaVersion: 1, previewDigest: changeSet.preview.digest, approvedAt, digest: digest(`${changeSet.preview.digest}:${approvedAt}:isolated_change_set_only`) });
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: approvedAt,
+        execution: { ...execution, changeSet: { ...changeSet, state: "approved", approval }},
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "change_set_approved", approvedAt, "Exact multi-file change set approved; application has not started.")},
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
+  applyChangeSet(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const changeSet = execution?.changeSet;
+      if (changeSet?.state === "applied") return record.request;
+      if (!execution || !changeSet?.approval || changeSet.state !== "approved") throw new LocalRequestError("invalid_transition", "Approve the exact change set first.");
+      const applyingAt = Date.now();
+      const applying = localRequestSchema.parse({
+        ...record.request, updatedAt: applyingAt,
+        execution: { ...execution, changeSet: { ...changeSet, state: "applying" }},
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "change_set_applying", applyingAt, "Applying the approved multi-file change set atomically inside the isolated worktree.")},
+      });
+      await this.#replace(store, applying);
+      const receipt = await applyChangeSet({
+        workspacePath: locateIsolatedWorktree({ stateDirectory: this.#stateDirectory, requestId, authority: execution.authority }),
+        canonicalRoot: await this.#projectRoot(record.request.projectId),
+        recoveryDirectory: resolve(this.#stateDirectory, "change-set-recovery", requestId),
+        authority: execution.authority, preview: changeSet.preview,
+      });
+      const now = Date.now();
+      const applied = localRequestSchema.parse({
+        ...applying, updatedAt: now,
+        execution: { ...applying.execution, changeSet: { ...applying.execution?.changeSet, state: "applied", receipt }},
+        run: { ...applying.run, events: appendEvent(applying.run?.events ?? [], "change_set_applied", now, `${receipt.operations.length} isolated file operations applied and verified; canonical checkout untouched.`)},
+      });
+      await this.#replace(await this.#load(), applied); return applied;
+    });
+  }
+
+  rollbackChangeSet(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const changeSet = execution?.changeSet;
+      if (changeSet?.state === "rolled_back") return record.request;
+      if (!execution || !changeSet?.receipt || changeSet.state !== "applied") throw new LocalRequestError("invalid_transition", "Only an applied change set can be rolled back.");
+      await rollbackChangeSet({
+        workspacePath: locateIsolatedWorktree({ stateDirectory: this.#stateDirectory, requestId, authority: execution.authority }),
+        recoveryDirectory: resolve(this.#stateDirectory, "change-set-recovery", requestId),
+        authority: execution.authority, preview: changeSet.preview, receipt: changeSet.receipt,
+      });
+      const rolledBackAt = Date.now();
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: rolledBackAt,
+        execution: { ...execution, changeSet: { ...changeSet, state: "rolled_back", rolledBackAt }},
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "change_set_rolled_back", rolledBackAt, "All pre-change isolated file states restored and verified.")},
+      });
+      await this.#replace(store, request); return request;
+    });
+  }
+
+  reconcileChangeSet(requestId: string): Promise<LocalRequest> {
+    return this.#serialize(async () => {
+      const store = await this.#load(); const record = findRecord(store, requestId);
+      const execution = record.request.execution; const changeSet = execution?.changeSet;
+      if (changeSet?.state === "interrupted") return record.request;
+      if (!execution || !changeSet || changeSet.state !== "applying") throw new LocalRequestError("invalid_transition", "Only interrupted change-set application can be reconciled.");
+      const classification = await reconcileChangeSet({
+        workspacePath: locateIsolatedWorktree({ stateDirectory: this.#stateDirectory, requestId, authority: execution.authority }),
+        authority: execution.authority, preview: changeSet.preview,
+      });
+      const now = Date.now();
+      const receipt = classification === "applied" ? localChangeSetReceiptSchema.parse({
+        schemaVersion: 1, previewDigest: changeSet.preview.digest,
+        operations: changeSet.preview.operations.map((item) => ({ type: item.type, path: item.path, beforeDigest: item.beforeDigest, afterDigest: item.afterDigest, observedDigest: item.afterDigest })),
+        changedPaths: changeSet.preview.changedPaths, appliedAt: now, canonicalUntouched: true,
+        digest: digest(`${changeSet.preview.digest}:${now}:reconciled_applied`),
+      }) : null;
+      const request = localRequestSchema.parse({
+        ...record.request, updatedAt: now,
+        execution: { ...execution, changeSet: receipt ? { ...changeSet, state: "applied", receipt } : { ...changeSet, state: "interrupted" }},
+        run: { ...record.request.run, events: appendEvent(record.request.run?.events ?? [], "change_set_reconciled", now,
+          classification === "applied" ? "Filesystem truth proved every approved operation completed; receipt reconstructed without retry." : classification === "not_started" ? "Filesystem truth proved application did not start; no retry attempted." : "Mixed file states require user review; no path was overwritten.")},
+      });
+      await this.#replace(store, request); return request;
     });
   }
 
@@ -1833,7 +1968,13 @@ function event(
     | "integration_creating"
     | "integration_created"
     | "integration_undone"
-    | "integration_reconciled",
+    | "integration_reconciled"
+    | "change_set_previewed"
+    | "change_set_approved"
+    | "change_set_applying"
+    | "change_set_applied"
+    | "change_set_rolled_back"
+    | "change_set_reconciled",
   observedAt: number,
   detail: string
 ) {
