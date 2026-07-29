@@ -25,14 +25,29 @@ import {
   CardHeader,
   CardTitle,
 } from "../ui/card.js";
+import { ReleaseEvidenceRegistry } from "./release-evidence-registry.js";
 
 type Filter = "All" | (typeof evidenceItems)[number]["kind"];
 type ReviewMode = "passing" | "dissent";
 type HealingMode = "idle" | "repairing" | "recovered" | "quarantined";
+type EvidenceView = "task" | "release";
 
 const filters: readonly Filter[] = ["All", "Diffs", "Checks", "Builds", "Commits", "Visuals", "Limits"];
 
 export function EvidenceCenter() {
+  const [view, setView] = useState<EvidenceView>("task");
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-2 rounded-3xl bg-muted/55 p-2 sm:grid-cols-2" role="tablist" aria-label="Evidence center views">
+        <EvidenceViewButton active={view === "task"} label="Task evidence" note="Diffs, checks, review, healing" onClick={() => setView("task")} />
+        <EvidenceViewButton active={view === "release"} label="Release registry" note="30 checks across 10 capabilities" onClick={() => setView("release")} />
+      </div>
+      {view === "task" ? <TaskEvidenceCenter /> : <ReleaseEvidenceRegistry />}
+    </div>
+  );
+}
+
+function TaskEvidenceCenter() {
   const [filter, setFilter] = useState<Filter>("All");
   const [selectedId, setSelectedId] = useState("checks");
   const [reviewMode, setReviewMode] = useState<ReviewMode>("passing");
@@ -262,5 +277,30 @@ export function EvidenceCenter() {
         </Card>
       </div>
     </section>
+  );
+}
+
+function EvidenceViewButton({
+  active, label, note, onClick,
+}: {
+  active: boolean;
+  label: string;
+  note: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-[1.25rem] px-4 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
+        active ? "bg-background shadow-sm" : "hover:bg-background/55"
+      )}
+    >
+      <strong className="block text-sm">{label}</strong>
+      <span className="mt-1 block text-xs text-muted-foreground">{note}</span>
+    </button>
   );
 }

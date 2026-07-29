@@ -58,6 +58,11 @@ The local [Accessibility Center](docs/quality/accessibility-release-gate.md) at
 foundation claims to reproducible tests, negative fixtures, and named manual
 review.
 
+The [executable release registry](docs/evidence/PIPE-125-171-EXECUTABLE-PROOF.md)
+under **Evidence → Release registry** maps onboarding, policy, provider,
+execution, packaging, and update claims to current proof and safe negative
+fixtures.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.
