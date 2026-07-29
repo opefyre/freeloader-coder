@@ -54,6 +54,20 @@ indicator distinguishes a live, stale, or offline local control plane. Feature
 screens still use clearly labelled synthetic fixtures; a live runtime indicator
 does not imply that providers, connectors, or external actions are enabled.
 
+Projects can now register an existing local Git worktree through the loopback
+control plane. Registration performs a deterministic, bounded metadata scan and
+stores the canonical path only in the private ignored local state directory.
+The browser receives an opaque project ID, display name, observed facts,
+bounded inferences, decisions, and explicit limitations—never the absolute
+path, source content, secrets, or credential values. Rescan remains read-only,
+and **Forget registration** removes only Studio metadata; it never deletes or
+changes repository files.
+
+Working-tree cleanliness is intentionally reported as not evaluated in this
+phase because the scanner does not execute Git or repository commands.
+GitHub clone onboarding and the later preview/execution journey remain clearly
+labelled synthetic examples.
+
 For UI-only development, `npm run studio:dev` starts Vite without the control
 plane. Studio will correctly show the runtime as offline while preserving the
 last safe observation and synthetic feature data.

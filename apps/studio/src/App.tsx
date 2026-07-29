@@ -168,6 +168,11 @@ const RuntimeSetupPanel = lazy(() =>
     default: module.RuntimeSetupPanel,
   }))
 );
+const LocalProjectsPanel = lazy(() =>
+  import("./components/projects/local-projects-panel.js").then((module) => ({
+    default: module.LocalProjectsPanel,
+  }))
+);
 
 const workspaceIcons: Record<StudioView, typeof Gauge> = {
   overview: Gauge,
@@ -1289,6 +1294,15 @@ function OnboardingWorkspace() {
   return (
     <div className="space-y-4">
       <RuntimeSetupPanel />
+      <LocalProjectsPanel />
+      <div className="px-1 pt-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge>Guided synthetic example</Badge>
+          <span className="text-xs text-muted-foreground">
+            Explore the future execution journey without changing a real repository.
+          </span>
+        </div>
+      </div>
       <Card className="relative overflow-hidden">
         <CardHeader className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>

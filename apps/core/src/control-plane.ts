@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { ZodError } from "zod";
 
 import {
   controlPlaneHealthSchema,
@@ -6,6 +7,14 @@ import {
   type ControlPlaneHealth,
   type ControlPlaneSnapshot,
 } from "../../../packages/runtime/src/control-plane.js";
+import {
+  localProjectMutationResponseSchema,
+  localProjectRegistrationSchema,
+  validateLocalProjectCollection,
+  type LocalProjectCollection,
+  type LocalProjectSnapshot,
+} from "../../../packages/runtime/src/local-projects.js";
+import { LocalProjectError } from "./local-project-registry.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 1_024;
@@ -17,6 +26,12 @@ export type ControlPlaneServerOptions = {
   allowedOrigins: readonly string[];
   health: () => ControlPlaneHealth | Promise<ControlPlaneHealth>;
   snapshot: () => ControlPlaneSnapshot | Promise<ControlPlaneSnapshot>;
+  projects?: {
+    list: () => LocalProjectCollection | Promise<LocalProjectCollection>;
+    register: (input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
+    rescan: (projectId: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
+    forget: (projectId: string) => void | Promise<void>;
+  };
 };
 
 export function createControlPlaneServer(options: ControlPlaneServerOptions): {
@@ -58,32 +73,143 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         response.setHeader("Vary", "Origin");
       }
       if (request.method === "OPTIONS") {
-        response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-        response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+        response.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        response.setHeader(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Idempotency-Key"
+        );
         response.statusCode = 204;
         response.end();
         return;
       }
-      if (request.method !== "GET") {
-        sendJson(response, 405, { error: "Read-only endpoint." });
-        return;
-      }
-      if (requestBodyDeclared(request)) {
-        sendJson(response, 413, { error: "Request body is not accepted." });
-        return;
-      }
       const url = new URL(request.url ?? "/", `http://${options.host}`);
-      if (url.pathname === "/api/v1/health") {
+      if (
+        ["/api/v1/health", "/api/v1/snapshot"].includes(url.pathname) &&
+        request.method !== "GET"
+      ) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/v1/health") {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
         sendJson(response, 200, controlPlaneHealthSchema.parse(await options.health()));
         return;
       }
-      if (url.pathname === "/api/v1/snapshot") {
+      if (request.method === "GET" && url.pathname === "/api/v1/snapshot") {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
         sendJson(response, 200, validateControlPlaneSnapshot(await options.snapshot()));
         return;
       }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/projects" &&
+        options.projects
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(
+          response,
+          200,
+          validateLocalProjectCollection(await options.projects.list())
+        );
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/projects" &&
+        options.projects
+      ) {
+        requireIdempotencyKey(request);
+        const body = localProjectRegistrationSchema.parse(await readJsonBody(request));
+        const project = await options.projects.register(body);
+        sendJson(
+          response,
+          200,
+          localProjectMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "registered",
+            project,
+          })
+        );
+        return;
+      }
+      const projectRoute = url.pathname.match(
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration)$/
+      );
+      if (
+        request.method === "POST" &&
+        projectRoute?.[2] === "rescan" &&
+        options.projects
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const project = await options.projects.rescan(projectRoute[1] ?? "");
+        sendJson(
+          response,
+          200,
+          localProjectMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "rescanned",
+            project,
+          })
+        );
+        return;
+      }
+      if (
+        request.method === "DELETE" &&
+        projectRoute?.[2] === "registration" &&
+        options.projects
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        await options.projects.forget(projectRoute[1] ?? "");
+        sendJson(
+          response,
+          200,
+          localProjectMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "forgotten",
+            project: null,
+          })
+        );
+        return;
+      }
+      if (!["GET", "POST", "DELETE"].includes(request.method ?? "")) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
       sendJson(response, 404, { error: "Endpoint not found." });
-    } catch {
-      sendJson(response, 500, { error: "Local control-plane request failed." });
+    } catch (error) {
+      if (error instanceof LocalProjectError) {
+        const status =
+          error.code === "not_found"
+            ? 404
+            : error.code === "scan_active" || error.code === "duplicate_name"
+              ? 409
+              : 400;
+        sendJson(response, status, { error: error.message, code: error.code });
+      } else if (error instanceof ControlPlaneRequestError || error instanceof ZodError) {
+        sendJson(response, 400, {
+          error:
+            error instanceof ControlPlaneRequestError
+              ? error.message
+              : "Request data does not match the local API contract.",
+        });
+      } else {
+        sendJson(response, 500, { error: "Local control-plane request failed." });
+      }
     } finally {
       activeRequests -= 1;
     }
@@ -111,6 +237,37 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       }),
   };
 }
+
+function requireIdempotencyKey(request: IncomingMessage): void {
+  const value = request.headers["idempotency-key"];
+  if (
+    typeof value !== "string" ||
+    !/^[a-zA-Z0-9._:-]{16,128}$/.test(value)
+  ) {
+    throw new ControlPlaneRequestError("A valid idempotency key is required.");
+  }
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const contentType = request.headers["content-type"]?.split(";")[0]?.trim();
+  if (contentType !== "application/json") {
+    throw new ControlPlaneRequestError("Content-Type must be application/json.");
+  }
+  const declared = Number(request.headers["content-length"] ?? 0);
+  if (!Number.isSafeInteger(declared) || declared < 1 || declared > MAX_REQUEST_BYTES) {
+    throw new ControlPlaneRequestError("Request body is invalid.");
+  }
+  let value = "";
+  for await (const chunk of request) {
+    value += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+    if (Buffer.byteLength(value, "utf8") > MAX_REQUEST_BYTES) {
+      throw new ControlPlaneRequestError("Request body is too large.");
+    }
+  }
+  return JSON.parse(value) as unknown;
+}
+
+class ControlPlaneRequestError extends Error {}
 
 function validateOrigin(origin: string): string {
   const url = new URL(origin);

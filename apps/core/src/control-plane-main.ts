@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { createControlPlaneServer } from "./control-plane.js";
+import { LocalProjectRegistry } from "./local-project-registry.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -13,6 +14,7 @@ const stateDirectory = resolve(
 const setupStatePath = resolve(stateDirectory, "setup-state.json");
 const instanceId = randomUUID();
 const startedAt = Date.now();
+const localProjects = new LocalProjectRegistry(stateDirectory);
 
 async function setupObservation() {
   try {
@@ -81,11 +83,19 @@ const controlPlane = createControlPlaneServer({
       ],
     };
   },
+  projects: {
+    list: () => localProjects.list(),
+    register: (input) => localProjects.register(input),
+    rescan: (projectId) => localProjects.rescan(projectId),
+    forget: (projectId) => localProjects.forget(projectId),
+  },
 });
 
 const boundPort = await controlPlane.listen();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
-console.log("Read-only loopback API. Feature surfaces remain synthetic fixtures.");
+console.log(
+  "Loopback API. Project registration reads repository metadata only; other feature surfaces remain synthetic fixtures."
+);
 
 let closing = false;
 async function close(signal: string) {

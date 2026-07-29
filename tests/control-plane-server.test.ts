@@ -122,3 +122,100 @@ test("server refuses wildcard hosts and non-loopback allowed origins", () => {
     })
   );
 });
+
+test("project endpoints require origin, schema, idempotency, and bounded semantics", async () => {
+  const project = {
+    schemaVersion: 1 as const,
+    id: "project_0123456789abcdef",
+    displayName: "Sample",
+    state: "warning" as const,
+    observedAt,
+    validForMs: 60_000,
+    facts: [],
+    inferences: [],
+    decisions: [],
+    warnings: ["Git status was not evaluated."],
+  };
+  const calls: string[] = [];
+  const controlPlane = createControlPlaneServer({
+    host: "127.0.0.1",
+    port: 0,
+    allowedOrigins: ["http://127.0.0.1:4310"],
+    health: () => health,
+    snapshot: () => snapshot,
+    projects: {
+      list: () => ({
+        schemaVersion: 1,
+        provenance: "local_observation",
+        observedAt,
+        projects: [project],
+      }),
+      register: (input) => {
+        calls.push(`register:${JSON.stringify(input)}`);
+        return project;
+      },
+      rescan: (projectId) => {
+        calls.push(`rescan:${projectId}`);
+        return project;
+      },
+      forget: (projectId) => {
+        calls.push(`forget:${projectId}`);
+      },
+    },
+  });
+  const port = await controlPlane.listen();
+  const base = `http://127.0.0.1:${port}`;
+  const origin = "http://127.0.0.1:4310";
+  try {
+    const list = await fetch(`${base}/api/v1/projects`, {
+      headers: { Origin: origin },
+    });
+    assert.equal(list.status, 200);
+    assert.equal((await list.json() as { projects: unknown[] }).projects.length, 1);
+
+    const missingKey = await fetch(`${base}/api/v1/projects`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 1, path: "/tmp/project" }),
+    });
+    assert.equal(missingKey.status, 400);
+    assert.deepEqual(await missingKey.json(), {
+      error: "A valid idempotency key is required.",
+    });
+
+    const register = await fetch(`${base}/api/v1/projects`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "register:0123456789",
+      },
+      body: JSON.stringify({ schemaVersion: 1, path: "/tmp/project" }),
+    });
+    assert.equal(register.status, 200);
+
+    const rescan = await fetch(
+      `${base}/api/v1/projects/project_0123456789abcdef/rescan`,
+      { method: "POST", headers: { Origin: origin } }
+    );
+    assert.equal(rescan.status, 200);
+
+    const forget = await fetch(
+      `${base}/api/v1/projects/project_0123456789abcdef/registration`,
+      { method: "DELETE", headers: { Origin: origin } }
+    );
+    assert.equal(forget.status, 200);
+    assert.equal(calls.length, 3);
+
+    assert.equal(
+      (
+        await fetch(`${base}/api/v1/projects`, {
+          headers: { Origin: "https://example.com" },
+        })
+      ).status,
+      403
+    );
+  } finally {
+    await controlPlane.close();
+  }
+});
