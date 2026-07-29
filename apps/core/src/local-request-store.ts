@@ -60,6 +60,7 @@ import {
 import {
   createLocalIntegration,
   previewLocalIntegration,
+  reconcileLocalIntegration,
   undoLocalIntegration,
 } from "./local-integration.js";
 
@@ -1644,13 +1645,21 @@ export class LocalRequestStore {
       if (!execution || !integration || integration.state !== "creating") {
         throw new LocalRequestError("invalid_transition", "Only interrupted integration can be reconciled.");
       }
+      const receipt = await reconcileLocalIntegration({
+        canonicalRoot: await this.#projectRoot(record.request.projectId),
+        preview: integration.preview,
+      });
       const now = Date.now();
       const request = localRequestSchema.parse({
         ...record.request, updatedAt: now,
-        execution: { ...execution, integration: { ...integration, state: "interrupted" }},
+        execution: { ...execution, integration: receipt
+          ? { ...integration, state: "created", receipt }
+          : { ...integration, state: "interrupted" }},
         run: { ...record.request.run, events: appendEvent(
           record.request.run?.events ?? [], "integration_reconciled", now,
-          "Interrupted integration preserved for exact canonical Git inspection; no retry was attempted."
+          receipt
+            ? "Canonical Git proved the exact approved integration completed; receipt reconstructed without retry."
+            : "Canonical Git proved integration did not start; no retry was attempted."
         )},
       });
       await this.#replace(store, request);

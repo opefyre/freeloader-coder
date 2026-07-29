@@ -100,6 +100,7 @@ export async function createLocalIntegration(input: {
     paths.join("\0") !== input.preview.changedPaths.join("\0") ||
     after.branch !== input.preview.targetBranch
   ) {
+    await gitBestEffort(input.canonicalRoot, ["reset", "--hard", input.preview.targetHead]);
     throw new LocalIntegrationError("integration_failed", "Integrated commit failed postcondition verification.");
   }
   const createdAt = Date.now();
@@ -109,6 +110,42 @@ export async function createLocalIntegration(input: {
     sourceCommit: input.preview.sourceCommit,
     previousHead: input.preview.targetHead,
     resultingHead: after.baseline,
+    targetBranch: input.preview.targetBranch,
+    changedPaths: paths,
+    createdAt,
+    hooksDisabled: true as const,
+    signingDisabled: true as const,
+    pushed: false as const,
+  };
+  return localIntegrationReceiptSchema.parse({ ...body, digest: hash(JSON.stringify(body)) });
+}
+
+export async function reconcileLocalIntegration(input: {
+  canonicalRoot: string;
+  preview: LocalIntegrationPreview;
+}): Promise<LocalIntegrationReceipt | null> {
+  const canonical = await inspectGitRepository(input.canonicalRoot);
+  if (canonical.branch !== input.preview.targetBranch) {
+    throw new LocalIntegrationError("integration_state_invalid", "Canonical branch changed during integration.");
+  }
+  if (canonical.baseline === input.preview.targetHead) return null;
+  const parent = (await git(input.canonicalRoot, ["rev-parse", "HEAD^"])).trim();
+  const paths = parsePaths(await git(input.canonicalRoot, [
+    "diff-tree", "--no-commit-id", "--name-only", "-r", "-z", canonical.baseline,
+  ]));
+  if (parent !== input.preview.targetHead || paths.join("\0") !== input.preview.changedPaths.join("\0")) {
+    throw new LocalIntegrationError(
+      "integration_state_invalid",
+      "Canonical Git state does not match either side of the approved integration."
+    );
+  }
+  const createdAt = Date.now();
+  const body = {
+    schemaVersion: 1 as const,
+    previewDigest: input.preview.digest,
+    sourceCommit: input.preview.sourceCommit,
+    previousHead: input.preview.targetHead,
+    resultingHead: canonical.baseline,
     targetBranch: input.preview.targetBranch,
     changedPaths: paths,
     createdAt,
