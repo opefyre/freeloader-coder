@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">Pipeline Studio — Build with AI. Keep control.</title>
+  <desc id="description">A premium dark social card with the Pipeline Studio mark and gold accents.</desc>
+  <rect width="1200" height="630" fill="#0b0908"/>
+  <rect x="42" y="42" width="1116" height="546" rx="40" fill="#151210" stroke="#29231f" stroke-width="2"/>
+  <circle cx="1060" cy="140" r="108" fill="#21180d"/>
+  <circle cx="1060" cy="140" r="62" fill="#b76500"/>
+  <path d="M1024 92h30l21 21v27l-21 21h-30l19-21v-27l-19-21zm72 0h-30l-21 21v27l21 21h30l-19-21v-27l19-21z" fill="#fff5df"/>
+  <rect x="92" y="88" width="62" height="62" rx="18" fill="#b76500"/>
+  <path d="M105 104h18l12 12v16l-12 12h-18l11-12v-16l-11-12zm42 0h-18l-12 12v16l12 12h18l-11-12v-16l11-12z" fill="#fff5df"/>
+  <text x="178" y="128" fill="#f7f2eb" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="34" font-weight="720">Pipeline Studio</text>
+  <text x="94" y="286" fill="#f7f2eb" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="82" font-weight="760" letter-spacing="-3">Build with AI.</text>
+  <text x="94" y="378" fill="#d98718" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="82" font-weight="760" letter-spacing="-3">Keep control.</text>
+  <text x="98" y="466" fill="#b8aea5" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="29">Grounded plans · isolated work · evidence before Done</text>
+  <rect x="98" y="516" width="238" height="48" rx="24" fill="#2b2219"/>
+  <circle cx="124" cy="540" r="7" fill="#d98718"/>
+  <text x="144" y="548" fill="#f7f2eb" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="21" font-weight="650">Public preview live</text>
+</svg>

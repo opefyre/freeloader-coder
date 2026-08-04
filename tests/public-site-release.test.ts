@@ -6,6 +6,9 @@ const app = await readFile("apps/site/src/App.tsx", "utf8");
 const css = await readFile("apps/site/src/globals.css", "utf8");
 const html = await readFile("apps/site/index.html", "utf8");
 const config = await readFile("apps/site/vite.config.ts", "utf8");
+const robots = await readFile("apps/site/public/robots.txt", "utf8");
+const sitemap = await readFile("apps/site/public/sitemap.xml", "utf8");
+const manifest = JSON.parse(await readFile("apps/site/public/site.webmanifest", "utf8"));
 
 test("public site exposes the complete source-first adoption journey", () => {
   for (const anchor of ["#demo", "#capabilities", "#trust", "#compare", "#faq"]) assert.ok(app.includes(anchor));
@@ -33,4 +36,14 @@ test("public site builds independently on a dedicated route and output", () => {
   assert.match(html, /<meta name="robots" content="index, follow"/);
   assert.match(html, /og:title/);
   assert.match(html, /pipeline-studio-mark\.svg/);
+});
+
+test("public discovery metadata uses one canonical, crawlable origin", () => {
+  for (const marker of ["rel=\"canonical\"", "og:url", "og:image", "twitter:card", "rel=\"manifest\""]) assert.ok(html.includes(marker));
+  assert.ok(html.includes('type="application/ld+json"'));
+  assert.match(robots, /Allow: \/\s/);
+  assert.match(robots, /Sitemap: https:\/\/pipeline-studio\.pages\.dev\/sitemap\.xml/);
+  assert.match(sitemap, /<loc>https:\/\/pipeline-studio\.pages\.dev\/<\/loc>/);
+  assert.equal(manifest.start_url, "/");
+  assert.equal(manifest.name, "Pipeline Studio");
 });

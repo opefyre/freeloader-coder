@@ -1,0 +1,17 @@
+{
+  "name": "Pipeline Studio",
+  "short_name": "Pipeline Studio",
+  "description": "Build with AI. Keep control.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf7f1",
+  "theme_color": "#b76500",
+  "icons": [
+    {
+      "src": "/pipeline-studio-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
