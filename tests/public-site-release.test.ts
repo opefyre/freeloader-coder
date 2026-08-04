@@ -12,7 +12,7 @@ const manifest = JSON.parse(await readFile("apps/site/public/site.webmanifest", 
 
 test("public site exposes the complete source-first adoption journey", () => {
   for (const anchor of ["#demo", "#capabilities", "#trust", "#compare", "#faq"]) assert.ok(app.includes(anchor));
-  for (const phrase of ["Full test suite passing", "$0 automatic spend", "Evidence before Done", "No analytics", "Public preview live · field evidence pending", "real adoption evidence still comes next"]) assert.ok(app.includes(phrase));
+  for (const phrase of ["Full test suite passing", "$0 automatic spend", "Evidence before Done", "Privacy-conscious analytics", "Public preview live · field evidence pending", "real adoption evidence still comes next"]) assert.ok(app.includes(phrase));
   for (const phrase of ["Illustrative run · no live effect", "Bounded demo", "Preview evidence · local checks · $0.00"]) assert.ok(app.includes(phrase));
   assert.ok(app.includes("git clone https://github.com/opefyre/freeloader-coder.git"));
   assert.ok(app.includes("aria-label=\"Primary\""));
