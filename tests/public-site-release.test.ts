@@ -39,7 +39,7 @@ test("public site builds independently on a dedicated route and output", () => {
 });
 
 test("public discovery metadata uses one canonical, crawlable origin", () => {
-  for (const marker of ["rel=\"canonical\"", "og:url", "og:image", "twitter:card", "rel=\"manifest\""]) assert.ok(html.includes(marker));
+  for (const marker of ["rel=\"canonical\"", "google-site-verification", "og:url", "og:image", "twitter:card", "rel=\"manifest\""]) assert.ok(html.includes(marker));
   assert.ok(html.includes('type="application/ld+json"'));
   assert.match(robots, /Allow: \/\s/);
   assert.match(robots, /Sitemap: https:\/\/pipeline-studio\.pages\.dev\/sitemap\.xml/);
