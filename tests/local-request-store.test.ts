@@ -192,6 +192,64 @@ test("request store persists idempotently, serializes mutations, and archives te
   }
 });
 
+test("documentation-only outcomes never expand into source, config, or test changes", async () => {
+  const root = join(process.cwd(), `.test-requests-${crypto.randomUUID()}`);
+  try {
+    const store = new LocalRequestStore(root, async (id) => id === projectId);
+    const request = await store.create(
+      {
+        schemaVersion: 1,
+        projectId,
+        outcome: "Propose the smallest documentation-only README change. Do not modify source files.",
+      },
+      "request:docs-only1"
+    );
+    await store.approve(request.id);
+    const grounded = await store.ground(request.id, {
+      schemaVersion: 1,
+      grounding: {
+        schemaVersion: 1,
+        projectId,
+        provenance: "bounded_local_files",
+        digest: "d".repeat(64),
+        observedAt: 10_000,
+        sources: [{
+          path: "README.md",
+          sha256: "e".repeat(64),
+          bytes: 120,
+          classification: "guidance",
+          excerpt: "# Project",
+        }],
+        limitations: ["Only allowlisted root files were read."],
+      },
+      topology: {
+        schemaVersion: 1,
+        projectId,
+        provenance: "bounded_path_inventory",
+        digest: "f".repeat(64),
+        observedAt: 10_000,
+        entries: [
+          { path: "README.md", kind: "documentation", extension: ".md", bytes: 120 },
+          { path: "docs/README.md", kind: "documentation", extension: ".md", bytes: 120 },
+          { path: "docs/guide.md", kind: "documentation", extension: ".md", bytes: 120 },
+          { path: "src/index.ts", kind: "source", extension: ".ts", bytes: 80 },
+          { path: "package.json", kind: "config", extension: ".json", bytes: 90 },
+          { path: "tests/index.test.ts", kind: "test", extension: ".ts", bytes: 90 },
+        ],
+        truncated: false,
+        excludedDirectories: [".git", "node_modules"],
+        limitations: ["Path metadata only."],
+      },
+    });
+    assert.ok(grounded.plan);
+    assert.deepEqual(grounded.plan.tasks.flatMap((task) => task.allowedFiles), ["README.md"]);
+    assert.equal(grounded.plan.tasks.length, 1);
+    assert.match(grounded.plan.tasks[0]?.title ?? "", /^Update the requested documentation/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("request store fails closed for unknown projects, secrets, conflicts, and corruption", async () => {
   const root = join(process.cwd(), `.test-requests-${crypto.randomUUID()}`);
   try {

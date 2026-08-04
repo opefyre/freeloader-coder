@@ -2176,9 +2176,12 @@ function createLocalPlan(
   topology: LocalTopology,
   checks: readonly string[]
 ): LocalDraftPlan {
+  const scopeIntent = classifyPlanScope(outcome);
   const citedSources = grounding.sources.slice(0, 6).map((source) => source.path);
   const implementationEntries = topology.entries
-    .filter((entry) => ["source", "config", "documentation"].includes(entry.kind))
+    .filter((entry) => scopeIntent === "documentation"
+      ? entry.kind === "documentation"
+      : ["source", "config", "documentation"].includes(entry.kind))
     .sort((left, right) => {
       const priority = { source: 0, config: 1, documentation: 2 } as const;
       return targetScore(right.path, outcome) - targetScore(left.path, outcome) ||
@@ -2186,8 +2189,13 @@ function createLocalPlan(
         priority[right.kind as keyof typeof priority] ||
         left.path.localeCompare(right.path);
     });
-  const fallback = topology.entries.filter((entry) => entry.kind !== "asset");
-  const candidates = implementationEntries.length > 0 ? implementationEntries : fallback;
+  const fallback = topology.entries.filter((entry) =>
+    scopeIntent === "documentation"
+      ? entry.kind === "documentation"
+      : entry.kind !== "asset"
+  );
+  const broadCandidates = implementationEntries.length > 0 ? implementationEntries : fallback;
+  const candidates = selectNamedDocumentationTarget(outcome, scopeIntent, broadCandidates);
   const groups = new Map<string, string[]>();
   for (const entry of candidates) {
     const key = topologyGroup(entry.path);
@@ -2212,7 +2220,9 @@ function createLocalPlan(
       }));
       return {
         id: `task_${identity.slice(0, 12)}`,
-        title: `Implement the requested outcome in ${group}`,
+        title: scopeIntent === "documentation"
+          ? `Update the requested documentation in ${group}`
+          : `Implement the requested outcome in ${group}`,
         outcome,
         scope: [
           `Change only the observed ${group} targets listed in this task.`,
@@ -2237,7 +2247,7 @@ function createLocalPlan(
       };
     }
   );
-  const testFiles = topology.entries
+  const testFiles = scopeIntent === "documentation" ? [] : topology.entries
     .filter((entry) => entry.kind === "test")
     .map((entry) => entry.path)
     .filter((path) => !tasks.some((task) => task.allowedFiles.includes(path)))
@@ -2282,6 +2292,35 @@ function createLocalPlan(
     approval: null,
     tasks,
   });
+}
+
+function classifyPlanScope(outcome: string): "documentation" | "general" {
+  const normalized = outcome.toLocaleLowerCase();
+  return /\b(documentation|docs?|readme|changelog)\s*[- ]?only\b/.test(normalized) ||
+    /\bonly\s+(?:the\s+)?(?:documentation|docs?|readme|changelog)\b/.test(normalized)
+    ? "documentation"
+    : "general";
+}
+
+function selectNamedDocumentationTarget<T extends { path: string }>(
+  outcome: string,
+  scope: "documentation" | "general",
+  candidates: readonly T[]
+): readonly T[] {
+  if (scope !== "documentation") return candidates;
+  const normalized = outcome.toLocaleLowerCase();
+  const namedFile = normalized.includes("readme")
+    ? "readme.md"
+    : normalized.includes("changelog")
+      ? "changelog.md"
+      : null;
+  if (!namedFile) return candidates;
+  const exactRoot = candidates.find((entry) => entry.path.toLocaleLowerCase() === namedFile);
+  if (exactRoot) return [exactRoot];
+  const firstNamed = candidates.find((entry) =>
+    entry.path.toLocaleLowerCase().endsWith(`/${namedFile}`)
+  );
+  return firstNamed ? [firstNamed] : candidates;
 }
 
 function topologyGroup(path: string): string {
