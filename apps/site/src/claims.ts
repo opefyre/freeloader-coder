@@ -20,7 +20,7 @@ export const publicClaims: readonly PublicClaim[] = [
   { id: "evidence", label: "Evidence before Done", detail: "Model output is never treated as completion until deterministic validation and required review pass.", status: "verified", source: `${repositoryUrl}/blob/main/docs/decisions/adr-0003-evidence-before-done.md`, sourceLabel: "Evidence ADR" },
   { id: "providers", label: "Free-provider fabric", detail: "Provider eligibility and quotas vary by account, region, model, and time; admission is probed rather than assumed.", status: "bounded", source: `${repositoryUrl}/blob/main/docs/architecture/expanded-provider-mesh.md`, sourceLabel: "Provider architecture" },
   { id: "paid", label: "Paid providers", detail: "OpenAI and Anthropic live API execution is not currently available. Safety contracts and disabled surfaces exist.", status: "unavailable", source: `${repositoryUrl}/blob/main/docs/evidence/PIPE-113-177-PAID-SAFETY.md`, sourceLabel: "Paid-provider evidence" },
-  { id: "launch", label: "Public release", detail: "The source is available for review. Public hosting, adoption, and field metrics are not yet claimed.", status: "unavailable", source: `${repositoryUrl}/blob/main/docs/product/launch-learning-scorecard.md`, sourceLabel: "Launch scorecard" }
+  { id: "launch", label: "Public preview", detail: "The verified static preview is publicly served from Cloudflare Pages. Adoption, conversion, and retention evidence are not yet claimed.", status: "verified", source: "https://pipeline-studio.pages.dev/", sourceLabel: "Live preview" }
 ];
 
 export const demoStages = [

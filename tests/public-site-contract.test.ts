@@ -3,12 +3,13 @@ import test from "node:test";
 
 import { demoStages, publicClaims, repositoryUrl } from "../apps/site/src/claims.js";
 
-test("public claims are unique, sourced, and explicit about unavailable outcomes", () => {
+test("public claims are unique, sourced, and explicit about bounded outcomes", () => {
   assert.equal(new Set(publicClaims.map((claim) => claim.id)).size, publicClaims.length);
-  assert.ok(publicClaims.every((claim) => claim.source.startsWith(repositoryUrl)));
+  assert.ok(publicClaims.every((claim) => claim.source.startsWith(repositoryUrl) || claim.source === "https://pipeline-studio.pages.dev/"));
   assert.ok(publicClaims.every((claim) => claim.detail.length >= 40));
   assert.equal(publicClaims.find((claim) => claim.id === "paid")?.status, "unavailable");
-  assert.equal(publicClaims.find((claim) => claim.id === "launch")?.status, "unavailable");
+  assert.equal(publicClaims.find((claim) => claim.id === "launch")?.status, "verified");
+  assert.match(publicClaims.find((claim) => claim.id === "launch")?.detail ?? "", /adoption.*not yet claimed/i);
   assert.match(publicClaims.find((claim) => claim.id === "providers")?.detail ?? "", /vary/i);
   assert.match(publicClaims.find((claim) => claim.id === "free-first")?.detail ?? "", /silently/i);
 });

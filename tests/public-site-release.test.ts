@@ -9,7 +9,7 @@ const config = await readFile("apps/site/vite.config.ts", "utf8");
 
 test("public site exposes the complete source-first adoption journey", () => {
   for (const anchor of ["#demo", "#capabilities", "#trust", "#compare", "#faq"]) assert.ok(app.includes(anchor));
-  for (const phrase of ["Full test suite passing", "$0 automatic spend", "Evidence before Done", "No analytics", "Public hosting and field adoption evidence are still on the roadmap"]) assert.ok(app.includes(phrase));
+  for (const phrase of ["Full test suite passing", "$0 automatic spend", "Evidence before Done", "No analytics", "Public preview live · field evidence pending", "real adoption evidence still comes next"]) assert.ok(app.includes(phrase));
   for (const phrase of ["Illustrative run · no live effect", "Bounded demo", "Preview evidence · local checks · $0.00"]) assert.ok(app.includes(phrase));
   assert.ok(app.includes("git clone https://github.com/opefyre/freeloader-coder.git"));
   assert.ok(app.includes("aria-label=\"Primary\""));

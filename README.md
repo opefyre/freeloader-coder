@@ -134,8 +134,10 @@ npm run site:dev
 It uses a dedicated build output and does not require the local control plane,
 credentials, provider access, analytics, or external writes. Run
 `npm run site:release-check` to build it and enforce its content and bundle
-budgets. Public hosting and real adoption measurement remain intentionally
-separate work; the local build does not claim that the product has launched.
+budgets. The verified public preview is available at
+[pipeline-studio.pages.dev](https://pipeline-studio.pages.dev/). Real adoption
+measurement remains intentionally separate work; a deployment alone is not
+treated as evidence of product adoption.
 
 The offline [user guides](docs/guides/README.md) explain the first project,
 provider connections, approvals, evidence, recovery, and publishing. The
