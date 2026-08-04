@@ -125,6 +125,18 @@ For UI-only development, `npm run studio:dev` starts Vite without the control
 plane. Studio will correctly show the runtime as offline while preserving the
 last safe observation and synthetic feature data.
 
+The standalone public-site foundation runs separately on `127.0.0.1:4311`:
+
+```sh
+npm run site:dev
+```
+
+It uses a dedicated build output and does not require the local control plane,
+credentials, provider access, analytics, or external writes. Run
+`npm run site:release-check` to build it and enforce its content and bundle
+budgets. Public hosting and real adoption measurement remain intentionally
+separate work; the local build does not claim that the product has launched.
+
 The offline [user guides](docs/guides/README.md) explain the first project,
 provider connections, approvals, evidence, recovery, and publishing. The
 in-product Help Center is available at `/help`. Contributors should start with

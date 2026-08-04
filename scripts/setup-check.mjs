@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const required = [
+  "apps/site/package.json",
   "apps/studio/package.json",
   "apps/desktop/package.json",
   "apps/core/package.json",

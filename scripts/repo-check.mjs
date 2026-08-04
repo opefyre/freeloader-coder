@@ -14,14 +14,17 @@ const forbidden = [
 const failures = [];
 const approvedFontTokens = new Set([
   "packages/ui/src/tokens.css",
+  "apps/site/src/globals.css",
   "apps/studio/src/globals.css"
 ]);
 const approvedColorTokens = new Set([
   "packages/ui/src/tokens.css",
+  "apps/site/src/globals.css",
   "apps/studio/src/globals.css"
 ]);
 const approvedForcedColorFallbacks = new Set([
   "packages/ui/src/tokens.css",
+  "apps/site/src/globals.css",
   "apps/studio/src/globals.css"
 ]);
 
