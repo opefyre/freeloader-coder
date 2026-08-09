@@ -31,7 +31,8 @@ export class ProjectExecutionCoordinator {
     private readonly service: ExecutionService,
     private readonly worker: ExecutionWorker,
     private readonly now: () => number = Date.now,
-    private readonly defaultRetryMs = 300_000
+    private readonly defaultRetryMs = 300_000,
+    private readonly onCompleted: (projectId: string) => Promise<void> = async () => undefined
   ) { this.#path = resolve(stateDirectory, "project-execution-runs.json"); }
 
   async get(projectId: string) { return (await this.#load()).runs[projectId] ?? null; }
@@ -66,7 +67,11 @@ export class ProjectExecutionCoordinator {
       await this.service.reconcileExpired(projectId);
       const record = await this.worker.tick(projectId);
       if (!record) return;
-      if (record.state === "completed") { await this.#saveRun(projectId, { state: "completed", retryAt: null, safeMessage: "All implementation and evidence gates passed." }); return; }
+      if (record.state === "completed") {
+        await this.onCompleted(projectId);
+        await this.#saveRun(projectId, { state: "completed", retryAt: null, safeMessage: "All implementation and evidence gates passed; project completion was reconciled." });
+        return;
+      }
       if (record.state === "needs_user" || record.state === "quarantined") { await this.#saveRun(projectId, { state: "needs_user", retryAt: null, safeMessage: "Execution requires owner attention before it can continue." }); return; }
       const ready = hasReadyTask(record);
       const retryAt = this.now() + (ready ? 100 : this.defaultRetryMs);

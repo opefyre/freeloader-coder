@@ -128,7 +128,17 @@ const executionModel = new FreeProviderExecutionModel(stateDirectory, providerCo
 const executionWorkspaces = new ProjectTaskWorkspaceService(stateDirectory);
 const executionAdapters = new ProjectExecutionRuntimeAdapters(localProjects, projectDeliveryPlans, projectContexts, projectEgress, executionModel, executionWorkspaces, projectExecutionJira);
 const executionWorker = new ProjectExecutionWorker(projectExecutions, executionAdapters, `controller-${instanceId}`);
-const executionCoordinator = new ProjectExecutionCoordinator(stateDirectory, projectExecutions, executionWorker);
+const executionCoordinator = new ProjectExecutionCoordinator(
+  stateDirectory,
+  projectExecutions,
+  executionWorker,
+  Date.now,
+  300_000,
+  async (projectId) => {
+    await projectLifecycles.completeDelivery(projectId);
+    await projectExecutionJira.synchronize(projectId);
+  }
+);
 const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
   stateDirectory,
   new ProjectDeliveryPlanOrchestrator(

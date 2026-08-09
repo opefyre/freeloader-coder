@@ -13,14 +13,14 @@ const projectId = "project_abcdef0123456789";
 test("coordinator serializes a project and persists completion across restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "execution-coordinator-"));
   try {
-    let concurrent = 0; let maximum = 0; let calls = 0;
+    let concurrent = 0; let maximum = 0; let calls = 0; let completions = 0;
     const record = executionRecord("completed");
     const service = { get: async () => record, reconcileExpired: async () => undefined };
     const worker = { tick: async () => { calls += 1; concurrent += 1; maximum = Math.max(maximum, concurrent); await delay(20); concurrent -= 1; return record; } };
-    const coordinator = new ProjectExecutionCoordinator(root, service, worker, Date.now, 25);
+    const coordinator = new ProjectExecutionCoordinator(root, service, worker, Date.now, 25, async (completedProjectId) => { assert.equal(completedProjectId, projectId); completions += 1; });
     await Promise.all([coordinator.schedule(projectId), coordinator.schedule(projectId), coordinator.schedule(projectId)]);
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
-    assert.equal(calls, 1); assert.equal(maximum, 1); coordinator.stop();
+    assert.equal(calls, 1); assert.equal(maximum, 1); assert.equal(completions, 1); coordinator.stop();
     const restarted = new ProjectExecutionCoordinator(root, service, worker, Date.now, 25);
     await restarted.resumePending(); await delay(30); assert.equal(calls, 1); restarted.stop();
     assert.equal(JSON.parse(await readFile(join(root, "project-execution-runs.json"), "utf8")).runs[projectId].state, "completed");

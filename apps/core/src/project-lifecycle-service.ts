@@ -171,6 +171,16 @@ export class ProjectLifecycleService {
     });
   }
 
+  async completeDelivery(projectId: string): Promise<ProjectLifecycleRecord> {
+    assertProjectId(projectId);
+    return this.#mutate(async (state) => {
+      const current = requireRecord(state.records, projectId);
+      if (current.stage === "complete") return { state, result: current };
+      const record = advanceProjectLifecycle(current, { type: "delivery_completed" }, Date.now());
+      return { state: replaceRecord(state, record), result: record };
+    });
+  }
+
   async decideSolution(projectId: string, raw: unknown, idempotencyKey: string): Promise<ProjectLifecycleRecord> {
     assertProjectId(projectId); assertIdempotencyKey(idempotencyKey);
     const request = solutionDecisionRequestSchema.parse(raw);

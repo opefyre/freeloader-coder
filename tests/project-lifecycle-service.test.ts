@@ -76,3 +76,23 @@ test("solution decisions are digest-bound, revision-bound, and idempotent", asyn
   assert.deepEqual(replay, revised);
   assert.equal(revised.stage, "solution_design");
 });
+
+test("delivery completion is durable and idempotent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pipeline-delivery-complete-"));
+  const service = new ProjectLifecycleService(root);
+  const projectId = "project_0123456789abcdef";
+  const begun = await service.begin({ projectId, mission: "Build a complete product.", now: 1 });
+  const eligible = await service.assess(projectId, { schemaVersion: 1, expectedRevision: begun.revision, requestId: "request_0123456789abcdef0123", projectKind: "new_product", affectedDomains: ["frontend", "backend"], deliveryStages: ["product", "frontend", "backend", "qa"], estimatedDeveloperHours: 80, requiresArchitectureDecision: true, evidence: ["A complete product is requested."], confidence: 0.95 }, "delivery-eligibility-001");
+  const solution = { kind: "solution" as const, projectRelativePath: ".pipeline/SOLUTION.md" as const, digest: "b".repeat(64), revision: 1, createdAt: 3, citations: ["local://CONTEXT.md"], reviewerIds: ["product-reviewer", "technical-reviewer"], qaPassed: true as const };
+  const awaiting = await service.publishSolution(projectId, solution);
+  await service.decideSolution(projectId, { schemaVersion: 1, expectedRevision: awaiting.revision, artifactDigest: solution.digest, decision: "approved", feedback: null }, "delivery-approve-001");
+  const backlog = { kind: "backlog" as const, projectRelativePath: ".pipeline/BACKLOG.md" as const, digest: "c".repeat(64), revision: 1, createdAt: 4, citations: ["local://SOLUTION.md"], reviewerIds: ["delivery-reviewer", "technical-reviewer"], qaPassed: true as const };
+  await service.publishBacklog(projectId, backlog);
+  await service.activateDelivery(projectId, backlog.digest, "PIPE-1");
+  const completed = await service.completeDelivery(projectId);
+  const replay = await service.completeDelivery(projectId);
+  assert.equal(completed.stage, "complete");
+  assert.deepEqual(replay, completed);
+  assert.equal((await new ProjectLifecycleService(root).get(projectId))?.stage, "complete");
+  assert.equal(eligible.decision.eligible, true);
+});
