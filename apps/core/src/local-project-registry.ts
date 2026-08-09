@@ -19,10 +19,13 @@ import { promisify } from "node:util";
 import {
   localProjectRegistrationSchema,
   localProjectCreationSchema,
+  projectResourceBindingSchema,
+  projectResourceSelectionSchema,
   localProjectSnapshotSchema,
   validateLocalProjectCollection,
   type LocalProjectCollection,
   type LocalProjectSnapshot,
+  type ProjectResourceBinding,
 } from "../../../packages/runtime/src/local-projects.js";
 import {
   localPlanningSnapshotSchema,
@@ -79,6 +82,7 @@ type PrivateProjectRecord = {
   id: string;
   canonicalPath: string;
   displayName: string;
+  resources: ProjectResourceBinding[];
   snapshot: LocalProjectSnapshot;
 };
 
@@ -209,7 +213,7 @@ export class LocalProjectRegistry {
         "That project name is already registered."
       );
     }
-    const snapshot = await inspectRepository({ id, canonicalPath, displayName });
+    const snapshot = await inspectRepository({ id, canonicalPath, displayName, resources: [] });
     await this.#save({
       schemaVersion: registrySchemaVersion,
       projects: [
@@ -219,6 +223,7 @@ export class LocalProjectRegistry {
           id,
           canonicalPath,
           displayName,
+          resources: [],
           snapshot,
         },
       ],
@@ -234,18 +239,21 @@ export class LocalProjectRegistry {
       requestedName,
       registry.projects.map((project) => project.displayName)
     );
-    const projectDirectory = resolve(dirname(this.#registryPath), "projects");
-    await mkdir(projectDirectory, { recursive: true, mode: 0o700 });
-    await chmod(projectDirectory, 0o700);
-    const slug = projectSlug(requestedName);
-    const workspace = resolve(
-      projectDirectory,
-      `${slug}-${hash(idempotencyKey).slice(0, 10)}`
-    );
+    const workspace = resolve(request.workspacePath);
+    await assertSafeWorkspaceDestination(workspace);
     try {
       const existing = await stat(workspace);
       if (!existing.isDirectory()) throw new Error();
-      return this.register({ schemaVersion: 1, path: workspace, displayName });
+      const children = await readdir(workspace);
+      if (children.includes(".git")) {
+        return this.register({ schemaVersion: 1, path: workspace, displayName });
+      }
+      if (children.length > 0) {
+        throw new LocalProjectError(
+          "invalid_path",
+          "Choose an empty folder or an existing Git project."
+        );
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         if (error instanceof LocalProjectError) throw error;
@@ -255,7 +263,7 @@ export class LocalProjectRegistry {
         );
       }
     }
-    await mkdir(workspace, { mode: 0o700 });
+    await mkdir(workspace, { recursive: true, mode: 0o700 });
     await writeFile(
       resolve(workspace, "README.md"),
       `# ${displayName}\n\n## Product idea\n\n${request.idea}\n`,
@@ -278,6 +286,28 @@ export class LocalProjectRegistry {
       path: workspace,
       displayName,
     });
+  }
+
+  async setResources(projectId: string, input: unknown): Promise<LocalProjectSnapshot> {
+    assertProjectId(projectId);
+    const request = projectResourceSelectionSchema.parse(input);
+    const registry = await this.#load();
+    const record = registry.projects.find((project) => project.id === projectId);
+    if (!record) throw new LocalProjectError("not_found", "Project registration was not found.");
+    const now = Date.now();
+    const resources = request.resources.map((resource) => ({
+      ...resource,
+      id: `binding_${hash(`${projectId}:${resource.kind}:${resource.connectionId}:${resource.resourceId}`).slice(0, 16)}`,
+      selectedAt: now,
+    }));
+    const snapshot = localProjectSnapshotSchema.parse({ ...record.snapshot, resources });
+    await this.#save({
+      schemaVersion: registrySchemaVersion,
+      projects: registry.projects.map((project) =>
+        project.id === projectId ? { ...project, resources, snapshot } : project
+      ),
+    });
+    return snapshot;
   }
 
   async rescan(projectId: string): Promise<LocalProjectSnapshot> {
@@ -320,6 +350,7 @@ export class LocalProjectRegistry {
         id: record.id,
         canonicalPath,
         displayName: record.displayName,
+        resources: record.resources,
       });
     } catch (error) {
       if (error instanceof LocalProjectError) throw error;
@@ -387,16 +418,6 @@ function projectNameFromIdea(idea: string): string {
   return candidate.length >= 3 ? candidate.slice(0, 80) : "New project";
 }
 
-function projectSlug(displayName: string): string {
-  const slug = displayName
-    .normalize("NFKD")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .toLowerCase()
-    .slice(0, 48);
-  return slug || "project";
-}
-
 function uniqueProjectName(requested: string, existing: readonly string[]): string {
   const names = new Set(existing.map((name) => name.toLocaleLowerCase()));
   if (!names.has(requested.toLocaleLowerCase())) return requested;
@@ -406,6 +427,36 @@ function uniqueProjectName(requested: string, existing: readonly string[]): stri
     if (!names.has(candidate.toLocaleLowerCase())) return candidate;
   }
   return `${requested.slice(0, 151)} ${randomUUID().slice(0, 8)}`;
+}
+
+async function assertSafeWorkspaceDestination(workspace: string): Promise<void> {
+  if (!isAbsolute(workspace) || workspace.includes("\0")) {
+    throw new LocalProjectError("invalid_path", "Choose an absolute local folder path.");
+  }
+  const root = parse(workspace).root;
+  const segments = workspace.slice(root.length).split(sep).filter(Boolean);
+  if (
+    workspace === root ||
+    segments.length < 3 ||
+    [".ssh", ".aws", ".config", "Library", "System", "Volumes", "private", "etc", "var"]
+      .some((name) => segments.includes(name))
+  ) {
+    throw new LocalProjectError(
+      "protected_path",
+      "That folder is inside a protected or overly broad location."
+    );
+  }
+  const parent = dirname(workspace);
+  try {
+    const canonicalParent = await realpath(parent);
+    const parentInfo = await stat(canonicalParent);
+    if (!parentInfo.isDirectory()) throw new Error();
+  } catch {
+    throw new LocalProjectError(
+      "invalid_path",
+      "The parent folder must already exist so the destination can be verified."
+    );
+  }
 }
 
 export class LocalProjectError extends Error {
@@ -471,6 +522,7 @@ async function inspectRepository(input: {
   id: string;
   canonicalPath: string;
   displayName: string;
+  resources: readonly ProjectResourceBinding[];
 }): Promise<LocalProjectSnapshot> {
   const queue = [input.canonicalPath];
   const manifests: string[] = [];
@@ -546,6 +598,11 @@ async function inspectRepository(input: {
     schemaVersion: 1,
     id: input.id,
     displayName: input.displayName,
+    workspaceLabel: basename(input.canonicalPath),
+    lifecycleStage: "intake",
+    resources: input.resources,
+    latestUpdate: null,
+    progress: null,
     state: warnings.length > 0 ? "warning" : "ready",
     observedAt: Date.now(),
     validForMs: SCAN_VALID_FOR_MS,
@@ -728,9 +785,12 @@ function parsePrivateRegistry(input: unknown): PrivateRegistry {
       throw new LocalProjectError("registry_invalid", "Registry project is invalid.");
     }
     const value = project as Record<string, unknown>;
+    const keys = Object.keys(value).sort().join(",");
     if (
-      Object.keys(value).sort().join(",") !==
-        "canonicalPath,displayName,id,schemaVersion,snapshot" ||
+      ![
+        "canonicalPath,displayName,id,schemaVersion,snapshot",
+        "canonicalPath,displayName,id,resources,schemaVersion,snapshot",
+      ].includes(keys) ||
       value.schemaVersion !== 1 ||
       typeof value.id !== "string" ||
       !/^project_[a-f0-9]{16}$/.test(value.id) ||
@@ -740,12 +800,20 @@ function parsePrivateRegistry(input: unknown): PrivateRegistry {
     ) {
       throw new LocalProjectError("registry_invalid", "Registry project is invalid.");
     }
+    const resources = Array.isArray(value.resources)
+      ? value.resources.map((resource) => projectResourceBindingSchema.parse(resource))
+      : [];
     return {
       schemaVersion: registrySchemaVersion,
       id: value.id,
       canonicalPath: value.canonicalPath,
       displayName: value.displayName,
-      snapshot: localProjectSnapshotSchema.parse(value.snapshot),
+      resources,
+      snapshot: localProjectSnapshotSchema.parse({
+        ...(value.snapshot as Record<string, unknown>),
+        workspaceLabel: basename(value.canonicalPath),
+        resources,
+      }),
     };
   });
   if (

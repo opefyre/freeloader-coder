@@ -283,6 +283,7 @@ const controlPlane = createControlPlaneServer({
     create: (input, idempotencyKey) => localProjects.create(input, idempotencyKey),
     register: (input) => localProjects.register(input),
     rescan: (projectId) => localProjects.rescan(projectId),
+    setResources: (projectId, input) => localProjects.setResources(projectId, input),
     forget: (projectId) => localProjects.forget(projectId),
   },
   requests: {

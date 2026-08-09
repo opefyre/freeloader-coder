@@ -128,6 +128,11 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
     schemaVersion: 1 as const,
     id: "project_0123456789abcdef",
     displayName: "Sample",
+    workspaceLabel: "sample",
+    lifecycleStage: "intake" as const,
+    resources: [],
+    latestUpdate: null,
+    progress: null,
     state: "warning" as const,
     observedAt,
     validForMs: 60_000,
@@ -160,6 +165,10 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       },
       rescan: (projectId) => {
         calls.push(`rescan:${projectId}`);
+        return project;
+      },
+      setResources: (projectId, input) => {
+        calls.push(`resources:${projectId}:${JSON.stringify(input)}`);
         return project;
       },
       forget: (projectId) => {
@@ -205,9 +214,25 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
         "Content-Type": "application/json",
         "Idempotency-Key": "create:0123456789",
       },
-      body: JSON.stringify({ schemaVersion: 1, idea: "Build a garden planner" }),
+      body: JSON.stringify({ schemaVersion: 1, idea: "Build a garden planner", workspacePath: "/Users/example/projects/garden-planner" }),
     });
     assert.equal(create.status, 200);
+    const resources = await fetch(`${base}/api/v1/projects/${project.id}/resources`, {
+      method: "PUT",
+      headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "resources:0123456789" },
+      body: JSON.stringify({
+        schemaVersion: 1,
+        resources: [{
+          kind: "jira_project",
+          connectionId: "jira-main",
+          resourceId: "10000",
+          label: "PIPE",
+          url: "https://example.atlassian.net/jira/software/projects/PIPE",
+          role: "primary",
+        }],
+      }),
+    });
+    assert.equal(resources.status, 200);
     assert.equal((await create.json() as { outcome: string }).outcome, "created");
 
     const rescan = await fetch(
@@ -221,7 +246,7 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       { method: "DELETE", headers: { Origin: origin } }
     );
     assert.equal(forget.status, 200);
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 5);
 
     assert.equal(
       (

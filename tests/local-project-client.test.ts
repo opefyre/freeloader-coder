@@ -55,6 +55,7 @@ test("browser client creates a private project from a product idea", async () =>
   const result = await createLocalProject({
     endpoint: "http://127.0.0.1:4312",
     idea: "Build a calm team planning app",
+    workspacePath: "/Users/example/projects/calm-planner",
     idempotencyKey: "create:0123456789",
     fetcher: async (_url, init) => {
       observedBody = String(init?.body ?? "");
@@ -65,6 +66,11 @@ test("browser client creates a private project from a product idea", async () =>
           schemaVersion: 1,
           id: "project_0123456789abcdef",
           displayName: "Build a calm team planning app",
+          workspaceLabel: "calm-planner",
+          lifecycleStage: "intake",
+          resources: [],
+          latestUpdate: null,
+          progress: null,
           state: "warning",
           observedAt: 10_000,
           validForMs: 60_000,
@@ -77,6 +83,7 @@ test("browser client creates a private project from a product idea", async () =>
     },
   });
   assert.equal(result.outcome, "created");
+  assert.match(observedBody, /"workspacePath":"\/Users\/example\/projects\/calm-planner"/);
   assert.match(observedBody, /calm team planning app/);
   assert.doesNotMatch(observedBody, /path/);
 });

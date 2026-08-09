@@ -6,11 +6,12 @@ const source = readFileSync("apps/studio/src/components/activity/activity-explor
 const client = readFileSync("apps/studio/src/activity-client.ts", "utf8");
 const app = readFileSync("apps/studio/src/App.tsx", "utf8");
 
-test("Activity route mounts a lazy live explorer backed by the loopback control plane", () => {
-  assert.match(app, /ActivityExplorer = lazy/);
-  assert.match(app, /view === "activity"/);
-  assert.match(app, /<ActivityExplorer endpoint=\{endpoint\} \/>/);
-  assert.match(app, /activeView !== "activity"/);
+test("Activity route mounts the project-scoped Action Center and Analytics", () => {
+  assert.match(app, /ProjectActivityDashboard = lazy/);
+  assert.match(app, /value="actions"/);
+  assert.match(app, /value="analytics"/);
+  assert.match(app, /mode="actions"/);
+  assert.match(app, /mode="analytics"/);
 });
 
 test("Activity Explorer exposes live filters, search, timeline, inspector, references, and export", () => {

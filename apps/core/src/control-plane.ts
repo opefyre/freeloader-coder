@@ -11,6 +11,7 @@ import {
   localProjectMutationResponseSchema,
   localProjectCreationSchema,
   localProjectRegistrationSchema,
+  projectResourceSelectionSchema,
   validateLocalProjectCollection,
   type LocalProjectCollection,
   type LocalProjectSnapshot,
@@ -146,6 +147,7 @@ export type ControlPlaneServerOptions = {
     create?: (input: unknown, idempotencyKey: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     register: (input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     rescan: (projectId: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
+    setResources?: (projectId: string, input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     forget: (projectId: string) => void | Promise<void>;
   };
   requests?: {
@@ -235,7 +237,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         response.setHeader("Vary", "Origin");
       }
       if (request.method === "OPTIONS") {
-        response.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
         response.setHeader(
           "Access-Control-Allow-Headers",
           "Content-Type, Idempotency-Key"
@@ -1031,8 +1033,27 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const projectRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources)$/
       );
+      if (
+        request.method === "PUT" &&
+        projectRoute?.[2] === "resources" &&
+        options.projects?.setResources
+      ) {
+        requireIdempotencyKey(request);
+        const body = projectResourceSelectionSchema.parse(await readJsonBody(request));
+        const project = await options.projects.setResources(projectRoute[1] ?? "", body);
+        sendJson(
+          response,
+          200,
+          localProjectMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "registered",
+            project,
+          })
+        );
+        return;
+      }
       if (
         request.method === "POST" &&
         projectRoute?.[2] === "rescan" &&

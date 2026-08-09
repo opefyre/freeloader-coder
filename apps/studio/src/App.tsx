@@ -114,6 +114,11 @@ const ActivityExplorer = lazy(() =>
     default: module.ActivityExplorer,
   }))
 );
+const ProjectActivityDashboard = lazy(() =>
+  import("./components/activity/project-activity-dashboard.js").then((module) => ({
+    default: module.ProjectActivityDashboard,
+  }))
+);
 const DecisionInbox = lazy(() =>
   import("./components/decisions/decision-inbox.js").then((module) => ({
     default: module.DecisionInbox,
@@ -197,6 +202,11 @@ const RuntimeSetupPanel = lazy(() =>
 const LocalProjectsPanel = lazy(() =>
   import("./components/projects/local-projects-panel.js").then((module) => ({
     default: module.LocalProjectsPanel,
+  }))
+);
+const ProjectPortfolio = lazy(() =>
+  import("./components/projects/project-portfolio.js").then((module) => ({
+    default: module.ProjectPortfolio,
   }))
 );
 
@@ -1227,9 +1237,23 @@ function WorkspaceSurface({
 }
 
 function BuildWorkspace({ navigate }: { navigate: (view: StudioView) => void }) {
+  const openActivity = (projectId: string) => {
+    window.history.pushState({}, "", `/activity?project=${encodeURIComponent(projectId)}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
   return (
-    <div className="mx-auto max-w-5xl">
-      <LocalRequestPanel mode="compose" navigate={navigate} />
+    <div className="mx-auto max-w-6xl space-y-10">
+      <ProjectPortfolio
+        openActivity={openActivity}
+        startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()}
+      />
+      <div>
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold">Start or continue work</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Choose a project, provide the outcome, and add its working context.</p>
+        </div>
+        <LocalRequestPanel mode="compose" navigate={navigate} />
+      </div>
     </div>
   );
 }
@@ -1242,34 +1266,13 @@ function ActivityWorkspace({
   navigate: (view: StudioView) => void;
 }) {
   return (
-    <Tabs defaultValue="progress">
+    <Tabs defaultValue="actions">
       <TabsList aria-label="Activity sections">
-        <TabsTrigger value="progress">Progress</TabsTrigger>
-        <TabsTrigger value="work">Work</TabsTrigger>
-        <TabsTrigger value="attention">Needs you</TabsTrigger>
-        <TabsTrigger value="history">History</TabsTrigger>
+        <TabsTrigger value="actions">Action Center</TabsTrigger>
+        <TabsTrigger value="analytics">Analytics</TabsTrigger>
       </TabsList>
-      <TabsContent value="progress">
-        <ControlCenter endpoint={endpoint} navigate={navigate} />
-      </TabsContent>
-      <TabsContent value="work">
-        <div className="space-y-4">
-          <AutonomousWorkCenter endpoint={endpoint} />
-          <LocalRequestPanel mode="queue" />
-        </div>
-      </TabsContent>
-      <TabsContent value="attention">
-        <div className="space-y-4">
-          <DecisionInbox endpoint={endpoint} />
-          <AttentionCenter
-            endpoint={endpoint}
-            activate={(path) => navigate(viewFromLocation(new URL(path, window.location.origin)))}
-          />
-        </div>
-      </TabsContent>
-      <TabsContent value="history">
-        <ActivityExplorer endpoint={endpoint} />
-      </TabsContent>
+      <TabsContent value="actions"><ProjectActivityDashboard endpoint={endpoint} mode="actions" /></TabsContent>
+      <TabsContent value="analytics"><ProjectActivityDashboard endpoint={endpoint} mode="analytics" /></TabsContent>
     </Tabs>
   );
 }

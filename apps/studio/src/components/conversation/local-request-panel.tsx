@@ -74,6 +74,7 @@ export function LocalRequestPanel(props: {
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);
   const [projectId, setProjectId] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [workspacePath, setWorkspacePath] = useState("");
   const [outcome, setOutcome] = useState("");
   const [lastSubmission, setLastSubmission] = useState<{
     idea: string;
@@ -135,6 +136,10 @@ export function LocalRequestPanel(props: {
       setNotice("Describe what you want to build or change.");
       return;
     }
+    if (projectId === "__new__" && !workspacePath.trim()) {
+      setNotice("Choose an absolute local folder for the project.");
+      return;
+    }
     setStatus("working");
     try {
       const submittedIdea = outcome.trim();
@@ -145,6 +150,7 @@ export function LocalRequestPanel(props: {
         const created = await createLocalProject({
           endpoint,
           idea: submittedIdea,
+          workspacePath: workspacePath.trim(),
           ...(projectName.trim() ? { displayName: projectName.trim() } : {}),
           idempotencyKey: `project:${crypto.randomUUID()}`,
         });
@@ -160,6 +166,7 @@ export function LocalRequestPanel(props: {
       });
       setOutcome("");
       setProjectName("");
+      setWorkspacePath("");
       setLastSubmission({
         idea: submittedIdea,
         project: targetProjectName,
@@ -630,16 +637,28 @@ export function LocalRequestPanel(props: {
                 </select>
               </label>
               {projectId === "__new__" && (
-                <label className="block text-xs font-semibold text-muted-foreground">
-                  Project name <span className="font-normal">(optional)</span>
-                  <input
-                    value={projectName}
-                    onChange={(event) => setProjectName(event.target.value)}
-                    maxLength={160}
-                    placeholder="I can name it from your idea"
-                    className="mt-2 h-11 w-full rounded-2xl bg-muted px-4 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-                  />
-                </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-muted-foreground">
+                    Project name <span className="font-normal">(optional)</span>
+                    <input
+                      value={projectName}
+                      onChange={(event) => setProjectName(event.target.value)}
+                      maxLength={160}
+                      placeholder="I can name it from your idea"
+                      className="mt-2 h-11 w-full rounded-2xl bg-muted px-4 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-muted-foreground">
+                    Local folder <span className="text-primary">required</span>
+                    <input
+                      value={workspacePath}
+                      onChange={(event) => setWorkspacePath(event.target.value)}
+                      maxLength={2_048}
+                      placeholder="/Users/you/Projects/my-app"
+                      className="mt-2 h-11 w-full rounded-2xl bg-muted px-4 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                    />
+                  </label>
+                </div>
               )}
               <label className="sr-only" htmlFor="build-request">
                 What would you like to build?
@@ -659,7 +678,7 @@ export function LocalRequestPanel(props: {
                 </span>
                 <Button
                   onClick={() => void submit()}
-                  disabled={status !== "ready" || !projectId || outcome.trim().length < 3}
+                  disabled={status !== "ready" || !projectId || outcome.trim().length < 3 || (projectId === "__new__" && !workspacePath.trim())}
                 >
                   Start
                   <ArrowRight />

@@ -12,3 +12,4 @@ export * from "./retry.js";
 export * from "./reviews.js";
 export * from "./task-planner.js";
 export * from "./workflow.js";
+export * from "./project-lifecycle.js";

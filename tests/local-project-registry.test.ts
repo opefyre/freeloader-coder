@@ -26,10 +26,23 @@ test("registry persists an idempotent bounded repository observation across rest
     assert.equal(first.warnings.some((warning) => warning.includes("never executes Git")), true);
 
     const restarted = new LocalProjectRegistry(fixture.state);
+    await restarted.setResources(first.id, {
+      schemaVersion: 1,
+      resources: [{
+        kind: "jira_project",
+        connectionId: "jira-main",
+        resourceId: "10000",
+        label: "PIPE",
+        url: "https://example.atlassian.net/jira/software/projects/PIPE",
+        role: "primary",
+      }],
+    });
     const collection = await restarted.list();
     assert.equal(collection.projects.length, 1);
     assert.equal(JSON.stringify(collection).includes(fixture.repository), false);
     assert.equal(JSON.stringify(collection).includes("secret-value"), false);
+    assert.equal(collection.projects[0]?.resources?.[0]?.label, "PIPE");
+    assert.match(collection.projects[0]?.resources?.[0]?.id ?? "", /^binding_/);
     const planning = await restarted.grounding(first.id);
     assert.equal(
       planning.grounding.sources.some((source) => source.path === "package.json"),
@@ -66,6 +79,7 @@ test("registry creates a private Git workspace from a plain-language product ide
       schemaVersion: 1 as const,
       displayName: "Garden planner",
       idea: "Help apartment residents plan and track a small balcony garden.",
+      workspacePath: join(fixture.root, "garden-planner"),
     };
     const project = await registry.create(input, "create:garden-planner");
     const replay = await registry.create(input, "create:garden-planner");

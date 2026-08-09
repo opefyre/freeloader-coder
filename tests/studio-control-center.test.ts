@@ -6,8 +6,9 @@ const source = readFileSync("apps/studio/src/components/control-center/control-c
 const app = readFileSync("apps/studio/src/App.tsx", "utf8");
 const client = readFileSync("apps/studio/src/live-operations-client.ts", "utf8");
 
-test("Activity mounts the endpoint-backed live Control Center", () => {
-  assert.match(app, /<ControlCenter endpoint=\{endpoint\} navigate=\{navigate\} \/>/);
+test("legacy Control Center remains endpoint-backed but is not the primary Activity surface", () => {
+  assert.match(app, /ControlCenter/);
+  assert.match(app, /ProjectActivityDashboard/);
   for (const heading of ["Live operations", "Work distribution", "Recent operational evidence", "Free-provider readiness"]) {
     assert.match(source, new RegExp(heading));
   }

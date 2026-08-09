@@ -3,6 +3,7 @@ import {
   localProjectMutationResponseSchema,
   type LocalProjectCollection,
   type LocalProjectMutationResponse,
+  type ProjectResourceSelection,
 } from "../../../packages/runtime/src/local-projects.js";
 
 const MAX_RESPONSE_BYTES = 131_072;
@@ -49,6 +50,7 @@ export async function registerLocalProject(input: {
 export async function createLocalProject(input: {
   endpoint: string;
   idea: string;
+  workspacePath: string;
   displayName?: string;
   idempotencyKey: string;
   fetcher?: typeof fetch;
@@ -61,8 +63,29 @@ export async function createLocalProject(input: {
       body: {
         schemaVersion: 1,
         idea: input.idea,
+        workspacePath: input.workspacePath,
         ...(input.displayName ? { displayName: input.displayName } : {}),
       },
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
+export async function setLocalProjectResources(input: {
+  endpoint: string;
+  projectId: string;
+  selection: ProjectResourceSelection;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalProjectMutationResponse> {
+  assertProjectId(input.projectId);
+  return localProjectMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/projects/${input.projectId}/resources`,
+      method: "PUT",
+      body: input.selection,
       idempotencyKey: input.idempotencyKey,
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
     })
@@ -104,7 +127,7 @@ export async function forgetLocalProject(input: {
 async function request(input: {
   endpoint: string;
   path: string;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
   idempotencyKey?: string;
   signal?: AbortSignal;
