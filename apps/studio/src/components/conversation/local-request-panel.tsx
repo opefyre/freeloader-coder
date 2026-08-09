@@ -7,6 +7,7 @@ import { Fingerprint } from "@phosphor-icons/react/Fingerprint";
 import { FloppyDisk } from "@phosphor-icons/react/FloppyDisk";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
+import { GithubLogo } from "@phosphor-icons/react/GithubLogo";
 import { HourglassMedium } from "@phosphor-icons/react/HourglassMedium";
 import { LockKey } from "@phosphor-icons/react/LockKey";
 import { PaperclipHorizontal } from "@phosphor-icons/react/PaperclipHorizontal";
@@ -27,7 +28,10 @@ import {
   addLocalProjectFiles,
   createLocalProject,
   listLocalProjects,
+  setLocalProjectResources,
 } from "../../local-project-client.js";
+import { listIntegrationConnections } from "../../integration-connection-client.js";
+import type { PublicIntegrationConnectionCollection } from "../../../../../packages/runtime/src/integration-connections.js";
 import { openNativePicker } from "../../native-picker-client.js";
 import {
   archiveLocalRequest,
@@ -85,6 +89,9 @@ export function LocalRequestPanel(props: {
   const [workspaceLabel, setWorkspaceLabel] = useState("");
   const [attachments, setAttachments] = useState<readonly { path: string; label: string }[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
+  const [integrationConnections, setIntegrationConnections] = useState<PublicIntegrationConnectionCollection | null>(null);
+  const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<readonly string[]>([]);
   const [outcome, setOutcome] = useState("");
   const [lastSubmission, setLastSubmission] = useState<{
     idea: string;
@@ -234,6 +241,49 @@ export function LocalRequestPanel(props: {
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "File picker failed safely.");
+    }
+  }
+
+  async function openResourcePicker() {
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (!project) return;
+    setStatus("working");
+    try {
+      const collection = await listIntegrationConnections({ endpoint });
+      setIntegrationConnections(collection);
+      setSelectedRepositoryIds((project.resources ?? []).filter((resource) => resource.kind === "github_repository").map((resource) => resource.resourceId));
+      setResourcePickerOpen(true);
+      setStatus("ready");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Resources could not be loaded.");
+    }
+  }
+
+  async function saveProjectResources() {
+    const project = projects.find((candidate) => candidate.id === projectId);
+    const github = integrationConnections?.connections.find((connection) => connection.provider === "github" && connection.state === "ready");
+    if (!project || !github) return;
+    setStatus("working");
+    try {
+      const retained = (project.resources ?? [])
+        .filter((resource) => resource.kind !== "github_repository")
+        .map(({ kind, connectionId, resourceId, label, url, role }) => ({
+          kind,
+          connectionId,
+          resourceId,
+          label,
+          url,
+          role,
+        }));
+      const repositories = github.resources.filter((resource) => selectedRepositoryIds.includes(resource.id)).map((resource, index) => ({ kind: "github_repository" as const, connectionId: `github-cli:${github.accountLabel ?? "account"}`, resourceId: resource.id, label: resource.label, url: resource.url, role: index === 0 ? "primary" as const : "additional" as const }));
+      await setLocalProjectResources({ endpoint, projectId: project.id, selection: { schemaVersion: 1, resources: [...retained, ...repositories] }, idempotencyKey: `resources:${crypto.randomUUID()}` });
+      setResourcePickerOpen(false);
+      await refresh();
+      setNotice(`${repositories.length} GitHub ${repositories.length === 1 ? "repository" : "repositories"} saved to this project.`);
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Resources could not be saved.");
     }
   }
 
@@ -699,6 +749,7 @@ export function LocalRequestPanel(props: {
                   {projectId === "__new__" && <Button type="button" size="sm" variant={workspacePath ? "secondary" : "ghost"} onClick={() => void chooseFolder()} disabled={status === "working"}>
                     <FolderOpen />{workspaceLabel || "Choose folder"}
                   </Button>}
+                  {projectId !== "__new__" && <Button type="button" size="sm" variant="secondary" onClick={() => void openResourcePicker()} disabled={status === "working"}><GitBranch />Resources</Button>}
                   <Button type="button" size="sm" variant="ghost" aria-label="Attach files" onClick={() => void chooseFiles()} disabled={status === "working"}>
                     <PaperclipHorizontal />
                   </Button>
@@ -711,6 +762,16 @@ export function LocalRequestPanel(props: {
                   <ArrowRight />
                 </Button>
               </div>
+              {resourcePickerOpen && <div role="dialog" aria-modal="false" aria-labelledby="project-resources-title" className="rounded-3xl bg-muted/55 p-4">
+                <div className="flex items-center justify-between gap-3"><strong id="project-resources-title">GitHub repositories</strong><Button size="sm" variant="ghost" aria-label="Close resources" onClick={() => setResourcePickerOpen(false)}><X /></Button></div>
+                {integrationConnections?.connections.find((connection) => connection.provider === "github")?.state !== "ready" ? <p className="mt-4 text-sm text-muted-foreground">Connect GitHub in Settings first.</p> : <div className="mt-3 grid max-h-64 gap-2 overflow-auto sm:grid-cols-2">
+                  {integrationConnections.connections.find((connection) => connection.provider === "github")?.resources.map((repository) => {
+                    const selected = selectedRepositoryIds.includes(repository.id);
+                    return <button key={repository.id} type="button" aria-pressed={selected} onClick={() => setSelectedRepositoryIds((current) => selected ? current.filter((id) => id !== repository.id) : [...current, repository.id])} className={`flex items-center gap-3 rounded-2xl p-3 text-left ${selected ? "bg-primary/10" : "bg-background/70"}`}><GithubLogo className="shrink-0 text-primary" /><span className="min-w-0"><strong className="block truncate text-xs">{repository.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{repository.detail}</span></span></button>;
+                  })}
+                </div>}
+                <div className="mt-4 flex justify-end"><Button size="sm" onClick={() => void saveProjectResources()} disabled={status === "working" || integrationConnections?.connections.find((connection) => connection.provider === "github")?.state !== "ready"}>Save</Button></div>
+              </div>}
             </div>
           )}
           <p aria-live="polite" className={props.mode === "compose" ? "sr-only" : "mt-4 rounded-2xl bg-muted/55 p-4 text-xs leading-5 text-muted-foreground"}>
