@@ -44,6 +44,9 @@ test("major project lifecycle enforces context, approval, backlog QA, and delive
   assert.equal(record.stage, "solution_design");
   record = advanceProjectLifecycle(record, { type: "design_completed", artifact: artifact("solution", "b") }, 40);
   assert.equal(record.stage, "awaiting_design_approval");
+  const revisionRequested = advanceProjectLifecycle(record, { type: "design_revision_requested", artifactDigest: digest("b"), feedback: "Clarify the rollout rollback boundary." }, 41);
+  assert.equal(revisionRequested.stage, "solution_design");
+  assert.equal(revisionRequested.designFeedback[0]?.artifactDigest, digest("b"));
   assert.throws(() => advanceProjectLifecycle(record, { type: "design_approved", artifactDigest: digest("c") }, 41));
   record = advanceProjectLifecycle(record, { type: "design_approved", artifactDigest: digest("b") }, 42);
   record = advanceProjectLifecycle(record, { type: "backlog_completed", artifact: artifact("backlog", "c"), jiraEpicId: "10001" }, 50);

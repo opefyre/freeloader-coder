@@ -55,3 +55,19 @@ test("uncertain eligibility becomes a durable selectable owner question", async 
   assert.equal(result.lifecycle.questions.length, 1);
   assert.deepEqual(result.lifecycle.questions[0]?.options.map((option) => option.id), ["new_product", "major_feature", "small_change"]);
 });
+
+test("solution decisions are digest-bound, revision-bound, and idempotent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pipeline-solution-decision-"));
+  const service = new ProjectLifecycleService(root);
+  const projectId = "project_0123456789abcdef";
+  const context = await service.begin({ projectId, mission: "Build a complete product.", now: 1 });
+  const eligible = await service.assess(projectId, { schemaVersion: 1, expectedRevision: context.revision, requestId: "request_0123456789abcdef0123", projectKind: "new_product", affectedDomains: ["frontend", "backend"], deliveryStages: ["product", "frontend", "backend", "qa"], estimatedDeveloperHours: 80, requiresArchitectureDecision: true, evidence: ["A complete product is requested."], confidence: 0.95 }, "solution-eligibility-001");
+  const artifact = { kind: "solution" as const, projectRelativePath: ".pipeline/SOLUTION.md" as const, digest: "b".repeat(64), revision: 1, createdAt: 3, citations: ["local://CONTEXT.md"], reviewerIds: ["product-reviewer", "technical-reviewer"], qaPassed: true as const };
+  const awaiting = await service.publishSolution(projectId, artifact);
+  assert.equal(awaiting.stage, "awaiting_design_approval");
+  await assert.rejects(() => service.decideSolution(projectId, { schemaVersion: 1, expectedRevision: eligible.lifecycle.revision, artifactDigest: artifact.digest, decision: "approved", feedback: null }, "solution-stale-001"), /solution changed/i);
+  const revised = await service.decideSolution(projectId, { schemaVersion: 1, expectedRevision: awaiting.revision, artifactDigest: artifact.digest, decision: "revision_requested", feedback: "Clarify rollback and data migration boundaries." }, "solution-revise-001");
+  const replay = await service.decideSolution(projectId, { schemaVersion: 1, expectedRevision: awaiting.revision, artifactDigest: artifact.digest, decision: "revision_requested", feedback: "Clarify rollback and data migration boundaries." }, "solution-revise-001");
+  assert.deepEqual(replay, revised);
+  assert.equal(revised.stage, "solution_design");
+});

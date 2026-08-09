@@ -321,6 +321,8 @@ const controlPlane = createControlPlaneServer({
       return decision;
     },
     assess: (projectId, input, idempotencyKey) => projectLifecycles.assess(projectId, input, idempotencyKey),
+    publishSolution: (projectId, input) => projectLifecycles.publishSolution(projectId, input),
+    decideSolution: (projectId, input, idempotencyKey) => projectLifecycles.decideSolution(projectId, input, idempotencyKey),
   },
   nativePicker: {
     folder: () => nativePicker.folder(),

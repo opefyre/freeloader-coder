@@ -68,7 +68,7 @@ test("unanswered lifecycle clarifications appear as project-scoped owner actions
   const lifecycle = {
     schemaVersion: 1 as const, projectId, stage: "clarification" as const, revision: 2, mission: "Build a portal.", assessment: null,
     questions: [{ id: "question_0123456789abcdef", prompt: "Who can sign up?", whyItMatters: "Identity architecture changes.", options: [{ id: "invite", label: "Invite", consequence: "Admins invite." }, { id: "public", label: "Public", consequence: "Anyone registers." }], allowsCustomAnswer: false, sourceFindingIds: ["identity-gap"] }],
-    answers: [], artifacts: [], designApproval: null, jiraEpicId: null, blockedReason: null, updatedAt: now - 25,
+    answers: [], artifacts: [], designApproval: null, designFeedback: [], jiraEpicId: null, blockedReason: null, updatedAt: now - 25,
   };
   const snapshot = buildDecisionSnapshot({ live: { ...live, providers: [], recentEvents: [] }, autonomy: { ...autonomy, recommendations: [], leases: [] }, lifecycles: [lifecycle], query: { range: "all" }, now });
   assert.equal(snapshot.items.length, 1);

@@ -64,6 +64,11 @@ export const projectLifecycleRecordSchema = z.strictObject({
     decision: z.enum(["approved", "declined"]),
     decidedAt: z.number().int().nonnegative(),
   }).nullable(),
+  designFeedback: z.array(z.strictObject({
+    artifactDigest: digest,
+    feedback: z.string().trim().min(3).max(10_000),
+    requestedAt: z.number().int().nonnegative(),
+  })).max(50).default([]),
   jiraEpicId: z.string().trim().min(1).max(160).nullable(),
   blockedReason: z.string().trim().min(1).max(1_000).nullable(),
   updatedAt: z.number().int().nonnegative(),
@@ -82,6 +87,7 @@ export type ProjectLifecycleEvent =
   | { type: "design_completed"; artifact: z.infer<typeof projectArtifactSchema> }
   | { type: "design_approved"; artifactDigest: string }
   | { type: "design_declined"; artifactDigest: string }
+  | { type: "design_revision_requested"; artifactDigest: string; feedback: string }
   | { type: "backlog_completed"; artifact: z.infer<typeof projectArtifactSchema>; jiraEpicId: string }
   | { type: "backlog_qa_passed"; artifactDigest: string }
   | { type: "delivery_completed" }
@@ -104,6 +110,7 @@ export function createProjectLifecycle(input: {
     answers: [],
     artifacts: [],
     designApproval: null,
+    designFeedback: [],
     jiraEpicId: null,
     blockedReason: null,
     updatedAt: input.now,
@@ -173,6 +180,12 @@ export function advanceProjectLifecycle(
       requireStage(record, "awaiting_design_approval");
       requireArtifact(record, "solution", event.artifactDigest);
       patch = { stage: "cancelled", designApproval: { artifactDigest: event.artifactDigest, decision: "declined", decidedAt: now }, blockedReason: "The owner declined the proposed solution." };
+      break;
+    case "design_revision_requested":
+      requireStage(record, "awaiting_design_approval");
+      requireArtifact(record, "solution", event.artifactDigest);
+      if (event.feedback.trim().length < 3) throw new Error("A solution revision needs specific owner feedback.");
+      patch = { stage: "solution_design", designApproval: null, designFeedback: [...record.designFeedback, { artifactDigest: event.artifactDigest, feedback: event.feedback.trim(), requestedAt: now }], blockedReason: null };
       break;
     case "backlog_completed":
       requireStage(record, "backlog_design");

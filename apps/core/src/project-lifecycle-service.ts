@@ -18,6 +18,13 @@ const answerRequestSchema = z.strictObject({
   expectedRevision: z.number().int().nonnegative(),
   answers: z.array(ownerAnswerSchema).min(1).max(100),
 });
+const solutionDecisionRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedRevision: z.number().int().nonnegative(),
+  artifactDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  decision: z.enum(["approved", "declined", "revision_requested"]),
+  feedback: z.string().trim().min(3).max(10_000).nullable(),
+});
 const stateSchema = z.strictObject({
   schemaVersion: z.literal(1),
   records: z.array(projectLifecycleRecordSchema).max(1_000),
@@ -112,6 +119,34 @@ export class ProjectLifecycleService {
         state: { ...replaceRecord(state, record), receipts: { ...state.receipts, [receiptKey]: record } },
         result: record,
       };
+    });
+  }
+
+  async publishSolution(projectId: string, rawArtifact: unknown): Promise<ProjectLifecycleRecord> {
+    assertProjectId(projectId);
+    const artifact = z.strictObject({ kind: z.literal("solution"), projectRelativePath: z.literal(".pipeline/SOLUTION.md"), digest: z.string().regex(/^[a-f0-9]{64}$/), revision: z.number().int().positive(), createdAt: z.number().int().nonnegative(), citations: z.array(z.string().trim().min(1).max(2_048)).min(1).max(500), reviewerIds: z.array(z.string().trim().min(1).max(160)).min(2).max(20), qaPassed: z.literal(true) }).parse(rawArtifact);
+    return this.#mutate(async (state) => {
+      const record = advanceProjectLifecycle(requireRecord(state.records, projectId), { type: "design_completed", artifact }, Date.now());
+      return { state: replaceRecord(state, record), result: record };
+    });
+  }
+
+  async decideSolution(projectId: string, raw: unknown, idempotencyKey: string): Promise<ProjectLifecycleRecord> {
+    assertProjectId(projectId); assertIdempotencyKey(idempotencyKey);
+    const request = solutionDecisionRequestSchema.parse(raw);
+    return this.#mutate(async (state) => {
+      const receiptKey = `${projectId}:solution:${idempotencyKey}`;
+      const replay = state.receipts[receiptKey];
+      if (replay) return { state, result: replay };
+      const current = requireRecord(state.records, projectId);
+      if (current.revision !== request.expectedRevision) throw new ProjectLifecycleServiceError("stale_revision", "The solution changed. Review the latest version before deciding.");
+      if (request.decision !== "revision_requested" && request.feedback !== null) throw new Error("Feedback is accepted only for a revision request.");
+      if (request.decision === "revision_requested" && request.feedback === null) throw new Error("A revision request requires feedback.");
+      const event = request.decision === "approved" ? { type: "design_approved" as const, artifactDigest: request.artifactDigest }
+        : request.decision === "declined" ? { type: "design_declined" as const, artifactDigest: request.artifactDigest }
+          : { type: "design_revision_requested" as const, artifactDigest: request.artifactDigest, feedback: request.feedback ?? "" };
+      const record = advanceProjectLifecycle(current, event, Date.now());
+      return { state: { ...replaceRecord(state, record), receipts: { ...state.receipts, [receiptKey]: record } }, result: record };
     });
   }
 
