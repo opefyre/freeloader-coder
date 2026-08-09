@@ -12,6 +12,7 @@ import {
 import { projectLifecycleRecordSchema, type OwnerAnswer, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 import { solutionDocumentSchema, projectEgressPermitSchema, solutionRunSchema, type SolutionDocument, type ProjectEgressPermit, type SolutionRun } from "../../../packages/orchestration/src/solution-design.js";
+import { deliveryPlanDocumentSchema, deliveryPlanRunSchema, type DeliveryPlanDocument, type DeliveryPlanRun } from "../../../packages/orchestration/src/delivery-plan.js";
 
 const MAX_RESPONSE_BYTES = 1_100_000;
 
@@ -179,6 +180,21 @@ export async function generateProjectSolution(input: { endpoint: string; project
 
 export async function getProjectSolutionRun(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<SolutionRun | null> {
   assertProjectId(input.projectId); return solutionRunSchema.nullable().parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/solution-run`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function getProjectBacklog(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<DeliveryPlanDocument> {
+  assertProjectId(input.projectId);
+  return deliveryPlanDocumentSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/backlog`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function generateProjectBacklog(input: { endpoint: string; projectId: string; idempotencyKey: string; fetcher?: typeof fetch }): Promise<DeliveryPlanRun> {
+  assertProjectId(input.projectId);
+  return deliveryPlanRunSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/backlog-generate`, method: "POST", idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function getProjectBacklogRun(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<DeliveryPlanRun | null> {
+  assertProjectId(input.projectId);
+  return deliveryPlanRunSchema.nullable().parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/backlog-run`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
 }
 
 export async function answerProjectClarifications(input: { endpoint: string; projectId: string; expectedRevision: number; answers: readonly OwnerAnswer[]; idempotencyKey: string; fetcher?: typeof fetch }): Promise<ProjectLifecycleRecord> {

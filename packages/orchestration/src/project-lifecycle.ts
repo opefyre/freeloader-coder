@@ -89,8 +89,8 @@ export type ProjectLifecycleEvent =
   | { type: "design_approved"; artifactDigest: string }
   | { type: "design_declined"; artifactDigest: string }
   | { type: "design_revision_requested"; artifactDigest: string; feedback: string }
-  | { type: "backlog_completed"; artifact: z.infer<typeof projectArtifactSchema>; jiraEpicId: string }
-  | { type: "backlog_qa_passed"; artifactDigest: string }
+  | { type: "backlog_completed"; artifact: z.infer<typeof projectArtifactSchema> }
+  | { type: "backlog_qa_passed"; artifactDigest: string; jiraEpicId: string }
   | { type: "delivery_completed" }
   | { type: "owner_input_required"; reason: string }
   | { type: "resume" };
@@ -191,13 +191,14 @@ export function advanceProjectLifecycle(
     case "backlog_completed":
       requireStage(record, "backlog_design");
       if (event.artifact.kind !== "backlog") throw new Error("Backlog design must produce BACKLOG.md.");
-      patch = { stage: "backlog_qa", artifacts: upsertArtifact(record.artifacts, event.artifact), jiraEpicId: event.jiraEpicId };
+      if (!event.artifact.qaPassed) throw new Error("Jira creation requires an independently reviewed backlog.");
+      patch = { stage: "backlog_qa", artifacts: upsertArtifact(record.artifacts, event.artifact), jiraEpicId: null };
       break;
     case "backlog_qa_passed": {
       requireStage(record, "backlog_qa");
       const backlog = requireArtifact(record, "backlog", event.artifactDigest);
-      if (!backlog.qaPassed || !record.jiraEpicId) throw new Error("Delivery requires a QA-passed backlog and its Jira epic.");
-      patch = { stage: "delivery" };
+      if (!backlog.qaPassed || event.jiraEpicId.trim().length === 0) throw new Error("Delivery requires a QA-passed backlog and its Jira epic.");
+      patch = { stage: "delivery", jiraEpicId: event.jiraEpicId.trim() };
       break;
     }
     case "delivery_completed":

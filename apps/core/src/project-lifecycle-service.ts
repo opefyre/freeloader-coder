@@ -7,6 +7,7 @@ import {
   createProjectLifecycle,
   ownerAnswerSchema,
   ownerQuestionSchema,
+  projectArtifactSchema,
   projectLifecycleRecordSchema,
   type OwnerQuestion,
   type ProjectLifecycleRecord,
@@ -148,6 +149,24 @@ export class ProjectLifecycleService {
     const artifact = z.strictObject({ kind: z.literal("solution"), projectRelativePath: z.literal(".pipeline/SOLUTION.md"), digest: z.string().regex(/^[a-f0-9]{64}$/), revision: z.number().int().positive(), createdAt: z.number().int().nonnegative(), citations: z.array(z.string().trim().min(1).max(2_048)).min(1).max(500), reviewerIds: z.array(z.string().trim().min(1).max(160)).min(2).max(20), qaPassed: z.literal(true) }).parse(rawArtifact);
     return this.#mutate(async (state) => {
       const record = advanceProjectLifecycle(requireRecord(state.records, projectId), { type: "design_completed", artifact }, Date.now());
+      return { state: replaceRecord(state, record), result: record };
+    });
+  }
+
+  async publishBacklog(projectId: string, rawArtifact: unknown): Promise<ProjectLifecycleRecord> {
+    assertProjectId(projectId);
+    const artifact = projectArtifactSchema.parse(rawArtifact);
+    if (artifact.kind !== "backlog" || artifact.projectRelativePath !== ".pipeline/BACKLOG.md") throw new Error("Backlog artifact is invalid.");
+    return this.#mutate(async (state) => {
+      const record = advanceProjectLifecycle(requireRecord(state.records, projectId), { type: "backlog_completed", artifact }, Date.now());
+      return { state: replaceRecord(state, record), result: record };
+    });
+  }
+
+  async activateDelivery(projectId: string, artifactDigest: string, jiraEpicId: string): Promise<ProjectLifecycleRecord> {
+    assertProjectId(projectId);
+    return this.#mutate(async (state) => {
+      const record = advanceProjectLifecycle(requireRecord(state.records, projectId), { type: "backlog_qa_passed", artifactDigest, jiraEpicId }, Date.now());
       return { state: replaceRecord(state, record), result: record };
     });
   }

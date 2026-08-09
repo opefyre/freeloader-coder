@@ -63,6 +63,8 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
   const consentCalls: string[] = [];
   const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: 4, expiresAt: 9_999_999_999_999 };
   const solutionRun = { schemaVersion: 1 as const, projectId, state: "queued" as const, attempts: 0, retryAt: null, safeMessage: "Solution research is queued.", updatedAt: 4 };
+  const backlogRun = { schemaVersion: 1 as const, projectId, state: "queued" as const, attempts: 0, retryAt: null, safeMessage: "Delivery planning is queued.", updatedAt: 4 };
+  const backlog = { schemaVersion: 1 as const, projectId, projectRelativePath: ".pipeline/BACKLOG.md" as const, revision: 1, digest: "c".repeat(64), markdown: "# Delivery plan\n\nReviewed content.", itemCount: 4 };
   const server = createControlPlaneServer({
     host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot,
     projectLifecycles: {
@@ -78,6 +80,9 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
       decideSolution: (_projectId, input, key) => { solutionCalls.push(`${key}:${JSON.stringify(input)}`); return lifecycle; },
       solutionRun: () => solutionRun,
       generateSolution: () => solutionRun,
+      getBacklog: () => backlog,
+      backlogRun: () => backlogRun,
+      generateBacklog: () => backlogRun,
       getEgressConsent: () => permit,
       grantEgressConsent: (_projectId, input) => { consentCalls.push(JSON.stringify(input)); return permit; },
       revokeEgressConsent: () => { consentCalls.push("revoked"); },
@@ -125,6 +130,16 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
     assert.equal((await generation.json() as { state: string }).state, "queued");
     const runRead = await fetch(`${endpoint}/solution-run`, { headers: { Origin: "http://127.0.0.1:4310" } });
     assert.equal(runRead.status, 200);
+    const missingBacklogKey = await fetch(`${endpoint}/backlog-generate`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(missingBacklogKey.status, 400);
+    const backlogGeneration = await fetch(`${endpoint}/backlog-generate`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "backlog-generation-001" } });
+    assert.equal(backlogGeneration.status, 202);
+    assert.equal((await backlogGeneration.json() as { state: string }).state, "queued");
+    const backlogRunRead = await fetch(`${endpoint}/backlog-run`, { headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(backlogRunRead.status, 200);
+    const backlogRead = await fetch(`${endpoint}/backlog`, { headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(backlogRead.status, 200);
+    assert.equal((await backlogRead.json() as { itemCount: number }).itemCount, 4);
     const revoked = await fetch(`${endpoint}/provider-consent`, { method: "DELETE", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "provider-consent-revoke-001" } });
     assert.equal(revoked.status, 200);
     assert.equal(consentCalls.length, 2);

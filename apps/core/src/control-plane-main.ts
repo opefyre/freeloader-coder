@@ -12,6 +12,10 @@ import { ProjectSolutionService } from "./project-solution-service.js";
 import { ProjectSolutionOrchestrator } from "./project-solution-orchestrator.js";
 import { FreeProviderSolutionModel } from "./free-provider-solution-model.js";
 import { ProjectSolutionCoordinator } from "./project-solution-coordinator.js";
+import { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
+import { ProjectDeliveryPlanOrchestrator } from "./project-delivery-plan-orchestrator.js";
+import { ProjectDeliveryPlanCoordinator } from "./project-delivery-plan-coordinator.js";
+import { JiraDeliveryService } from "./jira-delivery-service.js";
 import { ProjectEgressPolicyService } from "./project-egress-policy-service.js";
 import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
@@ -48,6 +52,7 @@ const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
 const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
+const projectDeliveryPlans = new ProjectDeliveryPlanService(localProjects);
 const projectLifecycles = new ProjectLifecycleService(stateDirectory);
 const projectIntake = new ProjectIntakeCoordinator(projectContexts, projectLifecycles);
 const nativePicker = new NativePicker();
@@ -106,6 +111,20 @@ const providerConnectionService = new ProviderConnectionService(
 const projectEgress = new ProjectEgressPolicyService(stateDirectory);
 const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
 const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new ProjectSolutionOrchestrator(projectLifecycles, projectSolutions, projectContexts, projectEgress, solutionModel));
+const jiraDelivery = new JiraDeliveryService(stateDirectory, localProjects, projectDeliveryPlans, projectLifecycles, credentialVault);
+const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
+  stateDirectory,
+  new ProjectDeliveryPlanOrchestrator(
+    projectLifecycles,
+    projectDeliveryPlans,
+    projectContexts,
+    projectSolutions,
+    projectEgress,
+    solutionModel
+  ),
+  Date.now,
+  (projectId) => jiraDelivery.synchronize(projectId)
+);
 const autonomy = new LocalAutonomyService(
   stateDirectory,
   () => localRequests.list(),
@@ -319,9 +338,16 @@ const controlPlane = createControlPlaneServer({
       return projectLifecycles.publishSolution(projectId, artifact);
     },
     getSolution: (projectId) => projectSolutions.read(projectId),
-    decideSolution: (projectId, input, idempotencyKey) => projectLifecycles.decideSolution(projectId, input, idempotencyKey),
+    decideSolution: async (projectId, input, idempotencyKey) => {
+      const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey);
+      if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
+      return lifecycle;
+    },
     solutionRun: (projectId) => solutionCoordinator.get(projectId),
     generateSolution: (projectId) => solutionCoordinator.schedule(projectId),
+    getBacklog: (projectId) => projectDeliveryPlans.read(projectId),
+    backlogRun: (projectId) => deliveryPlanCoordinator.get(projectId),
+    generateBacklog: (projectId) => deliveryPlanCoordinator.schedule(projectId),
     getEgressConsent: (projectId) => projectEgress.get(projectId),
     grantEgressConsent: (projectId, input) => projectEgress.grant(projectId, input),
     revokeEgressConsent: (projectId) => projectEgress.revoke(projectId),
@@ -395,6 +421,7 @@ const controlPlane = createControlPlaneServer({
 const boundPort = await controlPlane.listen();
 await proposalGenerator.resumePending();
 await solutionCoordinator.resumePending();
+await deliveryPlanCoordinator.resumePending();
 autonomy.start();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
 console.log(

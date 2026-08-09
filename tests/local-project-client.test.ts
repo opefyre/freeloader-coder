@@ -14,6 +14,9 @@ import {
   generateProjectSolution,
   getProjectProviderConsent,
   getProjectSolutionRun,
+  generateProjectBacklog,
+  getProjectBacklog,
+  getProjectBacklogRun,
   grantProjectProviderConsent,
   listLocalProjects,
   registerLocalProject,
@@ -78,6 +81,23 @@ test("browser client binds provider consent and solution generation to exact loo
   assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [`/api/v1/projects/${projectId}/provider-consent`, `/api/v1/projects/${projectId}/provider-consent`, `/api/v1/projects/${projectId}/solution-generate`, `/api/v1/projects/${projectId}/solution-run`]);
   assert.match(calls[1]?.body ?? "", /selected free providers/);
   assert.equal(calls[2]?.key, "generate:0123456789");
+});
+
+test("browser client binds delivery planning to exact loopback routes", async () => {
+  const projectId = lifecycle.projectId;
+  const run = { schemaVersion: 1 as const, projectId, state: "queued" as const, attempts: 0, retryAt: null, safeMessage: "Delivery planning is queued.", updatedAt: 10_000 };
+  const backlog = { schemaVersion: 1 as const, projectId, projectRelativePath: ".pipeline/BACKLOG.md" as const, revision: 1, digest: "c".repeat(64), markdown: "# Delivery plan\n\nReviewed content.", itemCount: 4 };
+  const calls: Array<{ url: string; key?: string }> = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    const key = (init?.headers as Record<string, string> | undefined)?.["Idempotency-Key"];
+    calls.push({ url: String(url), ...(key ? { key } : {}) });
+    return Response.json(String(url).endsWith("/backlog") ? backlog : run);
+  };
+  assert.deepEqual(await generateProjectBacklog({ endpoint: "http://127.0.0.1:4312", projectId, idempotencyKey: "backlog:0123456789", fetcher }), run);
+  assert.deepEqual(await getProjectBacklogRun({ endpoint: "http://127.0.0.1:4312", projectId, fetcher }), run);
+  assert.deepEqual(await getProjectBacklog({ endpoint: "http://127.0.0.1:4312", projectId, fetcher }), backlog);
+  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [`/api/v1/projects/${projectId}/backlog-generate`, `/api/v1/projects/${projectId}/backlog-run`, `/api/v1/projects/${projectId}/backlog`]);
+  assert.equal(calls[0]?.key, "backlog:0123456789");
 });
 
 test("browser client sends bounded loopback registration and validates responses", async () => {

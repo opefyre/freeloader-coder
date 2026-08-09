@@ -49,8 +49,9 @@ test("major project lifecycle enforces context, approval, backlog QA, and delive
   assert.equal(revisionRequested.designFeedback[0]?.artifactDigest, digest("b"));
   assert.throws(() => advanceProjectLifecycle(record, { type: "design_approved", artifactDigest: digest("c") }, 41));
   record = advanceProjectLifecycle(record, { type: "design_approved", artifactDigest: digest("b") }, 42);
-  record = advanceProjectLifecycle(record, { type: "backlog_completed", artifact: artifact("backlog", "c"), jiraEpicId: "10001" }, 50);
-  record = advanceProjectLifecycle(record, { type: "backlog_qa_passed", artifactDigest: digest("c") }, 60);
+  record = advanceProjectLifecycle(record, { type: "backlog_completed", artifact: artifact("backlog", "c") }, 50);
+  assert.equal(record.jiraEpicId, null);
+  record = advanceProjectLifecycle(record, { type: "backlog_qa_passed", artifactDigest: digest("c"), jiraEpicId: "10001" }, 60);
   assert.equal(record.stage, "delivery");
   record = advanceProjectLifecycle(record, { type: "delivery_completed" }, 70);
   assert.equal(record.stage, "complete");

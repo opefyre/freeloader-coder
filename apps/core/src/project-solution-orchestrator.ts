@@ -10,7 +10,7 @@ import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { ProjectSolutionService } from "./project-solution-service.js";
 import type { ProjectEgressPermit } from "./project-egress-policy-service.js";
 
-export type SolutionRole = "product_research" | "technical_research" | "solution_reconciliation" | "product_review" | "technical_review";
+export type SolutionRole = "product_research" | "technical_research" | "solution_reconciliation" | "product_review" | "technical_review" | "delivery_planning" | "delivery_review" | "technical_delivery_review";
 
 export interface SolutionModelEvidence {
   readonly providerId: string;
