@@ -39,10 +39,16 @@ test("context generation is cited, atomic, digest-bound, and preserves accepted 
     const clarifiedContent = await readFile(join(workspace, "CONTEXT.md"), "utf8");
     assert.match(clarifiedContent, /Who can sign up\? \*\*Invite only\*\*/);
     assert.match(clarifiedContent, new RegExp(`context-digest:${clarified.digest}`));
+    const verified = await service.readVerified(project.id);
+    assert.equal(verified.digest, clarified.digest);
+    assert.doesNotMatch(verified.markdown, /context-digest:/);
     await service.applyClarifications(project.id, [], [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 20 }]);
     assert.equal((await readFile(join(workspace, "CONTEXT.md"), "utf8")).match(/clarification:question_0123456789abcdef/g)?.length, 1);
     assert.equal(refreshed.citations.length > 0, true);
     assert.doesNotMatch(refreshedContent, /api[_-]?key|secret-value/i);
+    const current = await readFile(join(workspace, "CONTEXT.md"), "utf8");
+    await writeFile(join(workspace, "CONTEXT.md"), current.replace("Invite only", "Public"), { encoding: "utf8", mode: 0o600 });
+    await assert.rejects(() => service.readVerified(project.id), /digest does not match/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

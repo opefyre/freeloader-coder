@@ -104,8 +104,9 @@ export class ProjectContextService {
       "- Secrets, excluded directories, symlinks, provider prompts, and command output are not included.",
       "",
     ].join("\n");
-    const digest = createHash("sha256").update(body).digest("hex");
-    await atomicWrite(target, `${body}\n<!-- context-digest:${digest} -->\n`);
+    const normalizedBody = body.replace(/\n+$/, "");
+    const digest = createHash("sha256").update(normalizedBody).digest("hex");
+    await atomicWrite(target, `${normalizedBody}\n\n<!-- context-digest:${digest} -->\n`);
     return { schemaVersion: 1 as const, projectId, path: CONTEXT_FILE, digest, groundingDigest: planning.grounding.digest, topologyDigest: planning.topology.digest, observedAt: Date.now(), citations: citations.map(({ path, digest: sourceDigest }) => ({ path, digest: sourceDigest })) };
   }
 
@@ -133,6 +134,19 @@ export class ProjectContextService {
     const digest = createHash("sha256").update(body).digest("hex");
     await atomicWrite(target, `${body}\n\n<!-- context-digest:${digest} -->\n`);
     return { digest, path: CONTEXT_FILE };
+  }
+
+  async readVerified(projectId: string) {
+    const target = join(await this.projects.canonicalRoot(projectId), CONTEXT_FILE);
+    const info = await lstat(target);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_EXISTING_BYTES) throw new Error("Project context is not safely readable.");
+    const content = await readFile(target, "utf8");
+    const match = content.match(/\n<!-- context-digest:([a-f0-9]{64}) -->\s*$/);
+    if (!match) throw new Error("Project context is missing digest evidence.");
+    const markdown = content.slice(0, match.index).replace(/\n+$/, "");
+    const digest = createHash("sha256").update(markdown).digest("hex");
+    if (digest !== match[1]) throw new Error("Project context digest does not match its content.");
+    return { digest, markdown };
   }
 }
 
