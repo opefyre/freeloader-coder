@@ -198,6 +198,8 @@ export type ControlPlaneServerOptions = {
     probeGitHub: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     connectJira: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     disconnectJira: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    connectTelegram?: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    disconnectTelegram?: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
   };
   requests?: {
     list: () => LocalRequestCollection | Promise<LocalRequestCollection>;
@@ -335,6 +337,21 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             return;
           }
           sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.disconnectJira()));
+          return;
+        }
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (url.pathname === "/api/v1/integration-connections/telegram" && options.integrationConnections?.connectTelegram && options.integrationConnections.disconnectTelegram) {
+        requireIdempotencyKey(request);
+        if (request.method === "POST") {
+          const body = await readJsonBody(request);
+          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.connectTelegram(body)));
+          return;
+        }
+        if (request.method === "DELETE") {
+          if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.disconnectTelegram()));
           return;
         }
         sendJson(response, 405, { error: "Method is not allowed." });

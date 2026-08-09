@@ -13,6 +13,7 @@ import { Kanban } from "@phosphor-icons/react/Kanban";
 import { LockKey } from "@phosphor-icons/react/LockKey";
 import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
 import { PaperclipHorizontal } from "@phosphor-icons/react/PaperclipHorizontal";
+import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { Play } from "@phosphor-icons/react/Play";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Stop } from "@phosphor-icons/react/Stop";
@@ -103,6 +104,7 @@ export function LocalRequestPanel(props: {
   const [integrationConnections, setIntegrationConnections] = useState<PublicIntegrationConnectionCollection | null>(null);
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<readonly string[]>([]);
   const [selectedJiraProjectId, setSelectedJiraProjectId] = useState("");
+  const [selectedTelegramChatId, setSelectedTelegramChatId] = useState("");
   const [outcome, setOutcome] = useState("");
   const [lifecycle, setLifecycle] = useState<ProjectLifecycleRecord | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityDecision | null>(null);
@@ -306,6 +308,7 @@ export function LocalRequestPanel(props: {
       setIntegrationConnections(collection);
       setSelectedRepositoryIds((project.resources ?? []).filter((resource) => resource.kind === "github_repository").map((resource) => resource.resourceId));
       setSelectedJiraProjectId((project.resources ?? []).find((resource) => resource.kind === "jira_project")?.resourceId ?? "");
+      setSelectedTelegramChatId((project.resources ?? []).find((resource) => resource.kind === "telegram_chat")?.resourceId ?? "");
       setResourceQuery("");
       setResourcePickerOpen(true);
       setStatus("ready");
@@ -319,11 +322,12 @@ export function LocalRequestPanel(props: {
     const project = projects.find((candidate) => candidate.id === projectId);
     const github = integrationConnections?.connections.find((connection) => connection.provider === "github" && connection.state === "ready");
     const jira = integrationConnections?.connections.find((connection) => connection.provider === "jira" && connection.state === "ready");
+    const telegram = integrationConnections?.connections.find((connection) => connection.provider === "telegram" && connection.state === "ready");
     if (!project) return;
     setStatus("working");
     try {
       const retained = (project.resources ?? [])
-        .filter((resource) => resource.kind !== "github_repository" && resource.kind !== "jira_project")
+        .filter((resource) => resource.kind !== "github_repository" && resource.kind !== "jira_project" && resource.kind !== "telegram_chat")
         .map(({ kind, connectionId, resourceId, label, url, role }) => ({
           kind,
           connectionId,
@@ -349,10 +353,18 @@ export function LocalRequestPanel(props: {
         : jiraProject
           ? [{ kind: "jira_project" as const, connectionId: `jira:${jira?.accountLabel ?? "account"}`, resourceId: jiraProject.id, label: jiraProject.label, url: jiraProject.url, role: "primary" as const }]
           : [];
-      await setLocalProjectResources({ endpoint, projectId: project.id, selection: { schemaVersion: 1, resources: [...retained, ...repositories, ...jiraResources] }, idempotencyKey: `resources:${crypto.randomUUID()}` });
+      const boundTelegram = (project.resources ?? []).find((resource) => resource.kind === "telegram_chat" && resource.resourceId === selectedTelegramChatId);
+      const telegramChat = telegram?.resources.find((resource) => resource.id === selectedTelegramChatId);
+      const telegramResources = boundTelegram
+        ? [{ kind: boundTelegram.kind, connectionId: boundTelegram.connectionId, resourceId: boundTelegram.resourceId, label: boundTelegram.label, url: boundTelegram.url, role: "notifications" as const }]
+        : telegramChat
+          ? [{ kind: "telegram_chat" as const, connectionId: `telegram:${telegram?.accountLabel ?? "bot"}`, resourceId: telegramChat.id, label: telegramChat.label, url: telegramChat.url, role: "notifications" as const }]
+          : [];
+      await setLocalProjectResources({ endpoint, projectId: project.id, selection: { schemaVersion: 1, resources: [...retained, ...repositories, ...jiraResources, ...telegramResources] }, idempotencyKey: `resources:${crypto.randomUUID()}` });
       setResourcePickerOpen(false);
       await refresh();
-      setNotice(`${repositories.length + jiraResources.length} connected ${repositories.length + jiraResources.length === 1 ? "resource" : "resources"} saved to this project.`);
+      const saved = repositories.length + jiraResources.length + telegramResources.length;
+      setNotice(`${saved} connected ${saved === 1 ? "resource" : "resources"} saved to this project.`);
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Resources could not be saved.");
@@ -776,17 +788,23 @@ export function LocalRequestPanel(props: {
   );
   const discoveredGithubIds = new Set(integrationConnections?.connections.find((connection) => connection.provider === "github")?.resources.map((resource) => resource.id) ?? []);
   const discoveredJiraIds = new Set(integrationConnections?.connections.find((connection) => connection.provider === "jira")?.resources.map((resource) => resource.id) ?? []);
+  const discoveredTelegramIds = new Set(integrationConnections?.connections.find((connection) => connection.provider === "telegram")?.resources.map((resource) => resource.id) ?? []);
   const normalizedResourceQuery = resourceQuery.trim().toLowerCase();
   const githubConnection = integrationConnections?.connections.find((connection) => connection.provider === "github");
   const jiraConnection = integrationConnections?.connections.find((connection) => connection.provider === "jira");
+  const telegramConnection = integrationConnections?.connections.find((connection) => connection.provider === "telegram");
   const visibleGithubResources = [...(githubConnection?.resources ?? [])]
     .filter((resource) => !normalizedResourceQuery || `${resource.label} ${resource.detail}`.toLowerCase().includes(normalizedResourceQuery))
     .sort((left, right) => Number(selectedRepositoryIds.includes(right.id)) - Number(selectedRepositoryIds.includes(left.id)) || left.label.localeCompare(right.label));
   const visibleJiraResources = [...(jiraConnection?.resources ?? [])]
     .filter((resource) => !normalizedResourceQuery || `${resource.label} ${resource.detail}`.toLowerCase().includes(normalizedResourceQuery))
     .sort((left, right) => Number(selectedJiraProjectId === right.id) - Number(selectedJiraProjectId === left.id) || left.label.localeCompare(right.label));
+  const visibleTelegramResources = [...(telegramConnection?.resources ?? [])]
+    .filter((resource) => !normalizedResourceQuery || `${resource.label} ${resource.detail}`.toLowerCase().includes(normalizedResourceQuery))
+    .sort((left, right) => Number(selectedTelegramChatId === right.id) - Number(selectedTelegramChatId === left.id) || left.label.localeCompare(right.label));
   const unavailableRepositories = (selectedProject?.resources ?? []).filter((resource) => resource.kind === "github_repository" && !discoveredGithubIds.has(resource.resourceId));
   const unavailableJira = (selectedProject?.resources ?? []).find((resource) => resource.kind === "jira_project" && !discoveredJiraIds.has(resource.resourceId));
+  const unavailableTelegram = (selectedProject?.resources ?? []).find((resource) => resource.kind === "telegram_chat" && !discoveredTelegramIds.has(resource.resourceId));
   return (
     <section className="space-y-4" aria-labelledby={`local-request-${props.mode}-title`}>
       {props.mode === "compose" && <h2 id="local-request-compose-title" className="sr-only">What do you want to build?</h2>}
@@ -925,7 +943,12 @@ export function LocalRequestPanel(props: {
                   {visibleJiraResources.length === 0 && <p className="p-3 text-sm text-muted-foreground">No matching Jira projects.</p>}
                 </div>}
                 {unavailableJira && <button type="button" aria-pressed={selectedJiraProjectId === unavailableJira.resourceId} onClick={() => setSelectedJiraProjectId((current) => current === unavailableJira.resourceId ? "" : unavailableJira.resourceId)} className="mt-2 flex w-full items-center gap-3 rounded-2xl bg-background/70 p-3 text-left"><Kanban className="shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><strong className="block truncate text-xs">{unavailableJira.label}</strong><span className="block text-[11px] text-muted-foreground">Previously selected · unavailable from Jira</span></span><Badge tone="caution">Keep</Badge></button>}
-                <div className="mt-4 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{selectedRepositoryIds.length} repos · {selectedJiraProjectId ? 1 : 0} Jira</span><Button size="sm" onClick={() => void saveProjectResources()} disabled={status === "working"}>Save</Button></div>
+                <h4 className="mt-4 text-xs font-semibold text-muted-foreground">Notifications</h4>
+                {telegramConnection?.state !== "ready" ? <p className="mt-3 text-sm text-muted-foreground">Connect Telegram in Settings first.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {visibleTelegramResources.map((chat) => { const selected = selectedTelegramChatId === chat.id; return <button key={chat.id} type="button" aria-pressed={selected} onClick={() => setSelectedTelegramChatId(selected ? "" : chat.id)} className={`flex items-center gap-3 rounded-2xl p-3 text-left ${selected ? "bg-primary/10" : "bg-background/70"}`}><PaperPlaneTilt className="shrink-0 text-primary" /><span className="min-w-0"><strong className="block truncate text-xs">{chat.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{chat.detail}</span></span></button>; })}
+                </div>}
+                {unavailableTelegram && <button type="button" aria-pressed={selectedTelegramChatId === unavailableTelegram.resourceId} onClick={() => setSelectedTelegramChatId((current) => current === unavailableTelegram.resourceId ? "" : unavailableTelegram.resourceId)} className="mt-2 flex w-full items-center gap-3 rounded-2xl bg-background/70 p-3 text-left"><PaperPlaneTilt className="shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><strong className="block truncate text-xs">{unavailableTelegram.label}</strong><span className="block text-[11px] text-muted-foreground">Previously selected · unavailable from Telegram</span></span><Badge tone="caution">Keep</Badge></button>}
+                <div className="mt-4 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{selectedRepositoryIds.length} repos · {selectedJiraProjectId ? 1 : 0} Jira · {selectedTelegramChatId ? 1 : 0} channel</span><Button size="sm" onClick={() => void saveProjectResources()} disabled={status === "working"}>Save</Button></div>
               </div>}
             </div>
           )}

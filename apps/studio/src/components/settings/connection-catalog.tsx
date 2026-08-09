@@ -10,7 +10,7 @@ import { Robot } from "@phosphor-icons/react/Robot";
 import { useEffect, useState } from "react";
 
 import { Button } from "../ui/button.js";
-import { connectJiraConnection, disconnectJiraConnection, listIntegrationConnections, probeGitHubConnection } from "../../integration-connection-client.js";
+import { connectJiraConnection, connectTelegramConnection, disconnectJiraConnection, disconnectTelegramConnection, listIntegrationConnections, probeGitHubConnection } from "../../integration-connection-client.js";
 import type { PublicIntegrationConnectionCollection } from "../../../../../packages/runtime/src/integration-connections.js";
 
 type Connection = {
@@ -25,7 +25,7 @@ const connections: readonly Connection[] = [
   { id: "ai", name: "AI providers", group: "Work", icon: Robot, available: true },
   { id: "github", name: "GitHub", group: "Work", icon: GithubLogo, available: false },
   { id: "jira", name: "Jira", group: "Work", icon: Kanban, available: false },
-  { id: "telegram", name: "Telegram", group: "Messages", icon: PaperPlaneTilt, available: false },
+  { id: "telegram", name: "Telegram", group: "Messages", icon: PaperPlaneTilt, available: true },
   { id: "discord", name: "Discord", group: "Messages", icon: ChatCircleDots, available: false },
   { id: "slack", name: "Slack", group: "Messages", icon: PlugsConnected, available: false },
   { id: "gmail", name: "Gmail", group: "Messages", icon: EnvelopeSimple, available: false },
@@ -45,6 +45,9 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
   const [jiraSite, setJiraSite] = useState("");
   const [jiraEmail, setJiraEmail] = useState("");
   const [jiraToken, setJiraToken] = useState("");
+  const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
+  const [telegramToken, setTelegramToken] = useState("");
+  const [telegramChat, setTelegramChat] = useState("");
   const endpoint = props.endpoint ?? "http://127.0.0.1:4312";
   useEffect(() => { void listIntegrationConnections({ endpoint }).then(setObserved).catch(() => setObserved(null)); }, [endpoint]);
   const visible = connections.filter((connection) => group === "All" || connection.group === group);
@@ -77,9 +80,11 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
                   void probeGitHubConnection({ endpoint, idempotencyKey: `github-probe:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setNotice(result.connections[0]?.nextAction ?? "GitHub checked."); }).catch((error) => setNotice(error instanceof Error ? error.message : "GitHub check failed.")).finally(() => setWorking(false));
                 } else if (connection.id === "jira") {
                   setJiraSetupOpen(true);
+                } else if (connection.id === "telegram") {
+                  setTelegramSetupOpen(true);
                 } else setNotice(`${connection.name} connection is not installed yet.`);
               }}>
-                {connection.id === "github" ? (ready ? "Refresh" : "Detect") : connection.id === "jira" ? (ready ? "Manage" : "Connect") : connection.available ? "Set up" : "Not connected"}
+                {connection.id === "github" ? (ready ? "Refresh" : "Detect") : connection.id === "jira" || connection.id === "telegram" ? (ready ? "Manage" : "Connect") : connection.available ? "Set up" : "Not connected"}
               </Button>
             </div>
           );
@@ -92,6 +97,14 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
           <input aria-label="Jira account email" type="email" required placeholder="you@company.com" value={jiraEmail} onChange={(event) => setJiraEmail(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
           <input aria-label="Jira API token" type="password" required autoComplete="off" placeholder="API token" value={jiraToken} onChange={(event) => setJiraToken(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
           <Button type="submit" disabled={working || !jiraSite || !jiraEmail || jiraToken.length < 8}>Connect</Button>
+        </form>}
+      </div>}
+      {telegramSetupOpen && <div role="dialog" aria-modal="false" aria-labelledby="telegram-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
+        <div className="flex items-center justify-between gap-3"><h3 id="telegram-connect-title" className="font-semibold">Telegram</h3><Button size="sm" variant="ghost" onClick={() => setTelegramSetupOpen(false)}>Close</Button></div>
+        {observed?.connections.find((item) => item.provider === "telegram")?.state === "ready" ? <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed.connections.find((item) => item.provider === "telegram")?.resources[0]?.label ?? "Notification chat ready"}</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectTelegramConnection({ endpoint, idempotencyKey: `telegram-disconnect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramSetupOpen(false); setNotice("Telegram disconnected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div> : <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); setWorking(true); void connectTelegramConnection({ endpoint, botToken: telegramToken, chatId: telegramChat, idempotencyKey: `telegram-connect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramToken(""); setTelegramSetupOpen(false); setNotice(result.connections.find((item) => item.provider === "telegram")?.nextAction ?? "Telegram connected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram connection failed.")).finally(() => setWorking(false)); }}>
+          <input aria-label="Telegram bot token" type="password" required autoComplete="off" placeholder="Bot token" value={telegramToken} onChange={(event) => setTelegramToken(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
+          <input aria-label="Telegram chat" required placeholder="Chat ID or @channel" value={telegramChat} onChange={(event) => setTelegramChat(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
+          <Button type="submit" disabled={working || telegramToken.length < 30 || telegramChat.length < 5}>Connect</Button>
         </form>}
       </div>}
       <p className="min-h-5 text-xs text-muted-foreground" aria-live="polite">{notice}</p>

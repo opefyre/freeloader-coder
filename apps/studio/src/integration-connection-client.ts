@@ -19,6 +19,14 @@ export async function disconnectJiraConnection(input: { endpoint: string; idempo
   return request({ ...input, path: "/api/v1/integration-connections/jira", method: "DELETE" });
 }
 
+export async function connectTelegramConnection(input: { endpoint: string; botToken: string; chatId: string; idempotencyKey: string; fetcher?: typeof fetch }) {
+  return request({ ...input, path: "/api/v1/integration-connections/telegram", method: "POST", body: { schemaVersion: 1, botToken: input.botToken, chatId: input.chatId } });
+}
+
+export async function disconnectTelegramConnection(input: { endpoint: string; idempotencyKey: string; fetcher?: typeof fetch }) {
+  return request({ ...input, path: "/api/v1/integration-connections/telegram", method: "DELETE" });
+}
+
 async function request(input: { endpoint: string; path: string; method: "GET" | "POST" | "DELETE"; body?: unknown; idempotencyKey?: string; fetcher?: typeof fetch }): Promise<PublicIntegrationConnectionCollection> {
   const endpoint = new URL(input.endpoint);
   if (endpoint.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(endpoint.hostname)) throw new Error("Connection discovery must remain local.");

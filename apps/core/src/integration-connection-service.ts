@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 
 import {
   jiraConnectionInputSchema,
+  telegramConnectionInputSchema,
   publicIntegrationConnectionCollectionSchema,
   type PublicIntegrationConnectionCollection,
 } from "../../../packages/runtime/src/integration-connections.js";
@@ -14,6 +15,7 @@ type Runner = (file: string, args: readonly string[]) => Promise<{ stdout: strin
 type Fetcher = typeof fetch;
 
 const JIRA_CREDENTIAL_REFERENCE = "vault:providers/jira/default";
+export const TELEGRAM_CREDENTIAL_REFERENCE = "vault:providers/telegram/default";
 
 export class IntegrationConnectionService {
   readonly #runner: Runner;
@@ -21,6 +23,7 @@ export class IntegrationConnectionService {
   readonly #fetcher: Fetcher;
   #github: PublicIntegrationConnectionCollection["connections"][number] | null = null;
   #jira: PublicIntegrationConnectionCollection["connections"][number] | null = null;
+  #telegram: PublicIntegrationConnectionCollection["connections"][number] | null = null;
 
   constructor(
     runner: Runner = safeExec,
@@ -35,6 +38,9 @@ export class IntegrationConnectionService {
   async list(): Promise<PublicIntegrationConnectionCollection> {
     if (!this.#jira && this.#vault && await this.#vault.read(JIRA_CREDENTIAL_REFERENCE)) {
       this.#jira = await this.#probeStoredJira();
+    }
+    if (!this.#telegram && this.#vault && await this.#vault.read(TELEGRAM_CREDENTIAL_REFERENCE)) {
+      this.#telegram = await this.#probeStoredTelegram();
     }
     return this.#collection();
   }
@@ -81,6 +87,27 @@ export class IntegrationConnectionService {
     return this.#collection();
   }
 
+  async connectTelegram(input: unknown): Promise<PublicIntegrationConnectionCollection> {
+    if (!this.#vault) throw new Error("Secure credential storage is unavailable.");
+    const parsed = telegramConnectionInputSchema.parse(input);
+    await this.#vault.write(TELEGRAM_CREDENTIAL_REFERENCE, JSON.stringify(parsed));
+    try {
+      this.#telegram = await this.#probeStoredTelegram();
+      if (this.#telegram.state !== "ready") throw new Error("Telegram authentication failed.");
+    } catch (error) {
+      await this.#vault.delete(TELEGRAM_CREDENTIAL_REFERENCE);
+      this.#telegram = this.#emptyTelegram("Check the bot token, add the bot to the chat, and connect again.", "not_connected");
+      throw error;
+    }
+    return this.#collection();
+  }
+
+  async disconnectTelegram(): Promise<PublicIntegrationConnectionCollection> {
+    await this.#vault?.delete(TELEGRAM_CREDENTIAL_REFERENCE);
+    this.#telegram = this.#emptyTelegram("Connect a Telegram bot to choose its chat inside a project.");
+    return this.#collection();
+  }
+
   async #probeStoredJira() {
     const stored = await this.#vault?.read(JIRA_CREDENTIAL_REFERENCE);
     if (!stored) return this.#emptyJira("Connect Jira to choose a project.");
@@ -108,6 +135,30 @@ export class IntegrationConnectionService {
     });
   }
 
+  async #probeStoredTelegram() {
+    const stored = await this.#vault?.read(TELEGRAM_CREDENTIAL_REFERENCE);
+    if (!stored) return this.#emptyTelegram("Connect a Telegram bot to choose its chat inside a project.");
+    const credential = telegramConnectionInputSchema.parse(JSON.parse(stored));
+    const base = `https://api.telegram.org/bot${credential.botToken}`;
+    const [identityResponse, chatResponse] = await Promise.all([
+      this.#fetcher(`${base}/getMe`, { redirect: "error" }),
+      this.#fetcher(`${base}/getChat?chat_id=${encodeURIComponent(credential.chatId)}`, { redirect: "error" }),
+    ]);
+    if (!identityResponse.ok || !chatResponse.ok) throw new Error("Telegram authentication failed.");
+    const identity = await boundedJson(identityResponse);
+    const chat = await boundedJson(chatResponse);
+    const bot = identity.result && typeof identity.result === "object" ? identity.result as Record<string, unknown> : null;
+    const target = chat.result && typeof chat.result === "object" ? chat.result as Record<string, unknown> : null;
+    if (!bot || !target || typeof bot.username !== "string" || (typeof target.id !== "number" && typeof target.id !== "string")) throw new Error("Telegram returned invalid account data.");
+    const title = typeof target.title === "string" ? target.title : typeof target.username === "string" ? `@${target.username}` : typeof target.first_name === "string" ? target.first_name : "Telegram chat";
+    const targetUrl = typeof target.username === "string" ? `https://t.me/${target.username}` : "https://t.me";
+    return publicIntegrationConnectionCollectionSchema.shape.connections.element.parse({
+      schemaVersion: 1, provider: "telegram", state: "ready", accountLabel: `@${bot.username}`, authMethod: "telegram_bot_token", observedAt: Date.now(),
+      resources: [{ id: String(target.id), kind: "telegram_chat", label: title, url: targetUrl, detail: "Bot-authorized notification chat" }],
+      nextAction: "Choose this chat inside a project.",
+    });
+  }
+
   #collection() {
     const observedAt = Date.now();
     return publicIntegrationConnectionCollectionSchema.parse({
@@ -117,6 +168,7 @@ export class IntegrationConnectionService {
       connections: [
         this.#github ?? this.#emptyGitHub("Choose Detect to use the GitHub login already stored by GitHub CLI."),
         this.#jira ?? this.#emptyJira("Connect Jira to choose a project."),
+        this.#telegram ?? this.#emptyTelegram("Connect a Telegram bot to choose its chat inside a project."),
       ],
     });
   }
@@ -127,6 +179,9 @@ export class IntegrationConnectionService {
 
   #emptyJira(nextAction: string, state: "not_connected" | "unavailable" = "not_connected") {
     return { schemaVersion: 1 as const, provider: "jira" as const, state, accountLabel: null, authMethod: "jira_api_token" as const, observedAt: Date.now(), resources: [], nextAction };
+  }
+  #emptyTelegram(nextAction: string, state: "not_connected" | "unavailable" = "not_connected") {
+    return { schemaVersion: 1 as const, provider: "telegram" as const, state, accountLabel: null, authMethod: "telegram_bot_token" as const, observedAt: Date.now(), resources: [], nextAction };
   }
 }
 

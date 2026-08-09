@@ -65,3 +65,40 @@ test("Jira connection deletes rejected credentials and fails closed", async () =
   assert.equal((await service.list()).connections.find((connection) => connection.provider === "jira")?.state, "not_connected");
   await assert.rejects(() => service.connectJira({ schemaVersion: 1, siteUrl: "https://localhost", email: "opefyre@gmail.com", apiToken: "secret-token" }));
 });
+
+test("Telegram connection verifies the bot and selected chat without exposing its token", async () => {
+  const stored = new Map<string, string>();
+  const vault = {
+    async write(reference: string, value: string) { stored.set(reference, value); },
+    async read(reference: string) { return stored.get(reference) ?? null; },
+    async delete(reference: string) { stored.delete(reference); },
+  };
+  const service = new IntegrationConnectionService(undefined, vault, async (input) => {
+    const url = String(input);
+    if (url.endsWith("/getMe")) return Response.json({ ok: true, result: { username: "pipeline_owner_bot" } });
+    return Response.json({ ok: true, result: { id: -1001234567890, title: "Pipeline approvals" } });
+  });
+  const token = "123456789:abcdefghijklmnopqrstuvwxyzABCDE_12345";
+  const result = await service.connectTelegram({ schemaVersion: 1, botToken: token, chatId: "-1001234567890" });
+  const telegram = result.connections.find((connection) => connection.provider === "telegram");
+  assert.equal(telegram?.state, "ready");
+  assert.equal(telegram?.resources[0]?.kind, "telegram_chat");
+  assert.equal(telegram?.resources[0]?.label, "Pipeline approvals");
+  assert.equal(JSON.stringify(result).includes(token), false);
+  assert.equal(stored.has("vault:providers/telegram/default"), true);
+  await service.disconnectTelegram();
+  assert.equal(stored.has("vault:providers/telegram/default"), false);
+});
+
+test("Telegram connection rejects invalid or unauthorized bot credentials and removes them", async () => {
+  const stored = new Map<string, string>();
+  const vault = {
+    async write(reference: string, value: string) { stored.set(reference, value); },
+    async read(reference: string) { return stored.get(reference) ?? null; },
+    async delete(reference: string) { stored.delete(reference); },
+  };
+  const service = new IntegrationConnectionService(undefined, vault, async () => new Response("denied", { status: 401 }));
+  await assert.rejects(() => service.connectTelegram({ schemaVersion: 1, botToken: "123456789:abcdefghijklmnopqrstuvwxyzABCDE_12345", chatId: "-1001234567890" }));
+  assert.equal(stored.has("vault:providers/telegram/default"), false);
+  await assert.rejects(() => service.connectTelegram({ schemaVersion: 1, botToken: "not-a-token", chatId: "all" }));
+});

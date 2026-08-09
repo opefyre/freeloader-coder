@@ -45,6 +45,8 @@ import { buildActivitySnapshot } from "./activity-explorer.js";
 import { buildDecisionSnapshot } from "./decision-inbox.js";
 import { buildUniversalSearchSnapshot } from "./universal-search.js";
 import { LocalAttentionService } from "./attention-center.js";
+import { ProjectPortfolioService } from "./project-portfolio-service.js";
+import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -120,6 +122,7 @@ const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConn
 const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new ProjectSolutionOrchestrator(projectLifecycles, projectSolutions, projectContexts, projectEgress, solutionModel));
 const jiraDelivery = new JiraDeliveryService(stateDirectory, localProjects, projectDeliveryPlans, projectLifecycles, credentialVault);
 const projectExecutions = new ProjectExecutionService(stateDirectory, projectDeliveryPlans, jiraDelivery);
+const projectPortfolio = new ProjectPortfolioService(localProjects, projectLifecycles, projectExecutions, credentialVault);
 const projectExecutionJira = new ProjectExecutionJiraObserver(stateDirectory, projectExecutions, jiraDelivery, credentialVault);
 const executionModel = new FreeProviderExecutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
 const executionWorkspaces = new ProjectTaskWorkspaceService(stateDirectory);
@@ -144,6 +147,24 @@ const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
     await executionCoordinator.schedule(projectId);
   }
 );
+const telegramOwnerChannel = new TelegramOwnerChannelService(stateDirectory, localProjects, {
+  list: () => projectLifecycles.list(),
+  get: (projectId) => projectLifecycles.get(projectId),
+  answer: async (projectId, input, idempotencyKey) => {
+    const before = await projectLifecycles.get(projectId);
+    if (!before) throw new ProjectLifecycleServiceError("not_found", "Project lifecycle was not found.");
+    const updated = await projectLifecycles.answer(projectId, input, idempotencyKey);
+    await projectContexts.applyClarifications(projectId, before.questions, updated.answers);
+    return updated;
+  },
+  decideSolution: async (projectId, input, idempotencyKey) => {
+    const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey);
+    if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
+    return lifecycle;
+  },
+}, credentialVault);
+void telegramOwnerChannel.synchronize().catch(() => undefined);
+setInterval(() => void telegramOwnerChannel.synchronize().catch(() => undefined), 15_000).unref();
 const autonomy = new LocalAutonomyService(
   stateDirectory,
   () => localRequests.list(),
@@ -324,7 +345,7 @@ const controlPlane = createControlPlaneServer({
     disconnect: (connectionId) => providerConnectionService.disconnect(connectionId)
   },
   projects: {
-    list: () => localProjects.list(),
+    list: () => projectPortfolio.list(),
     create: (input, idempotencyKey) => localProjects.create(input, idempotencyKey),
     register: (input) => localProjects.register(input),
     rescan: (projectId) => localProjects.rescan(projectId),
@@ -381,6 +402,8 @@ const controlPlane = createControlPlaneServer({
     probeGitHub: () => integrationConnections.probeGitHub(),
     connectJira: (input) => integrationConnections.connectJira(input),
     disconnectJira: () => integrationConnections.disconnectJira(),
+    connectTelegram: (input) => integrationConnections.connectTelegram(input),
+    disconnectTelegram: () => integrationConnections.disconnectTelegram(),
   },
   requests: {
     list: () => localRequests.list(),
