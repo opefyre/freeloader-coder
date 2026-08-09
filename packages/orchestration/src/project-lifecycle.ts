@@ -18,6 +18,13 @@ export const ownerQuestionSchema = z.strictObject({
   sourceFindingIds: z.array(z.string().trim().min(1).max(160)).min(1).max(30),
 });
 
+export const ownerAnswerSchema = z.strictObject({
+  questionId: z.string().regex(/^question_[a-f0-9]{16}$/),
+  optionId: z.string().trim().min(1).max(80).nullable(),
+  customAnswer: z.string().trim().min(1).max(2_000).nullable(),
+  answeredAt: z.number().int().nonnegative(),
+});
+
 export const projectArtifactSchema = z.strictObject({
   kind: z.enum(["context", "solution", "backlog"]),
   projectRelativePath: z.enum([
@@ -50,6 +57,7 @@ export const projectLifecycleRecordSchema = z.strictObject({
   mission: z.string().trim().min(3).max(20_000),
   assessment: majorWorkAssessmentSchema.nullable(),
   questions: z.array(ownerQuestionSchema).max(100),
+  answers: z.array(ownerAnswerSchema).max(100),
   artifacts: z.array(projectArtifactSchema).max(100),
   designApproval: z.strictObject({
     artifactDigest: digest,
@@ -63,12 +71,13 @@ export const projectLifecycleRecordSchema = z.strictObject({
 
 export type ProjectLifecycleRecord = z.infer<typeof projectLifecycleRecordSchema>;
 export type OwnerQuestion = z.infer<typeof ownerQuestionSchema>;
+export type OwnerAnswer = z.infer<typeof ownerAnswerSchema>;
 export type MajorWorkAssessment = z.infer<typeof majorWorkAssessmentSchema>;
 
 export type ProjectLifecycleEvent =
   | { type: "begin_context_review" }
   | { type: "context_completed"; artifact: z.infer<typeof projectArtifactSchema>; questions: readonly OwnerQuestion[] }
-  | { type: "clarifications_resolved" }
+  | { type: "clarifications_resolved"; answers: readonly OwnerAnswer[] }
   | { type: "scope_assessed"; assessment: MajorWorkAssessment }
   | { type: "design_completed"; artifact: z.infer<typeof projectArtifactSchema> }
   | { type: "design_approved"; artifactDigest: string }
@@ -92,6 +101,7 @@ export function createProjectLifecycle(input: {
     mission: input.mission,
     assessment: null,
     questions: [],
+    answers: [],
     artifacts: [],
     designApproval: null,
     jiraEpicId: null,
@@ -127,7 +137,12 @@ export function advanceProjectLifecycle(
     }
     case "clarifications_resolved":
       requireStage(record, "clarification");
-      patch = { stage: "context_review", questions: [] };
+      patch = {
+        stage: "context_review",
+        answers: validateAnswers(record.questions, event.answers),
+        questions: [],
+        blockedReason: null,
+      };
       break;
     case "scope_assessed":
       requireStage(record, "context_review");
@@ -188,6 +203,28 @@ export function advanceProjectLifecycle(
     revision: record.revision + 1,
     updatedAt: now,
   });
+}
+
+function validateAnswers(questions: readonly OwnerQuestion[], rawAnswers: readonly OwnerAnswer[]): OwnerAnswer[] {
+  const answers = rawAnswers.map((answer) => ownerAnswerSchema.parse(answer));
+  if (answers.length !== questions.length) throw new Error("Every blocking clarification must be answered.");
+  const seen = new Set<string>();
+  for (const answer of answers) {
+    if (seen.has(answer.questionId)) throw new Error("A clarification cannot be answered more than once.");
+    seen.add(answer.questionId);
+    const question = questions.find((candidate) => candidate.id === answer.questionId);
+    if (!question) throw new Error("Clarification answer does not match an active question.");
+    if ((answer.optionId === null) === (answer.customAnswer === null)) {
+      throw new Error("Choose one option or provide one custom answer.");
+    }
+    if (answer.optionId !== null && !question.options.some((option) => option.id === answer.optionId)) {
+      throw new Error("Clarification answer selected an unknown option.");
+    }
+    if (answer.customAnswer !== null && !question.allowsCustomAnswer) {
+      throw new Error("This clarification does not allow a custom answer.");
+    }
+  }
+  return [...answers].sort((left, right) => left.questionId.localeCompare(right.questionId));
 }
 
 function validateEvent(event: ProjectLifecycleEvent): ProjectLifecycleEvent {

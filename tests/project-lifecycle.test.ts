@@ -88,3 +88,35 @@ test("owner questions require selectable options", () => {
     }],
   }, 3));
 });
+
+test("clarification answers are complete, selectable, canonical, and audit-preserving", () => {
+  let record = createProjectLifecycle({ projectId: "project_0123456789abcdef", mission: "Build a new customer portal.", now: 1 });
+  record = advanceProjectLifecycle(record, { type: "begin_context_review" }, 2);
+  record = advanceProjectLifecycle(record, {
+    type: "context_completed",
+    artifact: artifact("context", "a"),
+    questions: [{
+      id: "question_0123456789abcdef",
+      prompt: "Who can create accounts?",
+      whyItMatters: "This changes identity and onboarding architecture.",
+      options: [
+        { id: "invite", label: "Invite only", consequence: "Admins control access." },
+        { id: "public", label: "Public signup", consequence: "Anyone can register." },
+      ],
+      allowsCustomAnswer: false,
+      sourceFindingIds: ["identity-gap"],
+    }],
+  }, 3);
+  assert.throws(() => advanceProjectLifecycle(record, { type: "clarifications_resolved", answers: [] }, 4), /Every blocking/);
+  assert.throws(() => advanceProjectLifecycle(record, {
+    type: "clarifications_resolved",
+    answers: [{ questionId: "question_0123456789abcdef", optionId: "unknown", customAnswer: null, answeredAt: 4 }],
+  }, 4), /unknown option/);
+  record = advanceProjectLifecycle(record, {
+    type: "clarifications_resolved",
+    answers: [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 5 }],
+  }, 5);
+  assert.equal(record.stage, "context_review");
+  assert.equal(record.questions.length, 0);
+  assert.deepEqual(record.answers, [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 5 }]);
+});
