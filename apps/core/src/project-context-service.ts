@@ -3,6 +3,7 @@ import { chmod, lstat, open, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { LocalProjectRegistry } from "./local-project-registry.js";
+import type { OwnerAnswer, OwnerQuestion } from "../../../packages/orchestration/src/project-lifecycle.js";
 
 const CONTEXT_FILE = "CONTEXT.md";
 const MAX_EXISTING_BYTES = 256_000;
@@ -106,6 +107,32 @@ export class ProjectContextService {
     const digest = createHash("sha256").update(body).digest("hex");
     await atomicWrite(target, `${body}\n<!-- context-digest:${digest} -->\n`);
     return { schemaVersion: 1 as const, projectId, path: CONTEXT_FILE, digest, groundingDigest: planning.grounding.digest, topologyDigest: planning.topology.digest, observedAt: Date.now(), citations: citations.map(({ path, digest: sourceDigest }) => ({ path, digest: sourceDigest })) };
+  }
+
+  async applyClarifications(projectId: string, questions: readonly OwnerQuestion[], answers: readonly OwnerAnswer[]) {
+    const target = join(await this.projects.canonicalRoot(projectId), CONTEXT_FILE);
+    const info = await lstat(target);
+    if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_EXISTING_BYTES) throw new Error("Project context is not safely editable.");
+    let content = await readFile(target, "utf8");
+    const start = content.indexOf(DECISION_START);
+    const end = content.indexOf(DECISION_END);
+    if (start < 0 || end <= start) throw new Error("Project context decision section is missing.");
+    const current = content.slice(start + DECISION_START.length, end).trim();
+    const additions = answers.flatMap((answer) => {
+      if (current.includes(`clarification:${answer.questionId}`)) return [];
+      const question = questions.find((candidate) => candidate.id === answer.questionId);
+      if (!question) throw new Error("Accepted clarification question was not found.");
+      const value = answer.customAnswer ?? question.options.find((option) => option.id === answer.optionId)?.label;
+      if (!value) throw new Error("Accepted clarification answer was not found.");
+      return [`- ${question.prompt} **${value}** <!-- clarification:${answer.questionId} -->`];
+    });
+    const decisions = [current === "- None recorded yet." ? "" : current, ...additions].filter(Boolean).join("\n");
+    content = `${content.slice(0, start + DECISION_START.length)}\n${decisions || "- None recorded yet."}\n${content.slice(end)}`;
+    content = content.replace(/\n<!-- context-digest:[a-f0-9]{64} -->\n?$/, "\n");
+    const body = content.replace(/\n+$/, "");
+    const digest = createHash("sha256").update(body).digest("hex");
+    await atomicWrite(target, `${body}\n\n<!-- context-digest:${digest} -->\n`);
+    return { digest, path: CONTEXT_FILE };
   }
 }
 

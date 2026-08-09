@@ -21,6 +21,7 @@ import { X } from "@phosphor-icons/react/X";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
+import type { ProjectLifecycleRecord } from "../../../../../packages/orchestration/src/project-lifecycle.js";
 import type {
   LocalDraftPlan,
   LocalRequest,
@@ -29,6 +30,8 @@ import {
   addLocalProjectFiles,
   createLocalProject,
   generateLocalProjectContext,
+  getProjectLifecycle,
+  answerProjectClarifications,
   listLocalProjects,
   setLocalProjectResources,
 } from "../../local-project-client.js";
@@ -96,6 +99,9 @@ export function LocalRequestPanel(props: {
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<readonly string[]>([]);
   const [selectedJiraProjectId, setSelectedJiraProjectId] = useState("");
   const [outcome, setOutcome] = useState("");
+  const [lifecycle, setLifecycle] = useState<ProjectLifecycleRecord | null>(null);
+  const [clarificationChoices, setClarificationChoices] = useState<Record<string, string>>({});
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [lastSubmission, setLastSubmission] = useState<{
     idea: string;
     project: string;
@@ -150,6 +156,32 @@ export function LocalRequestPanel(props: {
       window.clearInterval(timer);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!projectId || projectId === "__new__") { setLifecycle(null); return; }
+    let active = true;
+    void getProjectLifecycle({ endpoint, projectId }).then((record) => { if (active) setLifecycle(record); }, () => { if (active) setLifecycle(null); });
+    return () => { active = false; };
+  }, [projectId, requests]);
+
+  async function answerClarifications() {
+    if (!lifecycle || lifecycle.questions.length === 0) return;
+    const answers = lifecycle.questions.map((question) => {
+      const choice = clarificationChoices[question.id];
+      const custom = customAnswers[question.id]?.trim() ?? "";
+      if (!choice) throw new Error("Choose one answer for every question.");
+      if (choice === "__custom__" && !custom) throw new Error("Write the custom answer before continuing.");
+      return { questionId: question.id, optionId: choice === "__custom__" ? null : choice, customAnswer: choice === "__custom__" ? custom : null, answeredAt: Date.now() };
+    });
+    setStatus("working");
+    try {
+      const updated = await answerProjectClarifications({ endpoint, projectId: lifecycle.projectId, expectedRevision: lifecycle.revision, answers, idempotencyKey: `clarifications:${crypto.randomUUID()}` });
+      setLifecycle(updated); setClarificationChoices({}); setCustomAnswers({}); setStatus("ready");
+      setNotice("Answers saved. The affected context will be checked again before planning continues.");
+    } catch (error) {
+      setStatus("ready"); setNotice(error instanceof Error ? error.message : "Answers could not be saved safely.");
+    }
+  }
 
   async function submit() {
     if (!projectId || outcome.trim().length < 3) {
@@ -712,6 +744,28 @@ export function LocalRequestPanel(props: {
   return (
     <section className="space-y-4" aria-labelledby={`local-request-${props.mode}-title`}>
       {props.mode === "compose" && <h2 id="local-request-compose-title" className="sr-only">What do you want to build?</h2>}
+      {props.mode === "compose" && lifecycle?.stage === "clarification" && lifecycle.questions.length > 0 && (
+        <Card className="bg-primary/[.06]">
+          <CardHeader><CardTitle className="text-lg">A few choices</CardTitle><CardDescription>These change the plan.</CardDescription></CardHeader>
+          <CardContent className="space-y-5">
+            {lifecycle.questions.map((question) => (
+              <fieldset key={question.id} className="space-y-3">
+                <legend className="text-sm font-semibold">{question.prompt}</legend>
+                <p className="text-xs text-muted-foreground">{question.whyItMatters}</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {question.options.map((option) => {
+                    const selected = clarificationChoices[question.id] === option.id;
+                    return <button key={option.id} type="button" aria-pressed={selected} onClick={() => setClarificationChoices((current) => ({ ...current, [question.id]: option.id }))} className={`rounded-2xl px-4 py-3 text-left ${selected ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}><strong className="block text-sm">{option.label}</strong><span className={`mt-1 block text-xs ${selected ? "text-primary-foreground/75" : "text-muted-foreground"}`}>{option.consequence}</span></button>;
+                  })}
+                  {question.allowsCustomAnswer && <button type="button" aria-pressed={clarificationChoices[question.id] === "__custom__"} onClick={() => setClarificationChoices((current) => ({ ...current, [question.id]: "__custom__" }))} className={`rounded-2xl px-4 py-3 text-left text-sm font-semibold ${clarificationChoices[question.id] === "__custom__" ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"}`}>Something else</button>}
+                </div>
+                {clarificationChoices[question.id] === "__custom__" && <textarea aria-label={`Custom answer for ${question.prompt}`} value={customAnswers[question.id] ?? ""} onChange={(event) => setCustomAnswers((current) => ({ ...current, [question.id]: event.target.value }))} rows={2} maxLength={2_000} placeholder="Your answer…" className="w-full resize-y rounded-2xl bg-muted px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />}
+              </fieldset>
+            ))}
+            <div className="flex justify-end"><Button onClick={() => void answerClarifications()} disabled={status === "working" || lifecycle.questions.some((question) => !clarificationChoices[question.id])}><CheckCircle />Continue</Button></div>
+          </CardContent>
+        </Card>
+      )}
       <Card className={props.mode === "compose" ? "bg-primary/[.025]" : "bg-primary/[.035]"}>
         {props.mode === "queue" && <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>

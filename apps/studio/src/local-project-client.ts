@@ -9,6 +9,7 @@ import {
   projectContextSnapshotSchema,
   type ProjectContextSnapshot,
 } from "../../../packages/runtime/src/local-projects.js";
+import { projectLifecycleRecordSchema, type OwnerAnswer, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 
 const MAX_RESPONSE_BYTES = 131_072;
 
@@ -134,6 +135,16 @@ export async function generateLocalProjectContext(input: {
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
     })
   );
+}
+
+export async function getProjectLifecycle(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<ProjectLifecycleRecord> {
+  assertProjectId(input.projectId);
+  return projectLifecycleRecordSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/lifecycle`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function answerProjectClarifications(input: { endpoint: string; projectId: string; expectedRevision: number; answers: readonly OwnerAnswer[]; idempotencyKey: string; fetcher?: typeof fetch }): Promise<ProjectLifecycleRecord> {
+  assertProjectId(input.projectId);
+  return projectLifecycleRecordSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/clarifications`, method: "POST", body: { schemaVersion: 1, expectedRevision: input.expectedRevision, answers: input.answers }, idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
 }
 
 export async function rescanLocalProject(input: {

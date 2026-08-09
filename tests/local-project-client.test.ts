@@ -6,6 +6,8 @@ import {
   createLocalProject,
   forgetLocalProject,
   generateLocalProjectContext,
+  getProjectLifecycle,
+  answerProjectClarifications,
   listLocalProjects,
   registerLocalProject,
 } from "../apps/studio/src/local-project-client.js";
@@ -16,6 +18,22 @@ const collection = {
   observedAt: 10_000,
   projects: [],
 } as const;
+
+const lifecycle = {
+  schemaVersion: 1 as const, projectId: "project_0123456789abcdef", stage: "clarification" as const, revision: 2,
+  mission: "Build a portal.", assessment: null,
+  questions: [{ id: "question_0123456789abcdef", prompt: "Who can sign up?", whyItMatters: "Identity changes.", options: [{ id: "invite", label: "Invite", consequence: "Admins invite." }, { id: "public", label: "Public", consequence: "Anyone registers." }], allowsCustomAnswer: false, sourceFindingIds: ["identity"] }],
+  answers: [], artifacts: [], designApproval: null, jiraEpicId: null, blockedReason: null, updatedAt: 10_000,
+};
+
+test("browser client reads and answers selectable clarifications through loopback only", async () => {
+  const read = await getProjectLifecycle({ endpoint: "http://127.0.0.1:4312", projectId: lifecycle.projectId, fetcher: async () => Response.json(lifecycle) });
+  assert.equal(read.questions.length, 1);
+  let body = "";
+  const answered = await answerProjectClarifications({ endpoint: "http://127.0.0.1:4312", projectId: lifecycle.projectId, expectedRevision: 2, answers: [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 11_000 }], idempotencyKey: "clarifications:0123456789", fetcher: async (_url, init) => { body = String(init?.body); return Response.json({ ...lifecycle, stage: "context_review", revision: 3, questions: [], answers: [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 11_000 }] }); } });
+  assert.equal(answered.answers[0]?.optionId, "invite");
+  assert.match(body, /"expectedRevision":2/);
+});
 
 test("browser client sends bounded loopback registration and validates responses", async () => {
   const observed: { url: string; init?: RequestInit }[] = [];

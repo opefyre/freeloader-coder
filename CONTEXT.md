@@ -1,9 +1,9 @@
 # Project context
 
-Generated: 2026-08-09T11:15:02.023Z
+Generated: 2026-08-09T11:45:48.682Z
 Project: pipeline-studio
 Evidence digest: 36956a01b95d36e19f597875be5ee5d3dc1531ea544ebc5b0f337d6df04a405f
-Topology digest: a09e1f74823f54224ff4334b4736093e86682fd054088f15f2fc6e8ae1f3f3b5
+Topology digest: 1bfcb6b48a1d01a44a780c70788fce5e39d5930715737b88c749fa4fd4da8b4e
 
 ## Requested outcome
 
@@ -18,7 +18,7 @@ Build a reliable autonomous multi-project product development pipeline for non-d
 - Package manager: Not declared — package.json
 - Validation scripts: build, control-plane, format:check, lint, repair, setup, setup:check, start, studio:budget, studio:build, studio:dev, studio:release-check, test, typecheck, verify — package.json
 - Connected github_repository: [opefyre/freeloader-coder](https://github.com/opefyre/freeloader-coder)
-- 605 bounded paths were classified; topology was not truncated.
+- 609 bounded paths were classified; topology was not truncated.
 
 ## Inferences
 
@@ -39,7 +39,7 @@ Build a reliable autonomous multi-project product development pipeline for non-d
 - Package manager: Not declared [3]
 - Validation and automation scripts: setup, start, control-plane, repair, studio:dev, studio:build, studio:budget, studio:release-check, site:dev, site:build, site:budget, site:release-check, setup:check, format:check, lint, typecheck, build, test, verify [3]
 - Root dependencies observed: @tailwindcss/vite, @types/node, @types/react, @types/react-dom, @vitejs/plugin-react, tailwindcss, typescript, vite [3]
-- Bounded topology: 31 config, 239 source, 6 asset, 182 documentation, 3 other, 144 test.
+- Bounded topology: 31 config, 241 source, 6 asset, 182 documentation, 3 other, 146 test.
 - Root areas: CODE_OF_CONDUCT.md, CONTEXT.md, CONTRIBUTING.md, LICENSE, README.md, SECURITY.md, apps, docs, fixtures, package-lock.json, package.json, packages, scripts, tests, tsconfig.build.json, tsconfig.json.
 - github_repository: [opefyre/freeloader-coder](https://github.com/opefyre/freeloader-coder)
 
@@ -75,4 +75,4 @@ Build a reliable autonomous multi-project product development pipeline for non-d
 - Hidden, generated, dependency, secret-like, oversized, and symlinked paths were excluded.
 - Secrets, excluded directories, symlinks, provider prompts, and command output are not included.
 
-<!-- context-digest:a403a79384c7a1391f19aa918072d9ad395d9a894149b38b2dc7dc8c585b312c -->
+<!-- context-digest:e2bd9cf332f03674ae038de8fd8cfa4ffcf6dfeb23be1887a6fab236d452557f -->

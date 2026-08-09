@@ -108,6 +108,8 @@ import {
   type AttentionSnapshot,
 } from "../../../packages/runtime/src/attention.js";
 import { AttentionError } from "./attention-center.js";
+import { projectLifecycleRecordSchema, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
+import { ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import {
   nativePickerResponseSchema,
   type NativePickerResponse,
@@ -162,6 +164,10 @@ export type ControlPlaneServerOptions = {
     addFiles?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     generateContext?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     forget: (projectId: string) => void | Promise<void>;
+  };
+  projectLifecycles?: {
+    get: (projectId: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
+    answer: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
   };
   nativePicker?: {
     folder: () => NativePickerResponse | Promise<NativePickerResponse>;
@@ -1117,6 +1123,25 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       const projectRoute = url.pathname.match(
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context)$/
       );
+      const projectLifecycleRoute = url.pathname.match(
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications)$/
+      );
+      if (request.method === "GET" && projectLifecycleRoute?.[2] === "lifecycle" && options.projectLifecycles) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(response, 200, projectLifecycleRecordSchema.parse(await options.projectLifecycles.get(projectLifecycleRoute[1] ?? "")));
+        return;
+      }
+      if (request.method === "POST" && projectLifecycleRoute?.[2] === "clarifications" && options.projectLifecycles) {
+        sendJson(response, 200, projectLifecycleRecordSchema.parse(await options.projectLifecycles.answer(
+          projectLifecycleRoute[1] ?? "",
+          await readJsonBody(request),
+          requireIdempotencyKey(request)
+        )));
+        return;
+      }
       if (
         request.method === "POST" &&
         projectRoute?.[2] === "context" &&
@@ -1249,6 +1274,8 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       } else if (error instanceof AttentionError) {
         const status = error.code === "not_found" ? 404 : ["stale_revision", "idempotency_conflict"].includes(error.code) ? 409 : 503;
         sendJson(response, status, { error: error.message, code: error.code });
+      } else if (error instanceof ProjectLifecycleServiceError) {
+        sendJson(response, error.code === "not_found" ? 404 : error.code === "stale_revision" ? 409 : 500, { error: error.message, code: error.code });
       } else if (
         error instanceof ProviderConnectionLifecycleError ||
         error instanceof ProviderConnectionServiceError

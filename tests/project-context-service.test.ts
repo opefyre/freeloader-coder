@@ -31,6 +31,16 @@ test("context generation is cited, atomic, digest-bound, and preserves accepted 
     const refreshedContent = await readFile(join(workspace, "CONTEXT.md"), "utf8");
     assert.match(refreshedContent, /Keep the product local-first/);
     assert.notEqual(refreshed.digest, first.digest);
+    const clarified = await service.applyClarifications(project.id, [{
+      id: "question_0123456789abcdef", prompt: "Who can sign up?", whyItMatters: "Identity changes.",
+      options: [{ id: "invite", label: "Invite only", consequence: "Admins invite." }, { id: "public", label: "Public", consequence: "Anyone registers." }],
+      allowsCustomAnswer: false, sourceFindingIds: ["identity"],
+    }], [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 20 }]);
+    const clarifiedContent = await readFile(join(workspace, "CONTEXT.md"), "utf8");
+    assert.match(clarifiedContent, /Who can sign up\? \*\*Invite only\*\*/);
+    assert.match(clarifiedContent, new RegExp(`context-digest:${clarified.digest}`));
+    await service.applyClarifications(project.id, [], [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 20 }]);
+    assert.equal((await readFile(join(workspace, "CONTEXT.md"), "utf8")).match(/clarification:question_0123456789abcdef/g)?.length, 1);
     assert.equal(refreshed.citations.length > 0, true);
     assert.doesNotMatch(refreshedContent, /api[_-]?key|secret-value/i);
   } finally {

@@ -3,6 +3,7 @@ import { request } from "node:http";
 import test from "node:test";
 
 import { createControlPlaneServer } from "../apps/core/src/control-plane.js";
+import { advanceProjectLifecycle, createProjectLifecycle } from "../packages/orchestration/src/project-lifecycle.js";
 import type {
   ControlPlaneHealth,
   ControlPlaneSnapshot,
@@ -34,6 +35,38 @@ const snapshot: ControlPlaneSnapshot = {
     },
   ],
 };
+
+test("clarification endpoints are origin-bound, revision-bound, and idempotent", async () => {
+  const projectId = "project_0123456789abcdef";
+  let lifecycle = advanceProjectLifecycle(createProjectLifecycle({ projectId, mission: "Build a portal.", now: 1 }), { type: "begin_context_review" }, 2);
+  lifecycle = advanceProjectLifecycle(lifecycle, {
+    type: "context_completed",
+    artifact: { kind: "context", projectRelativePath: ".pipeline/CONTEXT.md", digest: "a".repeat(64), revision: 1, createdAt: 3, citations: ["local://README.md"], reviewerIds: ["reviewer"], qaPassed: true },
+    questions: [{ id: "question_0123456789abcdef", prompt: "Who can sign up?", whyItMatters: "Identity architecture changes.", options: [{ id: "invite", label: "Invite", consequence: "Admins invite." }, { id: "public", label: "Public", consequence: "Anyone registers." }], allowsCustomAnswer: false, sourceFindingIds: ["identity"] }],
+  }, 3);
+  const calls: string[] = [];
+  const server = createControlPlaneServer({
+    host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot,
+    projectLifecycles: {
+      get: () => lifecycle,
+      answer: (_projectId, input, key) => { calls.push(`${key}:${JSON.stringify(input)}`); return { ...lifecycle, stage: "context_review", questions: [], revision: lifecycle.revision + 1 }; },
+    },
+  });
+  const port = await server.listen();
+  const endpoint = `http://127.0.0.1:${port}/api/v1/projects/${projectId}`;
+  try {
+    const read = await fetch(`${endpoint}/lifecycle`, { headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(read.status, 200);
+    assert.equal((await read.json() as { stage: string }).stage, "clarification");
+    const denied = await fetch(`${endpoint}/lifecycle`, { headers: { Origin: "https://example.com" } });
+    assert.equal(denied.status, 403);
+    const missingKey = await fetch(`${endpoint}/clarifications`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: lifecycle.revision, answers: [] }) });
+    assert.equal(missingKey.status, 400);
+    const answered = await fetch(`${endpoint}/clarifications`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "clarification-answer-001" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: lifecycle.revision, answers: [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 4 }] }) });
+    assert.equal(answered.status, 200);
+    assert.equal(calls.length, 1);
+  } finally { await server.close(); }
+});
 
 test("loopback server exposes only validated read-only health and snapshot data", async () => {
   const controlPlane = createControlPlaneServer({

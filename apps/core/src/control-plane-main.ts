@@ -7,6 +7,7 @@ import { LocalProjectRegistry } from "./local-project-registry.js";
 import { NativePicker } from "./native-picker.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { ProjectContextService } from "./project-context-service.js";
+import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
 import { LocalSensitiveCommandRunner } from "./sensitive-command-runner.js";
@@ -40,6 +41,7 @@ const instanceId = randomUUID();
 const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
 const projectContexts = new ProjectContextService(localProjects);
+const projectLifecycles = new ProjectLifecycleService(stateDirectory);
 const nativePicker = new NativePicker();
 const localRequests = new LocalRequestStore(
   stateDirectory,
@@ -291,8 +293,27 @@ const controlPlane = createControlPlaneServer({
     rescan: (projectId) => localProjects.rescan(projectId),
     setResources: (projectId, input) => localProjects.setResources(projectId, input),
     addFiles: (projectId, input) => localProjects.addFiles(projectId, input),
-    generateContext: (projectId, input) => projectContexts.generate(projectId, input),
+    generateContext: async (projectId, input) => {
+      const context = await projectContexts.generate(projectId, input);
+      const outcome = typeof input === "object" && input && "outcome" in input ? String((input as { outcome: unknown }).outcome) : "Review project context.";
+      await projectLifecycles.begin({ projectId, mission: outcome });
+      return context;
+    },
     forget: (projectId) => localProjects.forget(projectId),
+  },
+  projectLifecycles: {
+    get: async (projectId) => {
+      const record = await projectLifecycles.get(projectId);
+      if (!record) throw new ProjectLifecycleServiceError("not_found", "Project lifecycle was not found.");
+      return record;
+    },
+    answer: async (projectId, input, idempotencyKey) => {
+      const before = await projectLifecycles.get(projectId);
+      if (!before) throw new ProjectLifecycleServiceError("not_found", "Project lifecycle was not found.");
+      const updated = await projectLifecycles.answer(projectId, input, idempotencyKey);
+      await projectContexts.applyClarifications(projectId, before.questions, updated.answers);
+      return updated;
+    },
   },
   nativePicker: {
     folder: () => nativePicker.folder(),
