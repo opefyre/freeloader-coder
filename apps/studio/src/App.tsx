@@ -87,6 +87,8 @@ import {
 } from "./onboarding-fixture.js";
 import {
   canonicalStudioUrl,
+  projectIdFromLocation,
+  projectRoute,
   studioViews,
   viewFromLocation,
   workspaceDefinition,
@@ -339,7 +341,7 @@ function App() {
     const url = new URL(path, window.location.origin);
     if (url.origin !== window.location.origin) return;
     const view = viewFromLocation(url);
-    if (workspaceDefinitions[view].path !== url.pathname) return;
+    if (workspaceDefinitions[view].path !== url.pathname && !projectIdFromLocation(url)) return;
     setActiveView(view);
     setCommandOpen(false);
     window.history.pushState({}, "", `${url.pathname}${url.search}`);
@@ -1243,15 +1245,15 @@ function WorkspaceSurface({
 
 function BuildWorkspace({ navigate }: { navigate: (view: StudioView) => void }) {
   const [selectedProjectId, setSelectedProjectId] = useState(
-    () => new URLSearchParams(window.location.search).get("project") ?? ""
+    () => projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? ""
   );
   useEffect(() => {
-    const syncProject = () => setSelectedProjectId(new URLSearchParams(window.location.search).get("project") ?? "");
+    const syncProject = () => setSelectedProjectId(projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? "");
     window.addEventListener("popstate", syncProject);
     return () => window.removeEventListener("popstate", syncProject);
   }, []);
   const openProject = (projectId: string) => {
-    window.history.pushState({}, "", `/?project=${encodeURIComponent(projectId)}`);
+    window.history.pushState({}, "", projectRoute(projectId));
     setSelectedProjectId(projectId);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };

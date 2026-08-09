@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   canonicalStudioUrl,
+  projectIdFromLocation,
+  projectRoute,
   routeForView,
   studioViews,
   viewFromLocation
@@ -74,4 +76,18 @@ test("unknown routes fail safely to the overview route", () => {
   const view = viewFromLocation(unknown);
   assert.equal(view, "overview");
   assert.equal(canonicalStudioUrl(unknown, view).pathname, "/");
+});
+
+test("project workspaces use validated refresh-safe path routes", () => {
+  const projectId = "project_0123456789abcdef";
+  assert.equal(projectRoute(projectId), `/projects/${projectId}`);
+  assert.equal(projectIdFromLocation({ pathname: `/projects/${projectId}/` }), projectId);
+  assert.equal(viewFromLocation({ pathname: `/projects/${projectId}`, search: "" }), "overview");
+  const direct = new URL(`http://127.0.0.1:4310/projects/${projectId}`);
+  assert.equal(canonicalStudioUrl(direct, "overview").pathname, `/projects/${projectId}`);
+  const legacy = canonicalStudioUrl(new URL(`http://127.0.0.1:4310/?project=${projectId}`), "overview");
+  assert.equal(legacy.pathname, `/projects/${projectId}`);
+  assert.equal(legacy.search, "");
+  assert.equal(projectIdFromLocation({ pathname: "/projects/not-an-id" }), null);
+  assert.throws(() => projectRoute("unsafe"));
 });

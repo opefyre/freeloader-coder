@@ -230,6 +230,7 @@ export function viewFromLocation(location: {
   readonly search: string;
 }): StudioView {
   const pathname = normalizePath(location.pathname);
+  if (projectIdFromLocation(location)) return "overview";
   const legacyView = new URLSearchParams(location.search).get("view");
   if (pathname === "/" && studioViews.includes(legacyView as StudioView)) {
     return legacyView as StudioView;
@@ -243,9 +244,30 @@ export function viewFromLocation(location: {
 
 export function canonicalStudioUrl(url: URL, view: StudioView): URL {
   const canonical = new URL(url);
-  canonical.pathname = routeForView(view);
+  const legacyProjectId = canonical.searchParams.get("project");
+  const projectId = projectIdFromLocation(url) ?? (legacyProjectId && isProjectId(legacyProjectId) ? legacyProjectId : null);
+  canonical.pathname = view === "overview" && projectId
+    ? projectRoute(projectId)
+    : routeForView(view);
   canonical.searchParams.delete("view");
+  canonical.searchParams.delete("project");
   return canonical;
+}
+
+export function projectRoute(projectId: string): string {
+  if (!isProjectId(projectId)) {
+    throw new Error("Project route requires an opaque project identity.");
+  }
+  return `/projects/${projectId}`;
+}
+
+function isProjectId(value: string): boolean {
+  return /^project_[a-f0-9]{16}$/.test(value);
+}
+
+export function projectIdFromLocation(location: { readonly pathname: string }): string | null {
+  const match = normalizePath(location.pathname).match(/^\/projects\/(project_[a-f0-9]{16})$/);
+  return match?.[1] ?? null;
 }
 
 function normalizePath(pathname: string): string {

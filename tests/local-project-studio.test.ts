@@ -57,7 +57,7 @@ test("opening a portfolio project keeps the owner in Build with project-scoped c
     readFile("apps/studio/src/components/conversation/local-request-panel.tsx", "utf8"),
   ]);
   assert.match(portfolio, /openProject: \(projectId: string\) => void/);
-  assert.match(app, /`\/\?project=\$\{encodeURIComponent\(projectId\)\}`/);
+  assert.match(app, /projectRoute\(projectId\)/);
   assert.match(app, /initialProjectId=\{selectedProjectId \|\| undefined\}/);
   assert.match(app, />\s*All projects\s*</);
   assert.match(panel, /initialProjectId\?: string/);

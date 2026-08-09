@@ -11,6 +11,7 @@ import { GithubLogo } from "@phosphor-icons/react/GithubLogo";
 import { HourglassMedium } from "@phosphor-icons/react/HourglassMedium";
 import { Kanban } from "@phosphor-icons/react/Kanban";
 import { LockKey } from "@phosphor-icons/react/LockKey";
+import { MagnifyingGlass } from "@phosphor-icons/react/MagnifyingGlass";
 import { PaperclipHorizontal } from "@phosphor-icons/react/PaperclipHorizontal";
 import { Play } from "@phosphor-icons/react/Play";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
@@ -98,6 +99,7 @@ export function LocalRequestPanel(props: {
   const [attachments, setAttachments] = useState<readonly { path: string; label: string }[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
+  const [resourceQuery, setResourceQuery] = useState("");
   const [integrationConnections, setIntegrationConnections] = useState<PublicIntegrationConnectionCollection | null>(null);
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<readonly string[]>([]);
   const [selectedJiraProjectId, setSelectedJiraProjectId] = useState("");
@@ -304,6 +306,7 @@ export function LocalRequestPanel(props: {
       setIntegrationConnections(collection);
       setSelectedRepositoryIds((project.resources ?? []).filter((resource) => resource.kind === "github_repository").map((resource) => resource.resourceId));
       setSelectedJiraProjectId((project.resources ?? []).find((resource) => resource.kind === "jira_project")?.resourceId ?? "");
+      setResourceQuery("");
       setResourcePickerOpen(true);
       setStatus("ready");
     } catch (error) {
@@ -773,6 +776,15 @@ export function LocalRequestPanel(props: {
   );
   const discoveredGithubIds = new Set(integrationConnections?.connections.find((connection) => connection.provider === "github")?.resources.map((resource) => resource.id) ?? []);
   const discoveredJiraIds = new Set(integrationConnections?.connections.find((connection) => connection.provider === "jira")?.resources.map((resource) => resource.id) ?? []);
+  const normalizedResourceQuery = resourceQuery.trim().toLowerCase();
+  const githubConnection = integrationConnections?.connections.find((connection) => connection.provider === "github");
+  const jiraConnection = integrationConnections?.connections.find((connection) => connection.provider === "jira");
+  const visibleGithubResources = [...(githubConnection?.resources ?? [])]
+    .filter((resource) => !normalizedResourceQuery || `${resource.label} ${resource.detail}`.toLowerCase().includes(normalizedResourceQuery))
+    .sort((left, right) => Number(selectedRepositoryIds.includes(right.id)) - Number(selectedRepositoryIds.includes(left.id)) || left.label.localeCompare(right.label));
+  const visibleJiraResources = [...(jiraConnection?.resources ?? [])]
+    .filter((resource) => !normalizedResourceQuery || `${resource.label} ${resource.detail}`.toLowerCase().includes(normalizedResourceQuery))
+    .sort((left, right) => Number(selectedJiraProjectId === right.id) - Number(selectedJiraProjectId === left.id) || left.label.localeCompare(right.label));
   const unavailableRepositories = (selectedProject?.resources ?? []).filter((resource) => resource.kind === "github_repository" && !discoveredGithubIds.has(resource.resourceId));
   const unavailableJira = (selectedProject?.resources ?? []).find((resource) => resource.kind === "jira_project" && !discoveredJiraIds.has(resource.resourceId));
   return (
@@ -894,23 +906,26 @@ export function LocalRequestPanel(props: {
               </div>
               {resourcePickerOpen && <div role="dialog" aria-modal="false" aria-labelledby="project-resources-title" className="rounded-3xl bg-muted/55 p-4">
                 <div className="flex items-center justify-between gap-3"><strong id="project-resources-title">Project resources</strong><Button size="sm" variant="ghost" aria-label="Close resources" onClick={() => setResourcePickerOpen(false)}><X /></Button></div>
+                <label className="mt-4 flex h-11 items-center gap-3 rounded-2xl bg-background/75 px-4"><MagnifyingGlass className="shrink-0 text-muted-foreground" /><span className="sr-only">Find a project resource</span><input value={resourceQuery} onChange={(event) => setResourceQuery(event.target.value)} placeholder="Find a repository or Jira project…" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground" /></label>
                 <h4 className="mt-4 text-xs font-semibold text-muted-foreground">GitHub repositories</h4>
                 {integrationConnections?.connections.find((connection) => connection.provider === "github")?.state !== "ready" ? <p className="mt-4 text-sm text-muted-foreground">Connect GitHub in Settings first.</p> : <div className="mt-3 grid max-h-64 gap-2 overflow-auto sm:grid-cols-2">
-                  {integrationConnections.connections.find((connection) => connection.provider === "github")?.resources.map((repository) => {
+                  {visibleGithubResources.map((repository) => {
                     const selected = selectedRepositoryIds.includes(repository.id);
                     return <button key={repository.id} type="button" aria-pressed={selected} onClick={() => setSelectedRepositoryIds((current) => selected ? current.filter((id) => id !== repository.id) : [...current, repository.id])} className={`flex items-center gap-3 rounded-2xl p-3 text-left ${selected ? "bg-primary/10" : "bg-background/70"}`}><GithubLogo className="shrink-0 text-primary" /><span className="min-w-0"><strong className="block truncate text-xs">{repository.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{repository.detail}</span></span></button>;
                   })}
+                  {visibleGithubResources.length === 0 && <p className="p-3 text-sm text-muted-foreground">No matching repositories.</p>}
                 </div>}
                 {unavailableRepositories.map((repository) => <button key={repository.id} type="button" aria-pressed={selectedRepositoryIds.includes(repository.resourceId)} onClick={() => setSelectedRepositoryIds((current) => current.includes(repository.resourceId) ? current.filter((id) => id !== repository.resourceId) : [...current, repository.resourceId])} className="mt-2 flex w-full items-center gap-3 rounded-2xl bg-background/70 p-3 text-left"><GithubLogo className="shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><strong className="block truncate text-xs">{repository.label}</strong><span className="block text-[11px] text-muted-foreground">Previously selected · unavailable from GitHub</span></span><Badge tone="caution">Keep</Badge></button>)}
                 <h4 className="mt-4 text-xs font-semibold text-muted-foreground">Jira project</h4>
                 {integrationConnections?.connections.find((connection) => connection.provider === "jira")?.state !== "ready" ? <p className="mt-3 text-sm text-muted-foreground">Connect Jira in Settings first.</p> : <div className="mt-3 grid max-h-48 gap-2 overflow-auto sm:grid-cols-2">
-                  {integrationConnections.connections.find((connection) => connection.provider === "jira")?.resources.map((jiraProject) => {
+                  {visibleJiraResources.map((jiraProject) => {
                     const selected = selectedJiraProjectId === jiraProject.id;
                     return <button key={jiraProject.id} type="button" aria-pressed={selected} onClick={() => setSelectedJiraProjectId(selected ? "" : jiraProject.id)} className={`flex items-center gap-3 rounded-2xl p-3 text-left ${selected ? "bg-primary/10" : "bg-background/70"}`}><Kanban className="shrink-0 text-primary" /><span className="min-w-0"><strong className="block truncate text-xs">{jiraProject.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{jiraProject.detail}</span></span></button>;
                   })}
+                  {visibleJiraResources.length === 0 && <p className="p-3 text-sm text-muted-foreground">No matching Jira projects.</p>}
                 </div>}
                 {unavailableJira && <button type="button" aria-pressed={selectedJiraProjectId === unavailableJira.resourceId} onClick={() => setSelectedJiraProjectId((current) => current === unavailableJira.resourceId ? "" : unavailableJira.resourceId)} className="mt-2 flex w-full items-center gap-3 rounded-2xl bg-background/70 p-3 text-left"><Kanban className="shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><strong className="block truncate text-xs">{unavailableJira.label}</strong><span className="block text-[11px] text-muted-foreground">Previously selected · unavailable from Jira</span></span><Badge tone="caution">Keep</Badge></button>}
-                <div className="mt-4 flex justify-end"><Button size="sm" onClick={() => void saveProjectResources()} disabled={status === "working"}>Save</Button></div>
+                <div className="mt-4 flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{selectedRepositoryIds.length} repos · {selectedJiraProjectId ? 1 : 0} Jira</span><Button size="sm" onClick={() => void saveProjectResources()} disabled={status === "working"}>Save</Button></div>
               </div>}
             </div>
           )}
