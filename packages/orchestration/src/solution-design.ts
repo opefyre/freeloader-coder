@@ -13,6 +13,12 @@ export const solutionReviewResultSchema = z.strictObject({
   discipline: z.enum(["product", "technical"]), verdict: z.enum(["pass", "fail"]),
   findings: z.array(z.string().trim().min(3).max(1_000)).max(50),
 });
+export const projectEgressPermitSchema = z.strictObject({
+  schemaVersion: z.literal(1), projectId: z.string().regex(/^project_[a-f0-9]{16}$/), contextDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  dataClass: z.enum(["non_personal_test", "source_code"]), providerIds: z.array(z.string().trim().min(1).max(80)).min(1).max(50),
+  approvedAt: z.number().int().nonnegative(), expiresAt: z.number().int().positive(),
+});
+export const solutionRunSchema = z.strictObject({ schemaVersion: z.literal(1), projectId: z.string().regex(/^project_[a-f0-9]{16}$/), state: z.enum(["queued", "running", "deferred", "needs_user", "completed"]), attempts: z.number().int().nonnegative(), retryAt: z.number().int().nonnegative().nullable(), safeMessage: z.string().min(1).max(2_000), updatedAt: z.number().int().nonnegative() });
 export const solutionDraftSchema = z.strictObject({
   schemaVersion: z.literal(1), revision: z.number().int().positive(), title: z.string().trim().min(3).max(200), summary: z.string().trim().min(20).max(10_000),
   behavior: section, architecture: section, userExperience: section, data: section, integrations: section, security: section, privacy: section, reliability: section, rollout: section, metrics: section,
@@ -22,3 +28,5 @@ export const solutionDocumentSchema = z.strictObject({ schemaVersion: z.literal(
 export type SolutionDocument = z.infer<typeof solutionDocumentSchema>;
 export type SolutionContent = z.infer<typeof solutionContentSchema>;
 export type SolutionReviewResult = z.infer<typeof solutionReviewResultSchema>;
+export type ProjectEgressPermit = z.infer<typeof projectEgressPermitSchema>;
+export type SolutionRun = z.infer<typeof solutionRunSchema>;

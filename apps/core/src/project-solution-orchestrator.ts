@@ -8,6 +8,7 @@ import {
 import type { ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { ProjectSolutionService } from "./project-solution-service.js";
+import type { ProjectEgressPermit } from "./project-egress-policy-service.js";
 
 export type SolutionRole = "product_research" | "technical_research" | "solution_reconciliation" | "product_review" | "technical_review";
 
@@ -24,6 +25,7 @@ export interface RoutedSolutionModel {
     readonly contextDigest: string;
     readonly instruction: string;
     readonly sources: readonly { name: string; content: string }[];
+    readonly permit: ProjectEgressPermit;
   }): Promise<SolutionModelEvidence>;
 }
 
@@ -37,6 +39,7 @@ export class ProjectSolutionOrchestrator {
     private readonly lifecycles: Pick<ProjectLifecycleService, "get" | "publishSolution">,
     private readonly solutions: Pick<ProjectSolutionService, "publish" | "read">,
     private readonly context: { readVerified(projectId: string): Promise<VerifiedProjectContext> },
+    private readonly egress: { authorize(projectId: string, contextDigest: string): Promise<ProjectEgressPermit> },
     private readonly model: RoutedSolutionModel,
     private readonly now: () => number = Date.now
   ) {}
@@ -47,6 +50,7 @@ export class ProjectSolutionOrchestrator {
     if (lifecycle.stage === "awaiting_design_approval") return lifecycle;
     if (lifecycle.stage !== "solution_design") throw new Error("Solution research is available only during solution design.");
     const verified = await this.context.readVerified(projectId);
+    const permit = await this.egress.authorize(projectId, verified.digest);
     const existing = await this.readExisting(projectId);
     if (existing && lifecycle.artifacts.some((artifact) => artifact.kind === "solution" && artifact.digest === existing.digest)) return lifecycle;
     const revision = existing ? existing.revision + 1 : 1;
@@ -54,19 +58,19 @@ export class ProjectSolutionOrchestrator {
     const baseSources = [{ name: "CONTEXT.md", content: verified.markdown }, { name: "Owner feedback", content: feedback }];
 
     const [product, technical] = await Promise.all([
-      this.model.run({ projectId, role: "product_research", contextDigest: verified.digest, instruction: productInstruction(), sources: baseSources }),
-      this.model.run({ projectId, role: "technical_research", contextDigest: verified.digest, instruction: technicalInstruction(), sources: baseSources }),
+      this.model.run({ projectId, role: "product_research", contextDigest: verified.digest, instruction: productInstruction(), sources: baseSources, permit }),
+      this.model.run({ projectId, role: "technical_research", contextDigest: verified.digest, instruction: technicalInstruction(), sources: baseSources, permit }),
     ]);
     const reconciled = await this.model.run({
       projectId, role: "solution_reconciliation", contextDigest: verified.digest,
       instruction: reconciliationInstruction(),
-      sources: [...baseSources, { name: "Product research", content: safeJson(product.response) }, { name: "Technical research", content: safeJson(technical.response) }],
+      sources: [...baseSources, { name: "Product research", content: safeJson(product.response) }, { name: "Technical research", content: safeJson(technical.response) }], permit,
     });
     const content = solutionContentSchema.parse(reconciled.response);
     const reviewSource = { name: "Candidate solution", content: safeJson(content) };
     const [productReviewEvidence, technicalReviewEvidence] = await Promise.all([
-      this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...baseSources, reviewSource] }),
-      this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...baseSources, reviewSource] }),
+      this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...baseSources, reviewSource], permit }),
+      this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...baseSources, reviewSource], permit }),
     ]);
     const productReview = solutionReviewResultSchema.parse(productReviewEvidence.response);
     const technicalReview = solutionReviewResultSchema.parse(technicalReviewEvidence.response);

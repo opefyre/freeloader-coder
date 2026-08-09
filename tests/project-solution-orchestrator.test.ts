@@ -24,6 +24,7 @@ const content = {
   metrics: ["Track verified completion, recovery, and owner interruption rates."],
   citations: ["local://CONTEXT.md"],
 };
+const permit = { schemaVersion: 1 as const, projectId: "project_abcdef0123456789", contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["test"], approvedAt: 1, expiresAt: 9_999_999_999_999 };
 
 test("solution orchestration uses parallel specialists and independent reviewers before publication", async () => {
   const roles: SolutionRole[] = [];
@@ -44,6 +45,7 @@ test("solution orchestration uses parallel specialists and independent reviewers
     { get: async () => lifecycle as any, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
     { publish: async (_id: string, draft: unknown) => { published.push(draft); return { kind: "solution", digest: "b".repeat(64), revision: 1 }; }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
+    { authorize: async () => permit },
     model,
     () => 42
   );
@@ -65,6 +67,7 @@ test("review dissent fails closed without publishing", async () => {
     { get: async () => lifecycle as any, publishSolution: async () => { throw new Error("must not publish"); } },
     { publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
+    { authorize: async () => permit },
     { run: async ({ role }) => role === "solution_reconciliation" ? evidence("reconciler", content) : role === "product_review" ? evidence("review-a", { schemaVersion: 1, reviewerId: "a-reviewer", discipline: "product", verdict: "fail", findings: ["User workflow is incomplete."] }) : role === "technical_review" ? evidence("review-b", { schemaVersion: 1, reviewerId: "b-reviewer", discipline: "technical", verdict: "pass", findings: [] }) : evidence(role, { findings: [role] }) },
   );
   await assert.rejects(() => service.run(lifecycle.projectId), SolutionReviewDissentError);
@@ -78,6 +81,7 @@ test("malformed reconciler output fails before review and publication", async ()
     { get: async () => lifecycle as any, publishSolution: async () => { throw new Error("must not publish"); } },
     { publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
+    { authorize: async () => permit },
     { run: async ({ role }) => evidence(role, role === "solution_reconciliation" ? { summary: "incomplete" } : { findings: [role] }) },
   );
   await assert.rejects(() => service.run(lifecycle.projectId));

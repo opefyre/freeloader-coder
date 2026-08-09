@@ -112,6 +112,8 @@ import { projectLifecycleRecordSchema, type ProjectLifecycleRecord } from "../..
 import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 import { ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import { solutionDocumentSchema, type SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
+import { projectEgressPermitSchema, type ProjectEgressPermit } from "./project-egress-policy-service.js";
+import { solutionRunSchema, type SolutionRun } from "./project-solution-coordinator.js";
 import {
   nativePickerResponseSchema,
   type NativePickerResponse,
@@ -175,6 +177,11 @@ export type ControlPlaneServerOptions = {
     publishSolution: (projectId: string, input: unknown) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     getSolution: (projectId: string) => SolutionDocument | Promise<SolutionDocument>;
     decideSolution: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
+    solutionRun?: (projectId: string) => SolutionRun | null | Promise<SolutionRun | null>;
+    generateSolution?: (projectId: string) => SolutionRun | Promise<SolutionRun>;
+    getEgressConsent?: (projectId: string) => ProjectEgressPermit | null | Promise<ProjectEgressPermit | null>;
+    grantEgressConsent?: (projectId: string, input: unknown) => ProjectEgressPermit | Promise<ProjectEgressPermit>;
+    revokeEgressConsent?: (projectId: string) => void | Promise<void>;
   };
   nativePicker?: {
     folder: () => NativePickerResponse | Promise<NativePickerResponse>;
@@ -1131,7 +1138,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context)$/
       );
       const projectLifecycleRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications|eligibility|solution|solution-decision)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications|eligibility|solution|solution-decision|solution-run|solution-generate|provider-consent)$/
       );
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "lifecycle" && options.projectLifecycles) {
         if (requestBodyDeclared(request)) {
@@ -1172,6 +1179,25 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       if (request.method === "POST" && projectLifecycleRoute?.[2] === "solution-decision" && options.projectLifecycles) {
         sendJson(response, 200, projectLifecycleRecordSchema.parse(await options.projectLifecycles.decideSolution(projectLifecycleRoute[1] ?? "", await readJsonBody(request), requireIdempotencyKey(request))));
         return;
+      }
+      if (request.method === "GET" && projectLifecycleRoute?.[2] === "solution-run" && options.projectLifecycles?.solutionRun) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, solutionRunSchema.nullable().parse(await options.projectLifecycles.solutionRun(projectLifecycleRoute[1] ?? ""))); return;
+      }
+      if (request.method === "POST" && projectLifecycleRoute?.[2] === "solution-generate" && options.projectLifecycles?.generateSolution) {
+        requireIdempotencyKey(request); if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 202, solutionRunSchema.parse(await options.projectLifecycles.generateSolution(projectLifecycleRoute[1] ?? ""))); return;
+      }
+      if (request.method === "GET" && projectLifecycleRoute?.[2] === "provider-consent" && options.projectLifecycles?.getEgressConsent) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, projectEgressPermitSchema.nullable().parse(await options.projectLifecycles.getEgressConsent(projectLifecycleRoute[1] ?? ""))); return;
+      }
+      if (request.method === "POST" && projectLifecycleRoute?.[2] === "provider-consent" && options.projectLifecycles?.grantEgressConsent) {
+        requireIdempotencyKey(request); sendJson(response, 200, projectEgressPermitSchema.parse(await options.projectLifecycles.grantEgressConsent(projectLifecycleRoute[1] ?? "", await readJsonBody(request)))); return;
+      }
+      if (request.method === "DELETE" && projectLifecycleRoute?.[2] === "provider-consent" && options.projectLifecycles?.revokeEgressConsent) {
+        requireIdempotencyKey(request); if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        await options.projectLifecycles.revokeEgressConsent(projectLifecycleRoute[1] ?? ""); sendJson(response, 200, { schemaVersion: 1, outcome: "revoked" }); return;
       }
       if (
         request.method === "POST" &&

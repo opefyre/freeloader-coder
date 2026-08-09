@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { ProjectSolutionCoordinator } from "../apps/core/src/project-solution-coordinator.js";
+import { ProjectEgressDeniedError } from "../apps/core/src/project-egress-policy-service.js";
+
+const projectId = "project_abcdef0123456789";
+
+test("solution coordinator returns immediately, persists completion, and does not duplicate work", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-coordinator-"));
+  try {
+    let calls = 0;
+    const coordinator = new ProjectSolutionCoordinator(root, { run: async () => { calls += 1; return {} as any; } } as any, () => 100);
+    const queued = await coordinator.schedule(projectId);
+    assert.equal(queued.state, "queued");
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    assert.equal(calls, 1);
+    assert.equal((await coordinator.schedule(projectId)).state, "completed");
+    assert.equal(calls, 1);
+    const restarted = new ProjectSolutionCoordinator(root, { run: async () => { calls += 1; return {} as any; } } as any, () => 200);
+    assert.equal((await restarted.get(projectId))?.state, "completed");
+    assert.equal(await restarted.resumePending(), 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("solution coordinator projects owner-safe consent failures without retry loops", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-coordinator-denied-"));
+  try {
+    const coordinator = new ProjectSolutionCoordinator(root, { run: async () => { throw new ProjectEgressDeniedError("Approve this project first."); } } as any, () => 100);
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "needs_user");
+    const run = await coordinator.get(projectId);
+    assert.equal(run?.attempts, 1);
+    assert.equal(run?.safeMessage, "Approve this project first.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal((await coordinator.get(projectId))?.attempts, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+async function waitFor(predicate: () => Promise<boolean>) { for (let index = 0; index < 100; index += 1) { if (await predicate()) return; await new Promise((resolve) => setTimeout(resolve, 2)); } throw new Error("Timed out waiting for coordinator state."); }

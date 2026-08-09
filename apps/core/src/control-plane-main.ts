@@ -8,6 +8,10 @@ import { NativePicker } from "./native-picker.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { ProjectContextService } from "./project-context-service.js";
 import { ProjectSolutionService } from "./project-solution-service.js";
+import { ProjectSolutionOrchestrator } from "./project-solution-orchestrator.js";
+import { FreeProviderSolutionModel } from "./free-provider-solution-model.js";
+import { ProjectSolutionCoordinator } from "./project-solution-coordinator.js";
+import { ProjectEgressPolicyService } from "./project-egress-policy-service.js";
 import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
@@ -74,42 +78,32 @@ const credentialVault = new ProviderCredentialVaultBridge(
 );
 const integrationConnections = new IntegrationConnectionService(undefined, credentialVault);
 const adapterCache = new Map<string, ReturnType<typeof createOpenAiCompatibleAdapter>>();
+const adapterRegistry = {
+  adapter(providerId: string) {
+    try {
+      const current = adapterCache.get(providerId);
+      if (current) return current;
+      const adapter = createOpenAiCompatibleAdapter({ providerId });
+      adapterCache.set(providerId, adapter);
+      return adapter;
+    } catch { return null; }
+  },
+};
 const proposalGenerator = new LocalProposalGenerator(
   stateDirectory,
   localRequests,
   providerConnections,
   credentialVault,
-  {
-    adapter(providerId) {
-      try {
-        const current = adapterCache.get(providerId);
-        if (current) return current;
-        const adapter = createOpenAiCompatibleAdapter({ providerId });
-        adapterCache.set(providerId, adapter);
-        return adapter;
-      } catch {
-        return null;
-      }
-    },
-  }
+  adapterRegistry
 );
 const providerConnectionService = new ProviderConnectionService(
   providerConnections,
   credentialVault,
-  {
-    adapter(providerId) {
-      try {
-        const current = adapterCache.get(providerId);
-        if (current) return current;
-        const adapter = createOpenAiCompatibleAdapter({ providerId });
-        adapterCache.set(providerId, adapter);
-        return adapter;
-      } catch {
-        return null;
-      }
-    }
-  }
+  adapterRegistry
 );
+const projectEgress = new ProjectEgressPolicyService(stateDirectory);
+const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
+const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new ProjectSolutionOrchestrator(projectLifecycles, projectSolutions, projectContexts, projectEgress, solutionModel));
 const autonomy = new LocalAutonomyService(
   stateDirectory,
   () => localRequests.list(),
@@ -329,6 +323,11 @@ const controlPlane = createControlPlaneServer({
     },
     getSolution: (projectId) => projectSolutions.read(projectId),
     decideSolution: (projectId, input, idempotencyKey) => projectLifecycles.decideSolution(projectId, input, idempotencyKey),
+    solutionRun: (projectId) => solutionCoordinator.get(projectId),
+    generateSolution: (projectId) => solutionCoordinator.schedule(projectId),
+    getEgressConsent: (projectId) => projectEgress.get(projectId),
+    grantEgressConsent: (projectId, input) => projectEgress.grant(projectId, input),
+    revokeEgressConsent: (projectId) => projectEgress.revoke(projectId),
   },
   nativePicker: {
     folder: () => nativePicker.folder(),
@@ -398,6 +397,7 @@ const controlPlane = createControlPlaneServer({
 
 const boundPort = await controlPlane.listen();
 await proposalGenerator.resumePending();
+await solutionCoordinator.resumePending();
 autonomy.start();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
 console.log(

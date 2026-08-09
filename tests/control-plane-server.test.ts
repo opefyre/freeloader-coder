@@ -60,6 +60,9 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
   const calls: string[] = [];
   const eligibilityCalls: string[] = [];
   const solutionCalls: string[] = [];
+  const consentCalls: string[] = [];
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: 4, expiresAt: 9_999_999_999_999 };
+  const solutionRun = { schemaVersion: 1 as const, projectId, state: "queued" as const, attempts: 0, retryAt: null, safeMessage: "Solution research is queued.", updatedAt: 4 };
   const server = createControlPlaneServer({
     host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot,
     projectLifecycles: {
@@ -73,6 +76,11 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
       publishSolution: (_projectId, input) => { solutionCalls.push(`publish:${JSON.stringify(input)}`); return lifecycle; },
       getSolution: () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: "b".repeat(64), markdown: "# Complete solution\n\nReviewed content." }),
       decideSolution: (_projectId, input, key) => { solutionCalls.push(`${key}:${JSON.stringify(input)}`); return lifecycle; },
+      solutionRun: () => solutionRun,
+      generateSolution: () => solutionRun,
+      getEgressConsent: () => permit,
+      grantEgressConsent: (_projectId, input) => { consentCalls.push(JSON.stringify(input)); return permit; },
+      revokeEgressConsent: () => { consentCalls.push("revoked"); },
     },
   });
   const port = await server.listen();
@@ -108,6 +116,18 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
     const solutionDecision = await fetch(`${endpoint}/solution-decision`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "solution-decision-001" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: lifecycle.revision, artifactDigest: solutionArtifact.digest, decision: "approved", feedback: null }) });
     assert.equal(solutionDecision.status, 200);
     assert.equal(solutionCalls.length, 2);
+    const consentRead = await fetch(`${endpoint}/provider-consent`, { headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(consentRead.status, 200);
+    const consentGrant = await fetch(`${endpoint}/provider-consent`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "provider-consent-001" }, body: JSON.stringify({ schemaVersion: 1, contextDigest: "a".repeat(64), dataClass: "source_code", providerIds: ["groq"], expiresAt: 9_999_999_999_999, acknowledgment: "I authorize this exact project context for the selected free providers." }) });
+    assert.equal(consentGrant.status, 200);
+    const generation = await fetch(`${endpoint}/solution-generate`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "solution-generation-001" } });
+    assert.equal(generation.status, 202);
+    assert.equal((await generation.json() as { state: string }).state, "queued");
+    const runRead = await fetch(`${endpoint}/solution-run`, { headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(runRead.status, 200);
+    const revoked = await fetch(`${endpoint}/provider-consent`, { method: "DELETE", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "provider-consent-revoke-001" } });
+    assert.equal(revoked.status, 200);
+    assert.equal(consentCalls.length, 2);
   } finally { await server.close(); }
 });
 
