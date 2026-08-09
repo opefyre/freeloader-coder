@@ -7,6 +7,7 @@ import { LocalProjectRegistry } from "./local-project-registry.js";
 import { NativePicker } from "./native-picker.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { ProjectContextService } from "./project-context-service.js";
+import { ProjectSolutionService } from "./project-solution-service.js";
 import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
@@ -41,6 +42,7 @@ const instanceId = randomUUID();
 const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
 const projectContexts = new ProjectContextService(localProjects);
+const projectSolutions = new ProjectSolutionService(localProjects);
 const projectLifecycles = new ProjectLifecycleService(stateDirectory);
 const nativePicker = new NativePicker();
 const localRequests = new LocalRequestStore(
@@ -321,7 +323,11 @@ const controlPlane = createControlPlaneServer({
       return decision;
     },
     assess: (projectId, input, idempotencyKey) => projectLifecycles.assess(projectId, input, idempotencyKey),
-    publishSolution: (projectId, input) => projectLifecycles.publishSolution(projectId, input),
+    publishSolution: async (projectId, input) => {
+      const artifact = await projectSolutions.publish(projectId, input);
+      return projectLifecycles.publishSolution(projectId, artifact);
+    },
+    getSolution: (projectId) => projectSolutions.read(projectId),
     decideSolution: (projectId, input, idempotencyKey) => projectLifecycles.decideSolution(projectId, input, idempotencyKey),
   },
   nativePicker: {

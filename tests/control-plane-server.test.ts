@@ -71,6 +71,7 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
         return { lifecycle: { ...lifecycle, stage: "solution_design", assessment: eligibility.assessment, questions: [], revision: lifecycle.revision + 1 }, decision: eligibility };
       },
       publishSolution: (_projectId, input) => { solutionCalls.push(`publish:${JSON.stringify(input)}`); return lifecycle; },
+      getSolution: () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: "b".repeat(64), markdown: "# Complete solution\n\nReviewed content." }),
       decideSolution: (_projectId, input, key) => { solutionCalls.push(`${key}:${JSON.stringify(input)}`); return lifecycle; },
     },
   });
@@ -101,6 +102,9 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
     const solutionArtifact = { kind: "solution", projectRelativePath: ".pipeline/SOLUTION.md", digest: "b".repeat(64), revision: 1, createdAt: 5, citations: ["local://CONTEXT.md"], reviewerIds: ["product-reviewer", "technical-reviewer"], qaPassed: true };
     const publishedSolution = await fetch(`${endpoint}/solution`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "solution-publish-001" }, body: JSON.stringify(solutionArtifact) });
     assert.equal(publishedSolution.status, 200);
+    const readSolution = await fetch(`${endpoint}/solution`, { headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(readSolution.status, 200);
+    assert.match((await readSolution.json() as { markdown: string }).markdown, /Complete solution/);
     const solutionDecision = await fetch(`${endpoint}/solution-decision`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "solution-decision-001" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: lifecycle.revision, artifactDigest: solutionArtifact.digest, decision: "approved", feedback: null }) });
     assert.equal(solutionDecision.status, 200);
     assert.equal(solutionCalls.length, 2);

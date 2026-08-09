@@ -79,3 +79,16 @@ test("unanswered lifecycle clarifications appear as project-scoped owner actions
   assert.equal(snapshot.items[0]?.reference.path, `/work?project=${projectId}`);
   assert.equal(snapshot.summary.blockedProjects, 1);
 });
+
+test("reviewed solutions appear as digest-backed owner approvals", () => {
+  const lifecycle = {
+    schemaVersion: 1 as const, projectId, stage: "awaiting_design_approval" as const, revision: 5, mission: "Build a portal.", assessment: null, questions: [], answers: [],
+    artifacts: [{ kind: "solution" as const, projectRelativePath: ".pipeline/SOLUTION.md" as const, digest: "b".repeat(64), revision: 1, createdAt: now - 30, citations: ["local://CONTEXT.md"], reviewerIds: ["product-reviewer", "technical-reviewer"], qaPassed: true }],
+    designApproval: null, designFeedback: [], jiraEpicId: null, blockedReason: null, updatedAt: now - 25,
+  };
+  const snapshot = buildDecisionSnapshot({ live: { ...live, providers: [], recentEvents: [] }, autonomy: { ...autonomy, recommendations: [], leases: [] }, lifecycles: [lifecycle], query: { range: "all" }, now });
+  assert.equal(snapshot.items.length, 1);
+  assert.equal(snapshot.items[0]?.source, "project_solution");
+  assert.equal(snapshot.items[0]?.category, "approval");
+  assert.match(snapshot.items[0]?.evidence.join(" ") ?? "", /2 independent reviewers/);
+});

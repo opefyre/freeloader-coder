@@ -8,6 +8,8 @@ import {
   generateLocalProjectContext,
   getProjectLifecycle,
   getProjectEligibility,
+  getProjectSolution,
+  decideProjectSolution,
   answerProjectClarifications,
   listLocalProjects,
   registerLocalProject,
@@ -40,6 +42,16 @@ test("browser client validates the owner-facing eligibility result", async () =>
   const decision = await getProjectEligibility({ endpoint: "http://127.0.0.1:4312", projectId: lifecycle.projectId, fetcher: async () => Response.json({ schemaVersion: 1, projectId: lifecycle.projectId, requestId: "request_0123456789abcdef0123", eligible: false, assessment: { classification: "small_change", rationale: ["The request is bounded."], affectedDomains: ["frontend"], estimatedDeveloperHours: 1, requiresArchitectureDecision: false, confidence: 0.98 }, evidence: ["One isolated change."], alternatives: ["Handle this as a normal coding task outside the autonomous product lifecycle."], override: null, decidedAt: 10_000 }) });
   assert.equal(decision.eligible, false);
   assert.equal(decision.assessment.classification, "small_change");
+});
+
+test("browser client reads and decides an exact solution artifact", async () => {
+  const document = { schemaVersion: 1 as const, projectId: lifecycle.projectId, projectRelativePath: ".pipeline/SOLUTION.md" as const, revision: 1, digest: "b".repeat(64), markdown: "# Complete solution\n\nReviewed content." };
+  const read = await getProjectSolution({ endpoint: "http://127.0.0.1:4312", projectId: lifecycle.projectId, fetcher: async () => Response.json(document) });
+  assert.equal(read.digest, document.digest);
+  let body = "";
+  await decideProjectSolution({ endpoint: "http://127.0.0.1:4312", projectId: lifecycle.projectId, expectedRevision: 2, artifactDigest: document.digest, decision: "revision_requested", feedback: "Clarify the rollout.", idempotencyKey: "solution:decision:012345", fetcher: async (_url, init) => { body = String(init?.body); return Response.json({ ...lifecycle, stage: "solution_design", revision: 3, designFeedback: [{ artifactDigest: document.digest, feedback: "Clarify the rollout.", requestedAt: 11_000 }] }); } });
+  assert.match(body, /revision_requested/);
+  assert.match(body, /Clarify the rollout/);
 });
 
 test("browser client sends bounded loopback registration and validates responses", async () => {

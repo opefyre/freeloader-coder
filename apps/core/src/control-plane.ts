@@ -111,6 +111,7 @@ import { AttentionError } from "./attention-center.js";
 import { projectLifecycleRecordSchema, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 import { ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
+import { solutionDocumentSchema, type SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
 import {
   nativePickerResponseSchema,
   type NativePickerResponse,
@@ -172,6 +173,7 @@ export type ControlPlaneServerOptions = {
     eligibility: (projectId: string) => EligibilityDecision | Promise<EligibilityDecision>;
     assess: (projectId: string, input: unknown, idempotencyKey: string) => { lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision } | Promise<{ lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision }>;
     publishSolution: (projectId: string, input: unknown) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
+    getSolution: (projectId: string) => SolutionDocument | Promise<SolutionDocument>;
     decideSolution: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
   };
   nativePicker?: {
@@ -1160,6 +1162,11 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       if (request.method === "POST" && projectLifecycleRoute?.[2] === "solution" && options.projectLifecycles) {
         requireIdempotencyKey(request);
         sendJson(response, 200, projectLifecycleRecordSchema.parse(await options.projectLifecycles.publishSolution(projectLifecycleRoute[1] ?? "", await readJsonBody(request))));
+        return;
+      }
+      if (request.method === "GET" && projectLifecycleRoute?.[2] === "solution" && options.projectLifecycles) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, solutionDocumentSchema.parse(await options.projectLifecycles.getSolution(projectLifecycleRoute[1] ?? "")));
         return;
       }
       if (request.method === "POST" && projectLifecycleRoute?.[2] === "solution-decision" && options.projectLifecycles) {

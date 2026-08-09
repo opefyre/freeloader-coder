@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
 import type { LocalRequest } from "../../../../../packages/runtime/src/local-requests.js";
-import { listLocalProjects } from "../../local-project-client.js";
+import type { ProjectLifecycleRecord } from "../../../../../packages/orchestration/src/project-lifecycle.js";
+import type { SolutionDocument } from "../../../../../packages/orchestration/src/solution-design.js";
+import { decideProjectSolution, getProjectLifecycle, getProjectSolution, listLocalProjects } from "../../local-project-client.js";
 import { listLocalRequests } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -22,6 +24,12 @@ export function ProjectActivityDashboard(props: {
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);
   const [status, setStatus] = useState<"loading" | "live" | "offline">("loading");
   const [selected, setSelected] = useState<LocalRequest | null>(null);
+  const [lifecycles, setLifecycles] = useState<readonly ProjectLifecycleRecord[]>([]);
+  const [selectedSolution, setSelectedSolution] = useState<ProjectLifecycleRecord | null>(null);
+  const [solution, setSolution] = useState<SolutionDocument | null>(null);
+  const [feedback, setFeedback] = useState("");
+  const [notice, setNotice] = useState("");
+  const [working, setWorking] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -31,6 +39,7 @@ export function ProjectActivityDashboard(props: {
       ]);
       setProjects(projectCollection.projects);
       setRequests(requestCollection.requests);
+      setLifecycles((await Promise.all(projectCollection.projects.map((project) => getProjectLifecycle({ endpoint: props.endpoint, projectId: project.id }).catch(() => null)))).filter((record): record is ProjectLifecycleRecord => record !== null));
       setStatus("live");
     } catch {
       setStatus("offline");
@@ -53,6 +62,23 @@ export function ProjectActivityDashboard(props: {
     request.state === "interrupted" ||
     (request.plan?.state === "draft" && request.grounding)
   );
+  const solutionItems = lifecycles.filter((lifecycle) => lifecycle.stage === "awaiting_design_approval" && (projectId === "all" || lifecycle.projectId === projectId));
+
+  async function openSolution(lifecycle: ProjectLifecycleRecord) {
+    setSelectedSolution(lifecycle); setFeedback(""); setNotice("");
+    try { setSolution(await getProjectSolution({ endpoint: props.endpoint, projectId: lifecycle.projectId })); }
+    catch { setSolution(null); setNotice("The solution artifact could not be verified."); }
+  }
+  async function decide(decision: "approved" | "declined" | "revision_requested") {
+    if (!selectedSolution || !solution) return;
+    if (decision === "revision_requested" && feedback.trim().length < 3) { setNotice("Describe the change you need."); return; }
+    setWorking(true);
+    try {
+      await decideProjectSolution({ endpoint: props.endpoint, projectId: selectedSolution.projectId, expectedRevision: selectedSolution.revision, artifactDigest: solution.digest, decision, feedback: decision === "revision_requested" ? feedback.trim() : null, idempotencyKey: `solution:${decision}:${crypto.randomUUID()}` });
+      setSelectedSolution(null); setSolution(null); setFeedback(""); await refresh();
+    } catch (error) { setNotice(error instanceof Error ? error.message : "The solution decision could not be saved safely."); }
+    finally { setWorking(false); }
+  }
 
   return (
     <section className="space-y-5">
@@ -83,10 +109,15 @@ export function ProjectActivityDashboard(props: {
       {status === "offline" ? (
         <Empty title="Local runtime unavailable" detail="No cached or sample status is substituted." />
       ) : props.mode === "actions" ? (
-        actionItems.length === 0 ? (
+        actionItems.length === 0 && solutionItems.length === 0 ? (
           <Empty title="Nothing needs you" detail="The pipeline can continue without an owner decision right now." positive />
         ) : (
           <div className="grid gap-3">
+            {solutionItems.map((lifecycle) => (
+              <button key={`solution-${lifecycle.projectId}`} type="button" onClick={() => void openSolution(lifecycle)} className="rounded-3xl bg-card p-5 text-left outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30">
+                <div className="flex items-start gap-4"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500"><Warning weight="fill" /></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong>Review the proposed solution</strong><Badge>{projectNames.get(lifecycle.projectId) ?? "Unknown project"}</Badge></span><span className="mt-2 line-clamp-2 block text-sm leading-6 text-muted-foreground">Product and technical review passed. Planning is waiting for your decision.</span></span><span className="text-xs text-muted-foreground">Review</span></div>
+              </button>
+            ))}
             {actionItems.map((request) => (
               <button
                 key={request.id}
@@ -157,6 +188,15 @@ export function ProjectActivityDashboard(props: {
               <div className="mt-6 flex justify-end"><Button variant="secondary" onClick={() => setSelected(null)}>Done</Button></div>
             </CardContent>
           </Card>
+        </div>
+      )}
+      {selectedSolution && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-background/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="solution-review-title">
+          <Card className="max-h-[90vh] w-full max-w-3xl overflow-auto"><CardContent className="p-6">
+            <div className="flex items-start justify-between gap-4"><div><Badge>{projectNames.get(selectedSolution.projectId)}</Badge><h2 id="solution-review-title" className="mt-4 text-xl font-semibold">Proposed solution</h2></div><Button variant="ghost" size="sm" onClick={() => { setSelectedSolution(null); setSolution(null); }}>Close</Button></div>
+            {solution ? <><pre className="mt-5 max-h-[48vh] overflow-auto whitespace-pre-wrap rounded-3xl bg-muted/55 p-5 font-sans text-sm leading-7">{solution.markdown}</pre><textarea aria-label="Requested solution changes" value={feedback} onChange={(event) => setFeedback(event.target.value)} rows={3} maxLength={10_000} placeholder="Changes you need…" className="mt-4 w-full resize-y rounded-3xl bg-muted px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" /><div className="mt-4 grid gap-2 sm:grid-cols-3"><Button onClick={() => void decide("approved")} disabled={working}><CheckCircle />Approve</Button><Button variant="secondary" onClick={() => void decide("revision_requested")} disabled={working || feedback.trim().length < 3}>Request changes</Button><Button variant="ghost" onClick={() => void decide("declined")} disabled={working}>Decline</Button></div></> : <p className="mt-5 rounded-3xl bg-muted p-4 text-sm text-muted-foreground">{notice || "Verifying the solution…"}</p>}
+            {notice && solution && <p role="status" className="mt-3 text-xs text-muted-foreground">{notice}</p>}
+          </CardContent></Card>
         </div>
       )}
     </section>

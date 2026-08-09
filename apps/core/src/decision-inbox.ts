@@ -129,6 +129,20 @@ export function buildDecisionSnapshot(input: {
 }
 
 function fromLifecycle(record: ProjectLifecycleRecord, now: number): DecisionItem[] {
+  if (record.stage === "awaiting_design_approval") {
+    const solution = record.artifacts.find((artifact) => artifact.kind === "solution");
+    if (!solution) return [];
+    return [decision({
+      seed: `solution:${record.projectId}:${record.revision}:${solution.digest}`,
+      category: "approval", priority: "high", owner: "user", state: "open",
+      title: "Review the proposed solution", reason: "Product and technical review passed. Delivery planning remains blocked until the owner decides.",
+      nextAction: "Review, approve, request changes, or decline", authorityBoundary: "approve_solution", effect: "authorized_local_write", reversible: false,
+      observedAt: record.updatedAt, deadlineAt: null, retryAt: null, projectId: record.projectId, requestId: null, providerId: null,
+      source: "project_solution", sourceRecordId: solution.digest,
+      evidence: [`Solution revision ${solution.revision}`, `${solution.citations.length} cited sources`, `${solution.reviewerIds.length} independent reviewers`, `Digest: ${solution.digest.slice(0, 12)}`],
+      reference: { surface: "decisions", path: `/decisions?project=${encodeURIComponent(record.projectId)}`, label: "Review solution" },
+    }, now)];
+  }
   if (record.stage !== "clarification" || record.questions.length === 0) return [];
   return record.questions.map((question) => decision({
     seed: `clarification:${record.projectId}:${record.revision}:${question.id}`,

@@ -15,3 +15,4 @@ export * from "./reviews.js";
 export * from "./task-planner.js";
 export * from "./workflow.js";
 export * from "./project-lifecycle.js";
+export * from "./solution-design.js";
