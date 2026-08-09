@@ -315,6 +315,12 @@ const controlPlane = createControlPlaneServer({
       await projectContexts.applyClarifications(projectId, before.questions, updated.answers);
       return updated;
     },
+    eligibility: async (projectId) => {
+      const decision = await projectLifecycles.eligibility(projectId);
+      if (!decision) throw new ProjectLifecycleServiceError("not_found", "Project eligibility decision was not found.");
+      return decision;
+    },
+    assess: (projectId, input, idempotencyKey) => projectLifecycles.assess(projectId, input, idempotencyKey),
   },
   nativePicker: {
     folder: () => nativePicker.folder(),

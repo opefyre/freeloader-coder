@@ -11,6 +11,7 @@ import {
   type OwnerQuestion,
   type ProjectLifecycleRecord,
 } from "../../../packages/orchestration/src/project-lifecycle.js";
+import { assessEligibility, eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 
 const answerRequestSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -21,6 +22,8 @@ const stateSchema = z.strictObject({
   schemaVersion: z.literal(1),
   records: z.array(projectLifecycleRecordSchema).max(1_000),
   receipts: z.record(z.string(), projectLifecycleRecordSchema),
+  eligibility: z.record(z.string(), eligibilityDecisionSchema).default({}),
+  eligibilityReceipts: z.record(z.string(), eligibilityDecisionSchema).default({}),
 });
 
 export class ProjectLifecycleService {
@@ -38,6 +41,33 @@ export class ProjectLifecycleService {
 
   async list(): Promise<readonly ProjectLifecycleRecord[]> {
     return (await this.#load()).records;
+  }
+
+  async eligibility(projectId: string): Promise<EligibilityDecision | null> {
+    assertProjectId(projectId);
+    return (await this.#load()).eligibility[projectId] ?? null;
+  }
+
+  async assess(projectId: string, raw: unknown, idempotencyKey: string): Promise<{ lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision }> {
+    assertProjectId(projectId); assertIdempotencyKey(idempotencyKey);
+    const request = z.strictObject({
+      schemaVersion: z.literal(1), expectedRevision: z.number().int().nonnegative(),
+      requestId: z.string().regex(/^request_[a-f0-9]{20}$/), projectKind: z.enum(["new_product", "existing_product", "unknown"]),
+      affectedDomains: z.array(z.string().trim().min(1).max(160)).max(50), deliveryStages: z.array(z.enum(["research", "product", "design", "frontend", "backend", "data", "infrastructure", "qa", "launch"])).max(9),
+      estimatedDeveloperHours: z.number().min(0).max(100_000), requiresArchitectureDecision: z.boolean(), evidence: z.array(z.string().trim().min(1).max(500)).min(1).max(30), confidence: z.number().min(0).max(1),
+    }).parse(raw);
+    return this.#mutate(async (state) => {
+      const key = `${projectId}:${idempotencyKey}`;
+      const replay = state.eligibilityReceipts[key];
+      const current = requireRecord(state.records, projectId);
+      if (replay) return { state, result: { lifecycle: current, decision: replay } };
+      if (current.revision !== request.expectedRevision) throw new ProjectLifecycleServiceError("stale_revision", "Project context changed. Reassess the latest evidence.");
+      const { schemaVersion: _schemaVersion, expectedRevision: _expectedRevision, ...evidence } = request;
+      const decision = assessEligibility({ ...evidence, projectId });
+      const questions = decision.assessment.classification === "unclear" ? [scopeClarification(decision)] : [];
+      const lifecycle = advanceProjectLifecycle(current, { type: "scope_assessed", assessment: decision.assessment, questions }, Date.now());
+      return { state: { ...replaceRecord(state, lifecycle), eligibility: { ...state.eligibility, [projectId]: decision }, eligibilityReceipts: { ...state.eligibilityReceipts, [key]: decision } }, result: { lifecycle, decision } };
+    });
   }
 
   async begin(input: { projectId: string; mission: string; now?: number }): Promise<ProjectLifecycleRecord> {
@@ -101,7 +131,7 @@ export class ProjectLifecycleService {
     try {
       return stateSchema.parse(JSON.parse(await readFile(this.#path, "utf8")));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return stateSchema.parse({ schemaVersion: 1, records: [], receipts: {} });
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return stateSchema.parse({ schemaVersion: 1, records: [], receipts: {}, eligibility: {}, eligibilityReceipts: {} });
       throw new ProjectLifecycleServiceError("corrupt_state", "Project lifecycle state could not be validated.");
     }
   }
@@ -130,6 +160,21 @@ function assertProjectId(value: string) {
 
 function assertIdempotencyKey(value: string) {
   if (!/^[a-zA-Z0-9._:-]{8,160}$/.test(value)) throw new Error("Idempotency key is invalid.");
+}
+
+function scopeClarification(decision: EligibilityDecision): OwnerQuestion {
+  return ownerQuestionSchema.parse({
+    id: `question_${decision.requestId.slice("request_".length, "request_".length + 16)}`,
+    prompt: "How substantial is this outcome?",
+    whyItMatters: "Pipeline Studio runs the autonomous product lifecycle only for a new product or a major feature.",
+    options: [
+      { id: "new_product", label: "New product", consequence: "Continue through product discovery, solution design, planning, and delivery." },
+      { id: "major_feature", label: "Major feature", consequence: "Continue after the existing product and affected systems are understood." },
+      { id: "small_change", label: "Small change", consequence: "Stop this lifecycle and handle the request as ordinary coding work." },
+    ],
+    allowsCustomAnswer: true,
+    sourceFindingIds: [decision.requestId],
+  });
 }
 
 async function atomicWrite(path: string, content: string) {

@@ -10,6 +10,7 @@ import {
   type ProjectContextSnapshot,
 } from "../../../packages/runtime/src/local-projects.js";
 import { projectLifecycleRecordSchema, type OwnerAnswer, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
+import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 
 const MAX_RESPONSE_BYTES = 131_072;
 
@@ -140,6 +141,11 @@ export async function generateLocalProjectContext(input: {
 export async function getProjectLifecycle(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<ProjectLifecycleRecord> {
   assertProjectId(input.projectId);
   return projectLifecycleRecordSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/lifecycle`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function getProjectEligibility(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<EligibilityDecision> {
+  assertProjectId(input.projectId);
+  return eligibilityDecisionSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/eligibility`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
 }
 
 export async function answerProjectClarifications(input: { endpoint: string; projectId: string; expectedRevision: number; answers: readonly OwnerAnswer[]; idempotencyKey: string; fetcher?: typeof fetch }): Promise<ProjectLifecycleRecord> {

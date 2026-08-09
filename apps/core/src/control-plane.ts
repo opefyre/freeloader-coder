@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import {
   controlPlaneHealthSchema,
@@ -109,6 +109,7 @@ import {
 } from "../../../packages/runtime/src/attention.js";
 import { AttentionError } from "./attention-center.js";
 import { projectLifecycleRecordSchema, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
+import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 import { ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import {
   nativePickerResponseSchema,
@@ -168,6 +169,8 @@ export type ControlPlaneServerOptions = {
   projectLifecycles?: {
     get: (projectId: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     answer: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
+    eligibility: (projectId: string) => EligibilityDecision | Promise<EligibilityDecision>;
+    assess: (projectId: string, input: unknown, idempotencyKey: string) => { lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision } | Promise<{ lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision }>;
   };
   nativePicker?: {
     folder: () => NativePickerResponse | Promise<NativePickerResponse>;
@@ -1124,7 +1127,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context)$/
       );
       const projectLifecycleRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications|eligibility)$/
       );
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "lifecycle" && options.projectLifecycles) {
         if (requestBodyDeclared(request)) {
@@ -1140,6 +1143,16 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           await readJsonBody(request),
           requireIdempotencyKey(request)
         )));
+        return;
+      }
+      if (request.method === "GET" && projectLifecycleRoute?.[2] === "eligibility" && options.projectLifecycles) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, eligibilityDecisionSchema.parse(await options.projectLifecycles.eligibility(projectLifecycleRoute[1] ?? "")));
+        return;
+      }
+      if (request.method === "POST" && projectLifecycleRoute?.[2] === "eligibility" && options.projectLifecycles) {
+        const result = await options.projectLifecycles.assess(projectLifecycleRoute[1] ?? "", await readJsonBody(request), requireIdempotencyKey(request));
+        sendJson(response, 200, z.strictObject({ lifecycle: projectLifecycleRecordSchema, decision: eligibilityDecisionSchema }).parse(result));
         return;
       }
       if (

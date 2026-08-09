@@ -78,7 +78,7 @@ export type ProjectLifecycleEvent =
   | { type: "begin_context_review" }
   | { type: "context_completed"; artifact: z.infer<typeof projectArtifactSchema>; questions: readonly OwnerQuestion[] }
   | { type: "clarifications_resolved"; answers: readonly OwnerAnswer[] }
-  | { type: "scope_assessed"; assessment: MajorWorkAssessment }
+  | { type: "scope_assessed"; assessment: MajorWorkAssessment; questions?: readonly OwnerQuestion[] }
   | { type: "design_completed"; artifact: z.infer<typeof projectArtifactSchema> }
   | { type: "design_approved"; artifactDigest: string }
   | { type: "design_declined"; artifactDigest: string }
@@ -149,7 +149,9 @@ export function advanceProjectLifecycle(
       if (event.assessment.classification === "small_change") {
         patch = { stage: "cancelled", assessment: event.assessment, blockedReason: "The request is below the configured major-work threshold." };
       } else if (event.assessment.classification === "unclear" || event.assessment.confidence < 0.75) {
-        patch = { stage: "clarification", assessment: event.assessment, blockedReason: "Major-work scope is not yet certain." };
+        const questions = (event.questions ?? []).map((question) => ownerQuestionSchema.parse(question));
+        if (questions.length === 0) throw new Error("Unclear scope requires a selectable owner clarification.");
+        patch = { stage: "clarification", assessment: event.assessment, questions, blockedReason: "Major-work scope is not yet certain." };
       } else {
         patch = { stage: "solution_design", assessment: event.assessment, blockedReason: null };
       }

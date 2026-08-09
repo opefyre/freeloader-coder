@@ -7,6 +7,7 @@ import {
   forgetLocalProject,
   generateLocalProjectContext,
   getProjectLifecycle,
+  getProjectEligibility,
   answerProjectClarifications,
   listLocalProjects,
   registerLocalProject,
@@ -33,6 +34,12 @@ test("browser client reads and answers selectable clarifications through loopbac
   const answered = await answerProjectClarifications({ endpoint: "http://127.0.0.1:4312", projectId: lifecycle.projectId, expectedRevision: 2, answers: [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 11_000 }], idempotencyKey: "clarifications:0123456789", fetcher: async (_url, init) => { body = String(init?.body); return Response.json({ ...lifecycle, stage: "context_review", revision: 3, questions: [], answers: [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 11_000 }] }); } });
   assert.equal(answered.answers[0]?.optionId, "invite");
   assert.match(body, /"expectedRevision":2/);
+});
+
+test("browser client validates the owner-facing eligibility result", async () => {
+  const decision = await getProjectEligibility({ endpoint: "http://127.0.0.1:4312", projectId: lifecycle.projectId, fetcher: async () => Response.json({ schemaVersion: 1, projectId: lifecycle.projectId, requestId: "request_0123456789abcdef0123", eligible: false, assessment: { classification: "small_change", rationale: ["The request is bounded."], affectedDomains: ["frontend"], estimatedDeveloperHours: 1, requiresArchitectureDecision: false, confidence: 0.98 }, evidence: ["One isolated change."], alternatives: ["Handle this as a normal coding task outside the autonomous product lifecycle."], override: null, decidedAt: 10_000 }) });
+  assert.equal(decision.eligible, false);
+  assert.equal(decision.assessment.classification, "small_change");
 });
 
 test("browser client sends bounded loopback registration and validates responses", async () => {

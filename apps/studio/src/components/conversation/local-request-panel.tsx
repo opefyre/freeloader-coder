@@ -22,6 +22,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
 import type { ProjectLifecycleRecord } from "../../../../../packages/orchestration/src/project-lifecycle.js";
+import type { EligibilityDecision } from "../../../../../packages/orchestration/src/eligibility-gate.js";
 import type {
   LocalDraftPlan,
   LocalRequest,
@@ -31,6 +32,7 @@ import {
   createLocalProject,
   generateLocalProjectContext,
   getProjectLifecycle,
+  getProjectEligibility,
   answerProjectClarifications,
   listLocalProjects,
   setLocalProjectResources,
@@ -100,6 +102,7 @@ export function LocalRequestPanel(props: {
   const [selectedJiraProjectId, setSelectedJiraProjectId] = useState("");
   const [outcome, setOutcome] = useState("");
   const [lifecycle, setLifecycle] = useState<ProjectLifecycleRecord | null>(null);
+  const [eligibility, setEligibility] = useState<EligibilityDecision | null>(null);
   const [clarificationChoices, setClarificationChoices] = useState<Record<string, string>>({});
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [lastSubmission, setLastSubmission] = useState<{
@@ -158,9 +161,10 @@ export function LocalRequestPanel(props: {
   }, [refresh]);
 
   useEffect(() => {
-    if (!projectId || projectId === "__new__") { setLifecycle(null); return; }
+    if (!projectId || projectId === "__new__") { setLifecycle(null); setEligibility(null); return; }
     let active = true;
     void getProjectLifecycle({ endpoint, projectId }).then((record) => { if (active) setLifecycle(record); }, () => { if (active) setLifecycle(null); });
+    void getProjectEligibility({ endpoint, projectId }).then((decision) => { if (active) setEligibility(decision); }, () => { if (active) setEligibility(null); });
     return () => { active = false; };
   }, [projectId, requests]);
 
@@ -765,6 +769,17 @@ export function LocalRequestPanel(props: {
             <div className="flex justify-end"><Button onClick={() => void answerClarifications()} disabled={status === "working" || lifecycle.questions.some((question) => !clarificationChoices[question.id])}><CheckCircle />Continue</Button></div>
           </CardContent>
         </Card>
+      )}
+      {props.mode === "compose" && eligibility?.assessment.classification === "small_change" && (
+        <Card className="bg-muted/60">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><strong className="text-sm">This is better handled as a coding task</strong><p className="mt-1 text-xs text-muted-foreground">The autonomous product pipeline is reserved for new products and major features.</p></div>
+            <Badge tone="neutral">Not started</Badge>
+          </CardContent>
+        </Card>
+      )}
+      {props.mode === "compose" && eligibility?.eligible && (
+        <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground"><CheckCircle className="text-primary" weight="fill" /><span>Product lifecycle accepted</span></div>
       )}
       <Card className={props.mode === "compose" ? "bg-primary/[.025]" : "bg-primary/[.035]"}>
         {props.mode === "queue" && <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">

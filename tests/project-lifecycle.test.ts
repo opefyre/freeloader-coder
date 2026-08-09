@@ -72,6 +72,17 @@ test("small changes stop at the major-work guardrail", () => {
   assert.match(record.blockedReason ?? "", /major-work threshold/);
 });
 
+test("unclear scope cannot block without a selectable owner question", () => {
+  let record = createProjectLifecycle({ projectId: "project_0123456789abcdef", mission: "Improve the product.", now: 1 });
+  record = advanceProjectLifecycle(record, { type: "begin_context_review" }, 2);
+  record = advanceProjectLifecycle(record, { type: "context_completed", artifact: artifact("context", "a"), questions: [] }, 3);
+  const assessment = { classification: "unclear" as const, rationale: ["The requested outcome is ambiguous."], affectedDomains: [], estimatedDeveloperHours: 0, requiresArchitectureDecision: false, confidence: 0.4 };
+  assert.throws(() => advanceProjectLifecycle(record, { type: "scope_assessed", assessment }, 4), /selectable owner clarification/);
+  record = advanceProjectLifecycle(record, { type: "scope_assessed", assessment, questions: [{ id: "question_0123456789abcdef", prompt: "How substantial is this outcome?", whyItMatters: "This decides whether the autonomous product lifecycle should run.", options: [{ id: "major", label: "Major feature", consequence: "Continue through design and delivery." }, { id: "small", label: "Small change", consequence: "Stop this lifecycle." }], allowsCustomAnswer: true, sourceFindingIds: ["scope"] }] }, 5);
+  assert.equal(record.stage, "clarification");
+  assert.equal(record.questions.length, 1);
+});
+
 test("owner questions require selectable options", () => {
   let record = createProjectLifecycle({ projectId: "project_0123456789abcdef", mission: "Build a new customer portal.", now: 1 });
   record = advanceProjectLifecycle(record, { type: "begin_context_review" }, 2);
