@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { eligibleExecutionTasks, projectExecutionRecordSchema, selectExecutionAssignment, type ExecutionTask } from "../packages/orchestration/src/project-execution.js";
 
-const baseTask: ExecutionTask = { id: "plan_1111111111111111", jiraIssueKey: "PIPE-1", title: "Implement bounded capability", dependsOn: [], uiChanged: true, requiredCapabilities: ["coding", "vision"], privacyClass: "source_code", status: "queued", revision: 0, attempt: 0, assignment: null, lease: null, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Queued for an eligible worker.", updatedAt: 1 };
+const baseTask: ExecutionTask = { id: "plan_1111111111111111", jiraIssueKey: "PIPE-1", title: "Implement bounded capability", dependsOn: [], allowedFiles: ["src/feature.ts", "tests/feature.test.ts"], validationProfiles: ["typecheck", "unit"], uiChanged: true, requiredCapabilities: ["coding", "vision"], privacyClass: "source_code", status: "queued", revision: 0, attempt: 0, assignment: null, lease: null, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Queued for an eligible worker.", updatedAt: 1 };
 const candidate = { providerId: "groq", modelId: "model", deviceId: "spare-mac", capabilities: ["coding", "vision"], privacyClasses: ["source_code" as const], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 4_000, deviceLoad: 0.2, preference: 10 };
 
 test("assignment gates capability, privacy, free quota, concurrency, memory, and device load", () => {

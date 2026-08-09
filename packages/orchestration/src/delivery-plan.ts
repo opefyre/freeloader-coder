@@ -3,6 +3,7 @@ import { z } from "zod";
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const itemId = z.string().regex(/^plan_[a-f0-9]{16}$/);
 const detail = z.string().trim().min(10).max(2_000);
+const relativeFile = z.string().trim().min(1).max(500).refine((value) => !value.startsWith("/") && !value.startsWith("\\") && !value.split(/[\\/]/).includes(".."), "Allowed files must be safe project-relative paths.");
 
 export const deliveryPlanItemSchema = z.strictObject({
   id: itemId,
@@ -17,6 +18,8 @@ export const deliveryPlanItemSchema = z.strictObject({
   acceptanceCriteria: z.array(detail).min(2).max(50),
   definitionOfDone: z.array(detail).min(2).max(50),
   implementationNotes: z.array(detail).min(1).max(100),
+  allowedFiles: z.array(relativeFile).max(100).default([]),
+  validationProfiles: z.array(z.enum(["format", "lint", "typecheck", "unit", "integration", "build", "visual"])).max(7).default([]),
   citations: z.array(z.string().trim().min(1).max(2_048)).min(1).max(100),
 });
 

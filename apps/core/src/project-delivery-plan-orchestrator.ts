@@ -32,6 +32,7 @@ export class ProjectDeliveryPlanOrchestrator {
     const evidence = await this.model.run({ projectId, role: "delivery_planning", contextDigest: context.digest, instruction: planningInstruction(), sources, permit });
     const plan = deliveryPlanContentSchema.parse(evidence.response);
     if (plan.contextDigest !== context.digest || plan.solutionDigest !== solution.digest) throw new Error("Delivery plan is not bound to the approved evidence.");
+    if (plan.items.some((item) => item.type === "subtask" && (item.allowedFiles.length === 0 || item.validationProfiles.length === 0))) throw new Error("Delivery plan subtasks require explicit file and validation authority.");
     const candidate = { name: "Candidate delivery plan", content: boundedJson(plan) };
     const [deliveryEvidence, technicalEvidence] = await Promise.all([
       this.model.run({ projectId, role: "delivery_review", contextDigest: context.digest, instruction: reviewInstruction("delivery"), sources: [...sources, candidate], permit }),
@@ -53,5 +54,5 @@ export class ProjectDeliveryPlanOrchestrator {
 export class DeliveryPlanReviewDissentError extends Error { constructor(readonly findings: readonly string[]) { super("Independent backlog QA did not reach approval."); } }
 function identity(evidence: SolutionModelEvidence, declared: string) { return `${evidence.providerId}/${evidence.modelId}/${declared}`.slice(0, 160); }
 function boundedJson(value: unknown) { const result = JSON.stringify(value); if (!result || result.length > 2_000_000) throw new Error("Delivery plan output is not safely bounded."); return result; }
-function planningInstruction() { return "Transform the approved solution into a self-contained delivery hierarchy. Include epics, stories, tasks, and 60–120 minute subtasks; estimates, dependencies, acceptance criteria, Definition of Done, implementation notes, and citations. Use stable plan IDs, preserve exact context and solution digests, and return strict JSON only."; }
+function planningInstruction() { return "Transform the approved solution into a self-contained delivery hierarchy. Include epics, stories, tasks, and 60–120 minute subtasks; estimates, dependencies, acceptance criteria, Definition of Done, implementation notes, and citations. Every subtask must name the exact safe project-relative files it may change in allowedFiles and select validationProfiles only from format, lint, typecheck, unit, integration, build, and visual. Use stable plan IDs, preserve exact context and solution digests, and return strict JSON only."; }
 function reviewInstruction(discipline: "delivery" | "technical") { return `Independently audit the candidate delivery plan from the ${discipline} discipline against CONTEXT.md and the approved SOLUTION.md. Fail on omissions, invalid hierarchy, work larger than two hours at subtask level, missing estimates or dependencies, vague criteria, invented facts, or non-executable instructions.`; }

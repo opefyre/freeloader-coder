@@ -3,6 +3,7 @@ import { z } from "zod";
 const projectId = z.string().regex(/^project_[a-f0-9]{16}$/);
 const planItemId = z.string().regex(/^plan_[a-f0-9]{16}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
+const relativeFile = z.string().trim().min(1).max(500).refine((value) => !value.startsWith("/") && !value.startsWith("\\") && !value.split(/[\\/]/).includes(".."), "Execution files must remain project-relative.");
 
 export const executionAssignmentSchema = z.strictObject({
   providerId: z.string().trim().min(1).max(100),
@@ -44,6 +45,8 @@ export const executionTaskSchema = z.strictObject({
   jiraIssueKey: z.string().trim().min(2).max(100),
   title: z.string().trim().min(3).max(200),
   dependsOn: z.array(planItemId).max(100),
+  allowedFiles: z.array(relativeFile).min(1).max(100),
+  validationProfiles: z.array(z.enum(["format", "lint", "typecheck", "unit", "integration", "build", "visual"])).min(1).max(7),
   uiChanged: z.boolean(),
   requiredCapabilities: z.array(z.string().trim().min(1).max(100)).min(1).max(30),
   privacyClass: z.enum(["public", "non_personal_test", "source_code", "private_local"]),

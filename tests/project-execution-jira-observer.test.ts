@@ -49,7 +49,7 @@ function completedRecord(): ProjectExecutionRecord {
   return {
     schemaVersion: 1, projectId, planDigest: digest, state: "completed", revision: 6, updatedAt: 100,
     tasks: [{
-      id: taskId, jiraIssueKey: "PIPE-4", title: "Implement feature", dependsOn: [], uiChanged: true,
+      id: taskId, jiraIssueKey: "PIPE-4", title: "Implement feature", dependsOn: [], allowedFiles: ["src/feature.ts", "tests/feature.test.ts"], validationProfiles: ["typecheck", "unit"], uiChanged: true,
       requiredCapabilities: ["chat", "structured_output", "tool_calling"], privacyClass: "source_code", status: "completed",
       revision: 6, attempt: 0, assignment: { providerId: "groq", modelId: "coder", deviceId: "spare", selectedAt: 100, reasons: ["All execution gates passed."] }, lease: null,
       implementationEvidence: [digest], validations: [{ tier: "fast", commandLabel: "fast", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 100 }, { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 100 }, { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 100 }],
