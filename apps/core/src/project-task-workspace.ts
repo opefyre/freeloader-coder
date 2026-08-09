@@ -133,6 +133,14 @@ export class ProjectTaskWorkspaceService {
     if (observed !== commitDigest) throw new ProjectTaskWorkspaceError("integration_conflict", "Integrated commit could not be verified.");
     return { integrationDigest: hash(JSON.stringify({ baseline: workspace.baseline, commitDigest, observed })) };
   }
+
+  async revertIntegration(canonicalRoot: string, workspace: PreparedTaskWorkspace, commitDigest: string) {
+    const root = await realpath(canonicalRoot);
+    if ((await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0 || (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() !== commitDigest) throw new ProjectTaskWorkspaceError("integration_conflict", "Automatic integration restore was refused because canonical Git changed.");
+    await git(root, ["-c", "user.name=Pipeline Studio", "-c", "user.email=pipeline-studio@localhost", "revert", "--no-edit", commitDigest]);
+    await git(root, ["diff", "--quiet", workspace.baseline, "HEAD"]);
+    return { restoreDigest: hash(JSON.stringify({ baseline: workspace.baseline, failedCommit: commitDigest, restoredHead: (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() })) };
+  }
 }
 
 export class ProjectTaskWorkspaceError extends Error { constructor(readonly code: "repository_invalid" | "canonical_dirty" | "workspace_conflict" | "source_unsupported" | "operation_denied" | "stale_source" | "validation_unavailable" | "integration_conflict", message: string) { super(message); } }
