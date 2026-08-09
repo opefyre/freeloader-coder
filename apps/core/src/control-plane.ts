@@ -14,6 +14,7 @@ import {
   projectResourceSelectionSchema,
   localProjectFileImportSchema,
   localProjectFileImportResponseSchema,
+  projectContextSnapshotSchema,
   validateLocalProjectCollection,
   type LocalProjectCollection,
   type LocalProjectSnapshot,
@@ -159,6 +160,7 @@ export type ControlPlaneServerOptions = {
     rescan: (projectId: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     setResources?: (projectId: string, input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     addFiles?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
+    generateContext?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     forget: (projectId: string) => void | Promise<void>;
   };
   nativePicker?: {
@@ -1113,8 +1115,20 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const projectRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context)$/
       );
+      if (
+        request.method === "POST" &&
+        projectRoute?.[2] === "context" &&
+        options.projects?.generateContext
+      ) {
+        requireIdempotencyKey(request);
+        const body = await readJsonBody(request);
+        sendJson(response, 200, projectContextSnapshotSchema.parse(
+          await options.projects.generateContext(projectRoute[1] ?? "", body)
+        ));
+        return;
+      }
       if (
         request.method === "POST" &&
         projectRoute?.[2] === "files" &&

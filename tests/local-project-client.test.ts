@@ -5,6 +5,7 @@ import {
   addLocalProjectFiles,
   createLocalProject,
   forgetLocalProject,
+  generateLocalProjectContext,
   listLocalProjects,
   registerLocalProject,
 } from "../apps/studio/src/local-project-client.js";
@@ -49,6 +50,22 @@ test("browser client sends bounded loopback registration and validates responses
     (observed[0]?.init?.headers as Record<string, string>)["Idempotency-Key"],
     "register:0123456789"
   );
+});
+
+test("browser client requests digest-bound context generation on loopback", async () => {
+  let observedUrl = "";
+  const result = await generateLocalProjectContext({
+    endpoint: "http://127.0.0.1:4312",
+    projectId: "project_0123456789abcdef",
+    outcome: "Build the complete product",
+    idempotencyKey: "context:0123456789",
+    fetcher: async (url) => {
+      observedUrl = String(url);
+      return Response.json({ schemaVersion: 1, projectId: "project_0123456789abcdef", path: "CONTEXT.md", digest: "a".repeat(64), groundingDigest: "b".repeat(64), topologyDigest: "c".repeat(64), observedAt: 10_000, citations: [{ path: "README.md", digest: "d".repeat(64) }] });
+    },
+  });
+  assert.equal(observedUrl, "http://127.0.0.1:4312/api/v1/projects/project_0123456789abcdef/context");
+  assert.equal(result.path, "CONTEXT.md");
 });
 
 test("browser client creates a private project from a product idea", async () => {

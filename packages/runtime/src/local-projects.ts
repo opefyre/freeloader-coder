@@ -146,6 +146,19 @@ export type LocalProjectCreation = z.infer<typeof localProjectCreationSchema>;
 export type ProjectResourceBinding = z.infer<typeof projectResourceBindingSchema>;
 export type ProjectResourceSelection = z.infer<typeof projectResourceSelectionSchema>;
 export type LocalProjectFileImportResponse = z.infer<typeof localProjectFileImportResponseSchema>;
+
+export const projectContextSnapshotSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  projectId: opaqueProjectId,
+  path: z.literal("CONTEXT.md"),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  groundingDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  topologyDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  observedAt: z.number().int().nonnegative(),
+  citations: z.array(z.strictObject({ path: z.string().regex(/^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$)).{1,240}$/), digest: z.string().regex(/^[a-f0-9]{64}$/) })).min(1).max(12),
+});
+
+export type ProjectContextSnapshot = z.infer<typeof projectContextSnapshotSchema>;
 export type LocalProjectMutationResponse = z.infer<
   typeof localProjectMutationResponseSchema
 >;

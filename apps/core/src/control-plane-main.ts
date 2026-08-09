@@ -6,6 +6,7 @@ import { createControlPlaneServer } from "./control-plane.js";
 import { LocalProjectRegistry } from "./local-project-registry.js";
 import { NativePicker } from "./native-picker.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
+import { ProjectContextService } from "./project-context-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
 import { LocalSensitiveCommandRunner } from "./sensitive-command-runner.js";
@@ -38,6 +39,7 @@ const setupStatePath = resolve(stateDirectory, "setup-state.json");
 const instanceId = randomUUID();
 const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
+const projectContexts = new ProjectContextService(localProjects);
 const nativePicker = new NativePicker();
 const localRequests = new LocalRequestStore(
   stateDirectory,
@@ -289,6 +291,7 @@ const controlPlane = createControlPlaneServer({
     rescan: (projectId) => localProjects.rescan(projectId),
     setResources: (projectId, input) => localProjects.setResources(projectId, input),
     addFiles: (projectId, input) => localProjects.addFiles(projectId, input),
+    generateContext: (projectId, input) => projectContexts.generate(projectId, input),
     forget: (projectId) => localProjects.forget(projectId),
   },
   nativePicker: {

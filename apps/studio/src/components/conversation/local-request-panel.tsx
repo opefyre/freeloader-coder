@@ -28,6 +28,7 @@ import type {
 import {
   addLocalProjectFiles,
   createLocalProject,
+  generateLocalProjectContext,
   listLocalProjects,
   setLocalProjectResources,
 } from "../../local-project-client.js";
@@ -184,6 +185,12 @@ export function LocalRequestPanel(props: {
           idempotencyKey: `files:${crypto.randomUUID()}`,
         });
       }
+      await generateLocalProjectContext({
+        endpoint,
+        projectId: targetProjectId,
+        outcome: submittedIdea,
+        idempotencyKey: `context:${crypto.randomUUID()}`,
+      });
       await createLocalRequest({
         endpoint,
         projectId: targetProjectId,

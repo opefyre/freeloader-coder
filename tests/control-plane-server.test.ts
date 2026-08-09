@@ -175,6 +175,10 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
         calls.push(`files:${projectId}:${JSON.stringify(input)}`);
         return { schemaVersion: 1, outcome: "imported", files: [{ label: "brief.pdf", projectRelativePath: ".pipeline/inputs/brief-01234567.pdf", bytes: 42 }] };
       },
+      generateContext: (projectId, input) => {
+        calls.push(`context:${projectId}:${JSON.stringify(input)}`);
+        return { schemaVersion: 1, projectId, path: "CONTEXT.md", digest: "a".repeat(64), groundingDigest: "b".repeat(64), topologyDigest: "c".repeat(64), observedAt, citations: [{ path: "README.md", digest: "d".repeat(64) }] };
+      },
       forget: (projectId) => {
         calls.push(`forget:${projectId}`);
       },
@@ -243,6 +247,13 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       body: JSON.stringify({ schemaVersion: 1, paths: ["/Users/example/brief.pdf"] }),
     });
     assert.equal(files.status, 200);
+    const context = await fetch(`${base}/api/v1/projects/${project.id}/context`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "context:0123456789" },
+      body: JSON.stringify({ schemaVersion: 1, outcome: "Build the complete product" }),
+    });
+    assert.equal(context.status, 200);
+    assert.equal((await context.json() as { path: string }).path, "CONTEXT.md");
     assert.equal((await create.json() as { outcome: string }).outcome, "created");
 
     const rescan = await fetch(
@@ -256,7 +267,7 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       { method: "DELETE", headers: { Origin: origin } }
     );
     assert.equal(forget.status, 200);
-    assert.equal(calls.length, 6);
+    assert.equal(calls.length, 7);
 
     assert.equal(
       (
