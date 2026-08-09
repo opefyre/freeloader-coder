@@ -203,6 +203,8 @@ export function ProjectActivityDashboard(props: {
             const validations = execution?.tasks.flatMap((task) => task.validations) ?? [];
             const passedValidations = validations.filter((item) => item.passed).length;
             const retries = execution?.tasks.reduce((sum, task) => sum + task.attempt, 0) ?? 0;
+            const cycleSamples = execution?.tasks.flatMap((task) => task.assignment ? [Math.max(0, task.updatedAt - task.assignment.selectedAt)] : []) ?? [];
+            const cycleTime = cycleSamples.length > 0 ? formatDuration(median(cycleSamples)) : "Unknown";
             const stale = project.progress ? Date.now() - project.progress.observedAt > 5 * 60_000 : false;
             return (
               <Card key={project.id}>
@@ -230,11 +232,12 @@ export function ProjectActivityDashboard(props: {
                     {project.latestUpdate?.url ? <a href={project.latestUpdate.url} target="_blank" rel="noreferrer" className="mt-2 flex items-start gap-2 text-sm leading-6 hover:text-primary"><span className="line-clamp-2">{project.latestUpdate.summary}</span><ArrowSquareOut className="mt-1 shrink-0" /></a> : <p className="mt-2 line-clamp-2 text-sm leading-6">{project.latestUpdate?.summary ?? "No verified activity yet."}</p>}
                     <p className="mt-2 text-xs text-muted-foreground">{project.latestUpdate ? `${project.latestUpdate.source} · ${formatFreshness(project.latestUpdate.occurredAt)}` : "Unknown · no source observed"}</p>
                   </div>
-                  <div className="mt-4 grid grid-cols-4 gap-2" aria-label={`${project.displayName} delivery health`}>
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label={`${project.displayName} delivery health from canonical local execution evidence`}>
                     <MiniMetric value={`${verified}/${execution?.tasks.length ?? 0}`} label="Tasks" />
                     <MiniMetric value={`${passedValidations}/${validations.length}`} label="Checks" />
                     <MiniMetric value={String(providers.size)} label="Providers" />
                     <MiniMetric value={String(retries)} label="Retries" />
+                    <MiniMetric value={cycleTime} label="Cycle" />
                   </div>
                 </CardContent>
               </Card>
@@ -278,6 +281,19 @@ export function ProjectActivityDashboard(props: {
       )}
     </section>
   );
+}
+
+function median(values: readonly number[]) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2 : sorted[middle] ?? 0;
+}
+
+function formatDuration(milliseconds: number) {
+  if (milliseconds < 60_000) return "<1m";
+  if (milliseconds < 3_600_000) return `${Math.round(milliseconds / 60_000)}m`;
+  if (milliseconds < 86_400_000) return `${Math.round(milliseconds / 3_600_000)}h`;
+  return `${Math.round(milliseconds / 86_400_000)}d`;
 }
 
 function actionTitle(request: LocalRequest): string {
