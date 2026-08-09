@@ -2,6 +2,7 @@ import type { ExecutionCandidate, ExecutionTask } from "../../../packages/orches
 import type { QualityReview } from "../../../packages/orchestration/src/quality-review.js";
 import type { HealingFailureClass, HealingPolicy } from "../../../packages/orchestration/src/healing.js";
 import type { ProjectExecutionService } from "./project-execution-service.js";
+import { FreeProviderExecutionError } from "./free-provider-execution-model.js";
 
 export type WorkerValidation = { tier: "fast" | "full" | "integration"; commandLabel: string; passed: boolean; exitCode: number; evidenceDigest: string };
 export type ImplementationResult = { evidenceDigest: string; changedFiles: readonly string[]; goldenScore: number; previousGoldenScore: number };
@@ -69,6 +70,14 @@ export class ProjectExecutionWorker {
       task = await this.service.recordIntegration(projectId, task.id, lease.leaseId, this.workerId, integration);
       await this.adapters.observe?.(projectId, task);
       return await this.service.get(projectId);
+    } catch (error) {
+      if (error instanceof FreeProviderExecutionError && (error.code === "capacity_unavailable" || error.code === "provider_failed")) {
+        await this.service.releaseForRetry(projectId, task.id, lease.leaseId, this.workerId, "The assigned free provider is temporarily unavailable. The task is safely queued for its next eligible window.");
+      } else {
+        await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, safeError(error));
+      }
+      await this.adapters.observe?.(projectId, task).catch(() => undefined);
+      throw error;
     } finally {
       clearInterval(heartbeat);
     }
@@ -78,4 +87,9 @@ export class ProjectExecutionWorker {
     const [failureClass, policy] = await Promise.all([this.adapters.classifyFailure(projectId, task, validation), this.adapters.healingPolicy(projectId, task)]);
     return this.service.assessHealing(projectId, task.id, leaseId, this.workerId, { failureClass, changedFiles: implementation.changedFiles, policy, goldenScore: implementation.goldenScore, previousGoldenScore: implementation.previousGoldenScore });
   }
+}
+
+function safeError(error: unknown) {
+  const message = error instanceof Error ? error.message : "Execution stopped without a verified outcome.";
+  return `Execution needs attention: ${message.replace(/(?:api[_-]?key|password|secret|token)\s*[:=]\s*\S+/gi, "$1=[redacted]").slice(0, 430)}`;
 }

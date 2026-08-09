@@ -132,6 +132,20 @@ export class ProjectExecutionService {
     });
   }
 
+  async releaseForRetry(projectId: string, taskId: string, leaseId: string, ownerId: string, safeMessage: string) {
+    return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
+      const updated: ExecutionTask = { ...task, status: "queued", assignment: null, lease: null, revision: task.revision + 1, safeMessage, updatedAt: now };
+      return { record: projectState(replaceTask(record, updated), now), result: updated };
+    });
+  }
+
+  async interrupt(projectId: string, taskId: string, leaseId: string, ownerId: string, safeMessage: string) {
+    return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
+      const updated: ExecutionTask = { ...task, status: "needs_user", lease: null, revision: task.revision + 1, safeMessage, updatedAt: now };
+      return { record: projectState(replaceTask(record, updated), now), result: updated };
+    });
+  }
+
   async #updateOwned<T>(projectId: string, taskId: string, leaseId: string, ownerId: string, operation: (record: ProjectExecutionRecord, task: ExecutionTask, now: number) => { record: ProjectExecutionRecord; result: T }) {
     return this.#mutateProject(projectId, (record) => {
       const task = record.tasks.find((candidate) => candidate.id === taskId);

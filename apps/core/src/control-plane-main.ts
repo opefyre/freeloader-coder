@@ -18,6 +18,11 @@ import { ProjectDeliveryPlanCoordinator } from "./project-delivery-plan-coordina
 import { JiraDeliveryService } from "./jira-delivery-service.js";
 import { ProjectExecutionService } from "./project-execution-service.js";
 import { ProjectExecutionJiraObserver } from "./project-execution-jira-observer.js";
+import { ProjectExecutionCoordinator } from "./project-execution-coordinator.js";
+import { ProjectExecutionWorker } from "./project-execution-worker.js";
+import { ProjectExecutionRuntimeAdapters } from "./project-execution-runtime-adapters.js";
+import { ProjectTaskWorkspaceService } from "./project-task-workspace.js";
+import { FreeProviderExecutionModel } from "./free-provider-execution-model.js";
 import { ProjectEgressPolicyService } from "./project-egress-policy-service.js";
 import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
@@ -116,6 +121,11 @@ const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new P
 const jiraDelivery = new JiraDeliveryService(stateDirectory, localProjects, projectDeliveryPlans, projectLifecycles, credentialVault);
 const projectExecutions = new ProjectExecutionService(stateDirectory, projectDeliveryPlans, jiraDelivery);
 const projectExecutionJira = new ProjectExecutionJiraObserver(stateDirectory, projectExecutions, jiraDelivery, credentialVault);
+const executionModel = new FreeProviderExecutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
+const executionWorkspaces = new ProjectTaskWorkspaceService(stateDirectory);
+const executionAdapters = new ProjectExecutionRuntimeAdapters(localProjects, projectDeliveryPlans, projectContexts, projectEgress, executionModel, executionWorkspaces, projectExecutionJira);
+const executionWorker = new ProjectExecutionWorker(projectExecutions, executionAdapters, `controller-${instanceId}`);
+const executionCoordinator = new ProjectExecutionCoordinator(stateDirectory, projectExecutions, executionWorker);
 const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
   stateDirectory,
   new ProjectDeliveryPlanOrchestrator(
@@ -131,6 +141,7 @@ const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
     await jiraDelivery.synchronize(projectId);
     await projectExecutions.initialize(projectId);
     await projectExecutionJira.synchronize(projectId);
+    await executionCoordinator.schedule(projectId);
   }
 );
 const autonomy = new LocalAutonomyService(
@@ -431,6 +442,7 @@ const boundPort = await controlPlane.listen();
 await proposalGenerator.resumePending();
 await solutionCoordinator.resumePending();
 await deliveryPlanCoordinator.resumePending();
+await executionCoordinator.resumePending();
 autonomy.start();
 const executionJiraTimer = setInterval(() => {
   void localProjects.list().then(async ({ projects }) => {
@@ -450,6 +462,7 @@ async function close(signal: string) {
   if (closing) return;
   closing = true;
   autonomy.stop();
+  executionCoordinator.stop();
   clearInterval(executionJiraTimer);
   console.log(`Stopping local control plane (${signal}).`);
   await controlPlane.close();
