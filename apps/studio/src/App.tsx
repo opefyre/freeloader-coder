@@ -1998,7 +1998,7 @@ function SettingsWorkspace({
       </TabsContent>
 
       <TabsContent value="connections">
-        <ConnectionCatalog openProviders={() => setSettingsSection("providers")} />
+        <ConnectionCatalog endpoint={controlPlaneEndpoint} openProviders={() => setSettingsSection("providers")} />
       </TabsContent>
       <TabsContent value="providers">
         <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />

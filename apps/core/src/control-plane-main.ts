@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createControlPlaneServer } from "./control-plane.js";
 import { LocalProjectRegistry } from "./local-project-registry.js";
 import { NativePicker } from "./native-picker.js";
+import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
 import { LocalSensitiveCommandRunner } from "./sensitive-command-runner.js";
@@ -38,6 +39,7 @@ const instanceId = randomUUID();
 const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
 const nativePicker = new NativePicker();
+const integrationConnections = new IntegrationConnectionService();
 const localRequests = new LocalRequestStore(
   stateDirectory,
   (projectId) => localProjects.has(projectId),
@@ -292,6 +294,10 @@ const controlPlane = createControlPlaneServer({
   nativePicker: {
     folder: () => nativePicker.folder(),
     files: () => nativePicker.files(),
+  },
+  integrationConnections: {
+    list: () => integrationConnections.list(),
+    probeGitHub: () => integrationConnections.probeGitHub(),
   },
   requests: {
     list: () => localRequests.list(),

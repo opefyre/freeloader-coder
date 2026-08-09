@@ -7,9 +7,11 @@ import { Kanban } from "@phosphor-icons/react/Kanban";
 import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
 import { Robot } from "@phosphor-icons/react/Robot";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../ui/button.js";
+import { listIntegrationConnections, probeGitHubConnection } from "../../integration-connection-client.js";
+import type { PublicIntegrationConnectionCollection } from "../../../../../packages/runtime/src/integration-connections.js";
 
 type Connection = {
   id: string;
@@ -34,9 +36,13 @@ const connections: readonly Connection[] = [
   { id: "vercel", name: "Vercel", group: "Cloud", icon: Cloud, available: false },
 ];
 
-export function ConnectionCatalog(props: { openProviders: () => void }) {
+export function ConnectionCatalog(props: { openProviders: () => void; endpoint?: string }) {
   const [group, setGroup] = useState<"All" | Connection["group"]>("All");
   const [notice, setNotice] = useState("");
+  const [observed, setObserved] = useState<PublicIntegrationConnectionCollection | null>(null);
+  const [working, setWorking] = useState(false);
+  const endpoint = props.endpoint ?? "http://127.0.0.1:4312";
+  useEffect(() => { void listIntegrationConnections({ endpoint }).then(setObserved).catch(() => setObserved(null)); }, [endpoint]);
   const visible = connections.filter((connection) => group === "All" || connection.group === group);
 
   return (
@@ -54,15 +60,20 @@ export function ConnectionCatalog(props: { openProviders: () => void }) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {visible.map((connection) => {
           const Icon = connection.icon;
+          const github = connection.id === "github" ? observed?.connections.find((item) => item.provider === "github") : null;
+          const ready = github?.state === "ready";
           return (
             <div key={connection.id} className="flex items-center gap-3 rounded-3xl bg-muted/50 p-4">
               <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-background text-primary"><Icon size={20} weight="duotone" /></span>
-              <strong className="min-w-0 flex-1 truncate text-sm">{connection.name}</strong>
-              <Button size="sm" variant={connection.available ? "secondary" : "ghost"} onClick={() => {
+              <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{connection.name}</strong>{ready && <span className="block truncate text-xs text-muted-foreground">{github?.accountLabel}</span>}</span>
+              <Button size="sm" variant={connection.available || ready ? "secondary" : "ghost"} disabled={working && connection.id === "github"} onClick={() => {
                 if (connection.id === "ai") props.openProviders();
-                else setNotice(`${connection.name} connection is not installed yet.`);
+                else if (connection.id === "github") {
+                  setWorking(true);
+                  void probeGitHubConnection({ endpoint, idempotencyKey: `github-probe:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setNotice(result.connections[0]?.nextAction ?? "GitHub checked."); }).catch((error) => setNotice(error instanceof Error ? error.message : "GitHub check failed.")).finally(() => setWorking(false));
+                } else setNotice(`${connection.name} connection is not installed yet.`);
               }}>
-                {connection.available ? "Set up" : "Not connected"}
+                {connection.id === "github" ? (ready ? "Refresh" : "Detect") : connection.available ? "Set up" : "Not connected"}
               </Button>
             </div>
           );

@@ -13,3 +13,4 @@ export * from "./sandbox.js";
 export * from "./universal-search.js";
 export * from "./attention.js";
 export * from "./native-picker.js";
+export * from "./integration-connections.js";

@@ -291,6 +291,22 @@ test("native picker endpoints expose only validated local selections", async () 
   }
 });
 
+test("integration discovery is local, read-only by default, and explicit when probing", async () => {
+  let probes = 0;
+  const collection = { schemaVersion: 1 as const, provenance: "local_observation" as const, observedAt, connections: [{ schemaVersion: 1 as const, provider: "github" as const, state: "ready" as const, accountLabel: "owner", authMethod: "github_cli_oauth" as const, observedAt, resources: [], nextAction: "Choose repositories inside a project." }] };
+  const controlPlane = createControlPlaneServer({ host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot, integrationConnections: { list: () => collection, probeGitHub: () => { probes += 1; return collection; } } });
+  const port = await controlPlane.listen();
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    assert.equal((await fetch(`${base}/api/v1/integration-connections`)).status, 200);
+    assert.equal(probes, 0);
+    assert.equal((await fetch(`${base}/api/v1/integration-connections/github/probe`, { method: "POST" })).status, 400);
+    const response = await fetch(`${base}/api/v1/integration-connections/github/probe`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "github-probe:123456789" } });
+    assert.equal(response.status, 200);
+    assert.equal(probes, 1);
+  } finally { await controlPlane.close(); }
+});
+
 test("project listing remains available when project creation is not configured", async () => {
   const controlPlane = createControlPlaneServer({
     host: "127.0.0.1",

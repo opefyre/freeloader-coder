@@ -111,6 +111,10 @@ import {
   nativePickerResponseSchema,
   type NativePickerResponse,
 } from "../../../packages/runtime/src/native-picker.js";
+import {
+  publicIntegrationConnectionCollectionSchema,
+  type PublicIntegrationConnectionCollection,
+} from "../../../packages/runtime/src/integration-connections.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -160,6 +164,10 @@ export type ControlPlaneServerOptions = {
   nativePicker?: {
     folder: () => NativePickerResponse | Promise<NativePickerResponse>;
     files: () => NativePickerResponse | Promise<NativePickerResponse>;
+  };
+  integrationConnections?: {
+    list: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    probeGitHub: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
   };
   requests?: {
     list: () => LocalRequestCollection | Promise<LocalRequestCollection>;
@@ -258,6 +266,31 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const url = new URL(request.url ?? "/", `http://${options.host}`);
+      if (url.pathname === "/api/v1/integration-connections" && options.integrationConnections) {
+        if (request.method !== "GET") {
+          sendJson(response, 405, { error: "Method is not allowed." });
+          return;
+        }
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.list()));
+        return;
+      }
+      if (url.pathname === "/api/v1/integration-connections/github/probe" && options.integrationConnections) {
+        if (request.method !== "POST") {
+          sendJson(response, 405, { error: "Method is not allowed." });
+          return;
+        }
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.probeGitHub()));
+        return;
+      }
       if (
         request.method === "GET" &&
         url.pathname === "/api/v1/provider-connections" &&
