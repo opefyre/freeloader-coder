@@ -123,6 +123,8 @@ export async function generateLocalProjectContext(input: {
   endpoint: string;
   projectId: string;
   outcome: string;
+  requestId: string;
+  projectKind: "new_product" | "existing_product";
   idempotencyKey: string;
   fetcher?: typeof fetch;
 }): Promise<ProjectContextSnapshot> {
@@ -132,7 +134,7 @@ export async function generateLocalProjectContext(input: {
       endpoint: input.endpoint,
       path: `/api/v1/projects/${input.projectId}/context`,
       method: "POST",
-      body: { schemaVersion: 1, outcome: input.outcome },
+      body: { schemaVersion: 1, outcome: input.outcome, requestId: input.requestId, projectKind: input.projectKind },
       idempotencyKey: input.idempotencyKey,
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
     })

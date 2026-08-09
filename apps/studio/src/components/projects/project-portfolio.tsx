@@ -12,6 +12,7 @@ import { listLocalRequests } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { Card, CardContent } from "../ui/card.js";
+import { ProjectResearchControl } from "./project-research-control.js";
 
 const endpoint = import.meta.env.VITE_PIPELINE_STUDIO_CONTROL_URL ?? "http://127.0.0.1:4312";
 
@@ -123,6 +124,7 @@ export function ProjectPortfolio(props: {
                     <Badge><ListChecks />{jira ? jira.label : "Jira not selected"}</Badge>
                     <Badge><GitBranch />{repositories.length ? `${repositories.length} GitHub repo${repositories.length === 1 ? "" : "s"}` : "GitHub not selected"}</Badge>
                   </div>
+                  <ProjectResearchControl endpoint={endpoint} projectId={project.id} />
 
                   <div className="mt-5 flex items-center justify-between gap-3">
                     <span className="text-xs text-muted-foreground">

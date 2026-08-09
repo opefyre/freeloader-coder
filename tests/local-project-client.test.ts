@@ -11,6 +11,10 @@ import {
   getProjectSolution,
   decideProjectSolution,
   answerProjectClarifications,
+  generateProjectSolution,
+  getProjectProviderConsent,
+  getProjectSolutionRun,
+  grantProjectProviderConsent,
   listLocalProjects,
   registerLocalProject,
 } from "../apps/studio/src/local-project-client.js";
@@ -54,6 +58,28 @@ test("browser client reads and decides an exact solution artifact", async () => 
   assert.match(body, /Clarify the rollout/);
 });
 
+test("browser client binds provider consent and solution generation to exact loopback routes", async () => {
+  const projectId = lifecycle.projectId;
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "c".repeat(64), dataClass: "non_personal_test" as const, providerIds: ["groq"], approvedAt: 10_000, expiresAt: 20_000 };
+  const run = { schemaVersion: 1 as const, projectId, state: "queued" as const, attempts: 0, retryAt: null, safeMessage: "Solution research is queued.", updatedAt: 10_000 };
+  const calls: Array<{ url: string; method?: string; key?: string; body?: string }> = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    const method = init?.method;
+    const key = (init?.headers as Record<string, string> | undefined)?.["Idempotency-Key"];
+    calls.push({ url: String(url), ...(method ? { method } : {}), ...(key ? { key } : {}), body: String(init?.body ?? "") });
+    if (String(url).endsWith("/solution-generate")) return Response.json(run);
+    if (String(url).endsWith("/solution-run")) return Response.json(run);
+    return Response.json(permit);
+  };
+  assert.deepEqual(await getProjectProviderConsent({ endpoint: "http://127.0.0.1:4312", projectId, fetcher }), permit);
+  assert.deepEqual(await grantProjectProviderConsent({ endpoint: "http://127.0.0.1:4312", projectId, contextDigest: permit.contextDigest, dataClass: permit.dataClass, providerIds: permit.providerIds, expiresAt: permit.expiresAt, idempotencyKey: "consent:0123456789", fetcher }), permit);
+  assert.deepEqual(await generateProjectSolution({ endpoint: "http://127.0.0.1:4312", projectId, idempotencyKey: "generate:0123456789", fetcher }), run);
+  assert.deepEqual(await getProjectSolutionRun({ endpoint: "http://127.0.0.1:4312", projectId, fetcher }), run);
+  assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [`/api/v1/projects/${projectId}/provider-consent`, `/api/v1/projects/${projectId}/provider-consent`, `/api/v1/projects/${projectId}/solution-generate`, `/api/v1/projects/${projectId}/solution-run`]);
+  assert.match(calls[1]?.body ?? "", /selected free providers/);
+  assert.equal(calls[2]?.key, "generate:0123456789");
+});
+
 test("browser client sends bounded loopback registration and validates responses", async () => {
   const observed: { url: string; init?: RequestInit }[] = [];
   const result = await registerLocalProject({
@@ -91,18 +117,24 @@ test("browser client sends bounded loopback registration and validates responses
 
 test("browser client requests digest-bound context generation on loopback", async () => {
   let observedUrl = "";
+  let observedBody = "";
   const result = await generateLocalProjectContext({
     endpoint: "http://127.0.0.1:4312",
     projectId: "project_0123456789abcdef",
     outcome: "Build the complete product",
+    requestId: "request_0123456789abcdef0123",
+    projectKind: "new_product",
     idempotencyKey: "context:0123456789",
-    fetcher: async (url) => {
+    fetcher: async (url, init) => {
       observedUrl = String(url);
+      observedBody = String(init?.body ?? "");
       return Response.json({ schemaVersion: 1, projectId: "project_0123456789abcdef", path: "CONTEXT.md", digest: "a".repeat(64), groundingDigest: "b".repeat(64), topologyDigest: "c".repeat(64), observedAt: 10_000, citations: [{ path: "README.md", digest: "d".repeat(64) }] });
     },
   });
   assert.equal(observedUrl, "http://127.0.0.1:4312/api/v1/projects/project_0123456789abcdef/context");
   assert.equal(result.path, "CONTEXT.md");
+  assert.match(observedBody, /"requestId":"request_0123456789abcdef0123"/);
+  assert.match(observedBody, /"projectKind":"new_product"/);
 });
 
 test("browser client creates a private project from a product idea", async () => {

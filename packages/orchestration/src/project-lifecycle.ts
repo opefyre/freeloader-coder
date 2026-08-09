@@ -28,6 +28,7 @@ export const ownerAnswerSchema = z.strictObject({
 export const projectArtifactSchema = z.strictObject({
   kind: z.enum(["context", "solution", "backlog"]),
   projectRelativePath: z.enum([
+    "CONTEXT.md",
     ".pipeline/CONTEXT.md",
     ".pipeline/SOLUTION.md",
     ".pipeline/BACKLOG.md",

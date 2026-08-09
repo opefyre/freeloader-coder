@@ -221,17 +221,20 @@ export function LocalRequestPanel(props: {
           idempotencyKey: `files:${crypto.randomUUID()}`,
         });
       }
-      await generateLocalProjectContext({
-        endpoint,
-        projectId: targetProjectId,
-        outcome: submittedIdea,
-        idempotencyKey: `context:${crypto.randomUUID()}`,
-      });
-      await createLocalRequest({
+      const request = await createLocalRequest({
         endpoint,
         projectId: targetProjectId,
         outcome: submittedIdea,
         idempotencyKey: `request:${crypto.randomUUID()}`,
+      });
+      if (!request.request) throw new Error("The project intake request was not returned.");
+      await generateLocalProjectContext({
+        endpoint,
+        projectId: targetProjectId,
+        outcome: submittedIdea,
+        requestId: request.request.id,
+        projectKind: projectId === "__new__" ? "new_product" : "existing_product",
+        idempotencyKey: `context:${crypto.randomUUID()}`,
       });
       setOutcome("");
       setWorkspacePath("");

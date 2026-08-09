@@ -54,6 +54,11 @@ test("uncertain eligibility becomes a durable selectable owner question", async 
   assert.equal(result.lifecycle.stage, "clarification");
   assert.equal(result.lifecycle.questions.length, 1);
   assert.deepEqual(result.lifecycle.questions[0]?.options.map((option) => option.id), ["new_product", "major_feature", "small_change"]);
+  assert.equal(result.lifecycle.questions[0]?.allowsCustomAnswer, false);
+  const resolved = await service.answer(projectId, { schemaVersion: 1, expectedRevision: result.lifecycle.revision, answers: [{ questionId: result.lifecycle.questions[0]!.id, optionId: "major_feature", customAnswer: null, answeredAt: 6 }] }, "eligibility-answer-001");
+  assert.equal(resolved.stage, "solution_design");
+  assert.equal(resolved.assessment?.classification, "major_feature");
+  assert.equal((await service.eligibility(projectId))?.eligible, true);
 });
 
 test("solution decisions are digest-bound, revision-bound, and idempotent", async () => {

@@ -114,9 +114,30 @@ export class ProjectLifecycleService {
       if (replay) return { state, result: replay };
       const current = requireRecord(state.records, projectId);
       if (current.revision !== request.expectedRevision) throw new ProjectLifecycleServiceError("stale_revision", "Questions changed. Review the latest choices before answering.");
-      const record = advanceProjectLifecycle(current, { type: "clarifications_resolved", answers: request.answers }, Date.now());
+      let record = advanceProjectLifecycle(current, { type: "clarifications_resolved", answers: request.answers }, Date.now());
+      let resolvedEligibility = state.eligibility[projectId];
+      if (current.assessment?.classification === "unclear" && resolvedEligibility) {
+        const priorEligibility = resolvedEligibility;
+        const scopeQuestion = current.questions.find((question) => question.sourceFindingIds.includes(priorEligibility.requestId));
+        const scopeAnswer = scopeQuestion ? request.answers.find((answer) => answer.questionId === scopeQuestion.id) : undefined;
+        if (scopeAnswer?.optionId && ["new_product", "major_feature", "small_change"].includes(scopeAnswer.optionId)) {
+          const classification = scopeAnswer.optionId as "new_product" | "major_feature" | "small_change";
+          resolvedEligibility = assessEligibility({
+            projectId,
+            requestId: priorEligibility.requestId,
+            projectKind: classification === "new_product" ? "new_product" : "existing_product",
+            affectedDomains: classification === "major_feature" ? ["product", "implementation"] : [],
+            deliveryStages: classification === "major_feature" ? ["product", "design", "frontend", "backend", "qa"] : classification === "new_product" ? ["research", "product", "design", "frontend", "backend", "qa", "launch"] : ["frontend"],
+            estimatedDeveloperHours: classification === "small_change" ? 2 : 16,
+            requiresArchitectureDecision: classification !== "small_change",
+            evidence: [`The owner classified the outcome as ${classification.replaceAll("_", " ")}.`],
+            confidence: 1,
+          });
+          record = advanceProjectLifecycle(record, { type: "scope_assessed", assessment: resolvedEligibility.assessment }, Date.now());
+        }
+      }
       return {
-        state: { ...replaceRecord(state, record), receipts: { ...state.receipts, [receiptKey]: record } },
+        state: { ...replaceRecord(state, record), eligibility: resolvedEligibility ? { ...state.eligibility, [projectId]: resolvedEligibility } : state.eligibility, receipts: { ...state.receipts, [receiptKey]: record } },
         result: record,
       };
     });
@@ -207,7 +228,7 @@ function scopeClarification(decision: EligibilityDecision): OwnerQuestion {
       { id: "major_feature", label: "Major feature", consequence: "Continue after the existing product and affected systems are understood." },
       { id: "small_change", label: "Small change", consequence: "Stop this lifecycle and handle the request as ordinary coding work." },
     ],
-    allowsCustomAnswer: true,
+    allowsCustomAnswer: false,
     sourceFindingIds: [decision.requestId],
   });
 }

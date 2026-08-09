@@ -1,0 +1,90 @@
+import type { ProjectContextService } from "./project-context-service.js";
+import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
+
+export class ProjectIntakeCoordinator {
+  constructor(
+    private readonly contexts: ProjectContextService,
+    private readonly lifecycles: ProjectLifecycleService
+  ) {}
+
+  async generate(projectId: string, input: unknown) {
+    const intake = parseProjectIntake(input);
+    const context = await this.contexts.generate(projectId, input);
+    const begun = await this.lifecycles.begin({ projectId, mission: intake.outcome });
+    let lifecycle = begun;
+    if (!begun.artifacts.some((artifact) => artifact.kind === "context" && artifact.digest === context.digest)) {
+      const verified = await this.contexts.readVerified(projectId);
+      if (verified.digest !== context.digest) throw new Error("Generated context could not be verified.");
+      lifecycle = await this.lifecycles.publishQuestions({
+        projectId,
+        artifact: {
+          kind: "context",
+          projectRelativePath: "CONTEXT.md",
+          digest: context.digest,
+          revision: begun.artifacts.filter((artifact) => artifact.kind === "context").length + 1,
+          createdAt: context.observedAt,
+          citations: context.citations.map((citation) => `local://${citation.path}`),
+          reviewerIds: ["context-grounding", "context-integrity"],
+          qaPassed: true,
+        },
+        questions: [],
+      });
+    }
+    if (lifecycle.stage === "context_review" && !lifecycle.assessment) {
+      await this.lifecycles.assess(projectId, {
+        schemaVersion: 1,
+        expectedRevision: lifecycle.revision,
+        requestId: intake.requestId,
+        projectKind: intake.projectKind,
+        ...deriveScopeEvidence(intake.outcome, intake.projectKind),
+      }, `context-scope:${context.digest}`);
+    }
+    return context;
+  }
+}
+
+export function parseProjectIntake(input: unknown): {
+  outcome: string;
+  requestId: string;
+  projectKind: "new_product" | "existing_product";
+} {
+  if (!input || typeof input !== "object") throw new Error("Project intake is invalid.");
+  const candidate = input as Record<string, unknown>;
+  const outcome = typeof candidate.outcome === "string" ? candidate.outcome.trim() : "";
+  if (outcome.length < 3 || outcome.length > 20_000) throw new Error("Project outcome is invalid.");
+  if (typeof candidate.requestId !== "string" || !/^request_[a-f0-9]{20}$/.test(candidate.requestId)) throw new Error("Project request identity is invalid.");
+  if (candidate.projectKind !== "new_product" && candidate.projectKind !== "existing_product") throw new Error("Project kind is invalid.");
+  return { outcome, requestId: candidate.requestId, projectKind: candidate.projectKind };
+}
+
+export function deriveScopeEvidence(outcome: string, projectKind: "new_product" | "existing_product") {
+  if (projectKind === "new_product") {
+    return {
+      affectedDomains: ["product", "frontend", "backend", "qa"],
+      deliveryStages: ["research", "product", "design", "frontend", "backend", "qa"] as const,
+      estimatedDeveloperHours: 80,
+      requiresArchitectureDecision: true,
+      evidence: ["The owner selected a new project workspace and requested a complete product outcome."],
+      confidence: 0.9,
+    };
+  }
+  const normalized = outcome.toLowerCase();
+  const domainSignals: ReadonlyArray<readonly [string, RegExp]> = [
+    ["frontend", /\b(ui|ux|page|screen|frontend|responsive|mobile)\b/],
+    ["backend", /\b(api|backend|service|workflow|authentication|database)\b/],
+    ["data", /\b(data|database|migration|analytics|reporting)\b/],
+    ["infrastructure", /\b(infra|deploy|cloud|worker|queue|scheduler)\b/],
+    ["qa", /\b(qa|test|validation|audit|review)\b/],
+  ];
+  const affectedDomains = domainSignals.flatMap(([domain, pattern]) => pattern.test(normalized) ? [domain] : []);
+  const majorLanguage = /\b(feature|product|platform|system|workflow|integration|redesign|architecture|end[- ]to[- ]end|from scratch)\b/.test(normalized);
+  const clear = outcome.length >= 40 && (majorLanguage || affectedDomains.length >= 2);
+  return {
+    affectedDomains,
+    deliveryStages: clear ? (["product", "design", "frontend", "backend", "qa"] as const) : ([] as const),
+    estimatedDeveloperHours: clear ? 16 : 0,
+    requiresArchitectureDecision: clear && /\b(architecture|system|workflow|integration|database|infra)\b/.test(normalized),
+    evidence: [clear ? "The requested outcome names a multi-stage feature or multiple implementation domains." : "The requested outcome does not yet establish major-feature scope."],
+    confidence: clear ? 0.85 : 0.5,
+  };
+}

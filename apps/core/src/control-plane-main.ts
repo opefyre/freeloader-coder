@@ -7,6 +7,7 @@ import { LocalProjectRegistry } from "./local-project-registry.js";
 import { NativePicker } from "./native-picker.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { ProjectContextService } from "./project-context-service.js";
+import { ProjectIntakeCoordinator } from "./project-intake-coordinator.js";
 import { ProjectSolutionService } from "./project-solution-service.js";
 import { ProjectSolutionOrchestrator } from "./project-solution-orchestrator.js";
 import { FreeProviderSolutionModel } from "./free-provider-solution-model.js";
@@ -48,6 +49,7 @@ const localProjects = new LocalProjectRegistry(stateDirectory);
 const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
 const projectLifecycles = new ProjectLifecycleService(stateDirectory);
+const projectIntake = new ProjectIntakeCoordinator(projectContexts, projectLifecycles);
 const nativePicker = new NativePicker();
 const localRequests = new LocalRequestStore(
   stateDirectory,
@@ -290,12 +292,7 @@ const controlPlane = createControlPlaneServer({
     rescan: (projectId) => localProjects.rescan(projectId),
     setResources: (projectId, input) => localProjects.setResources(projectId, input),
     addFiles: (projectId, input) => localProjects.addFiles(projectId, input),
-    generateContext: async (projectId, input) => {
-      const context = await projectContexts.generate(projectId, input);
-      const outcome = typeof input === "object" && input && "outcome" in input ? String((input as { outcome: unknown }).outcome) : "Review project context.";
-      await projectLifecycles.begin({ projectId, mission: outcome });
-      return context;
-    },
+    generateContext: (projectId, input) => projectIntake.generate(projectId, input),
     forget: (projectId) => localProjects.forget(projectId),
   },
   projectLifecycles: {
