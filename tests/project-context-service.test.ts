@@ -19,6 +19,10 @@ test("context generation is cited, atomic, digest-bound, and preserves accepted 
     assert.match(firstContent, /## Inferences/);
     assert.match(firstContent, /## Assumptions/);
     assert.match(firstContent, /## Unknowns/);
+    assert.match(firstContent, /## Stack and infrastructure/);
+    assert.match(firstContent, /## Features and workflows observed/);
+    assert.match(firstContent, /## Conflicts/);
+    assert.match(firstContent, /Validation and automation scripts: test/);
     assert.match(firstContent, /owner\/sample-product/);
     assert.match(firstContent, new RegExp(`context-digest:${first.digest}`));
     const edited = firstContent.replace("- None recorded yet.", "- Keep the product local-first.");

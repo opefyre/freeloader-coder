@@ -21,6 +21,16 @@ export class ProjectContextService {
     ]);
     const project = collection.projects.find((candidate) => candidate.id === projectId);
     if (!project) throw new Error("Project registration was not found.");
+    const [manifestAnalysis, documentationAnalysis, topologyAnalysis, resourceAnalysis] = await Promise.all([
+      Promise.resolve(analyzeManifest(planning.grounding.sources)),
+      Promise.resolve(analyzeDocumentation(planning.grounding.sources)),
+      Promise.resolve(analyzeTopology(planning.topology.entries)),
+      Promise.resolve(analyzeResources(project.resources ?? [])),
+    ]);
+    const conflicts = reconcileConflicts([
+      ...project.facts.map((fact) => ({ key: normalizeKey(fact.label), value: fact.value, source: fact.evidence })),
+      ...manifestAnalysis.claims,
+    ]);
     const target = join(root, CONTEXT_FILE);
     const acceptedDecisions = await readAcceptedDecisions(target);
     const citations = planning.grounding.sources.map((source, index) => ({
@@ -45,7 +55,7 @@ export class ProjectContextService {
       "## Facts",
       "",
       ...project.facts.map((fact) => `- ${fact.label}: ${fact.value} — ${fact.evidence}`),
-      ...(project.resources ?? []).map((resource) => `- Connected ${resource.kind}: [${resource.label}](${resource.url})`),
+      ...(project.resources ?? []).map((resource) => resource.url ? `- Connected ${resource.kind}: [${resource.label}](${resource.url})` : `- Connected ${resource.kind}: ${resource.label}`),
       `- ${planning.topology.entries.length} bounded paths were classified; topology${planning.topology.truncated ? " was truncated" : " was not truncated"}.`,
       "",
       "## Inferences",
@@ -61,6 +71,20 @@ export class ProjectContextService {
       "",
       ...project.warnings.map((value) => `- ${value}`),
       ...(planning.topology.truncated ? ["- The bounded topology does not contain every project path."] : []),
+      "",
+      "## Stack and infrastructure",
+      "",
+      ...manifestAnalysis.items,
+      ...topologyAnalysis.items,
+      ...resourceAnalysis.items,
+      "",
+      "## Features and workflows observed",
+      "",
+      ...documentationAnalysis.items,
+      "",
+      "## Conflicts",
+      "",
+      ...(conflicts.length > 0 ? conflicts : ["- None detected among bounded sources."]),
       "",
       "## Accepted decisions",
       "",
@@ -118,4 +142,64 @@ async function atomicWrite(path: string, content: string) {
   }
   await rename(temporary, path);
   await chmod(path, 0o600);
+}
+
+type GroundingSource = Awaited<ReturnType<LocalProjectRegistry["grounding"]>>["grounding"]["sources"][number];
+type TopologyEntry = Awaited<ReturnType<LocalProjectRegistry["grounding"]>>["topology"]["entries"][number];
+
+function analyzeManifest(sources: readonly GroundingSource[]) {
+  const manifest = sources.find((source) => source.path === "package.json");
+  if (!manifest) return { items: ["- No supported root package manifest was observed."], claims: [] };
+  const citation = sources.indexOf(manifest) + 1;
+  try {
+    const parsed = JSON.parse(manifest.excerpt) as Record<string, unknown>;
+    const scripts = parsed.scripts && typeof parsed.scripts === "object" ? Object.keys(parsed.scripts as object).slice(0, 20) : [];
+    const dependencies = [parsed.dependencies, parsed.devDependencies]
+      .flatMap((value) => value && typeof value === "object" ? Object.keys(value as object) : [])
+      .filter((value, index, all) => all.indexOf(value) === index)
+      .slice(0, 24);
+    const packageManager = typeof parsed.packageManager === "string" ? parsed.packageManager : "Not declared";
+    return {
+      items: [
+        `- Package manager: ${packageManager} [${citation}]`,
+        `- Validation and automation scripts: ${scripts.length > 0 ? scripts.join(", ") : "none observed"} [${citation}]`,
+        `- Root dependencies observed: ${dependencies.length > 0 ? dependencies.join(", ") : "none in bounded excerpt"} [${citation}]`,
+      ],
+      claims: [{ key: "package_manager", value: packageManager, source: "package.json" }],
+    };
+  } catch {
+    return { items: ["- package.json exists, but its bounded excerpt was incomplete and was not interpreted."], claims: [] };
+  }
+}
+
+function analyzeDocumentation(sources: readonly GroundingSource[]) {
+  const headings = sources
+    .filter((source) => source.classification === "documentation")
+    .flatMap((source) => source.excerpt.split("\n").filter((line) => /^#{1,3}\s+\S/.test(line)).map((line) => `${line.replace(/^#{1,3}\s+/, "")} — \`${source.path}\``))
+    .slice(0, 20);
+  return { items: headings.length > 0 ? headings.map((heading) => `- ${heading}`) : ["- No feature or workflow headings were observed in bounded root documentation."] };
+}
+
+function analyzeTopology(entries: readonly TopologyEntry[]) {
+  const counts = new Map<string, number>();
+  for (const entry of entries) counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1);
+  const roots = [...new Set(entries.map((entry) => entry.path.split("/")[0]).filter(Boolean))].sort().slice(0, 20);
+  return { items: [`- Bounded topology: ${[...counts].map(([kind, count]) => `${count} ${kind}`).join(", ")}.`, `- Root areas: ${roots.join(", ")}.`] };
+}
+
+function analyzeResources(resources: readonly { kind: string; label: string; url: string | null }[]) {
+  return { items: resources.length > 0 ? resources.map((resource) => resource.url ? `- ${resource.kind}: [${resource.label}](${resource.url})` : `- ${resource.kind}: ${resource.label}`) : ["- No external project resources are connected."] };
+}
+
+function reconcileConflicts(claims: readonly { key: string; value: string; source: string }[]) {
+  const grouped = new Map<string, { value: string; source: string }[]>();
+  for (const claim of claims) grouped.set(claim.key, [...(grouped.get(claim.key) ?? []), { value: claim.value, source: claim.source }]);
+  return [...grouped].flatMap(([key, values]) => {
+    const distinct = [...new Set(values.map((value) => value.value.trim().toLocaleLowerCase()))];
+    return distinct.length > 1 ? [`- ${key.replaceAll("_", " ")}: ${values.map((value) => `“${value.value}” (${value.source})`).join(" versus ")}. Owner review required.`] : [];
+  });
+}
+
+function normalizeKey(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 }
