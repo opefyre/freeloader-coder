@@ -184,6 +184,11 @@ const ProviderConnectionWizard = lazy(() =>
     default: module.ProviderConnectionWizard,
   }))
 );
+const ConnectionCatalog = lazy(() =>
+  import("./components/settings/connection-catalog.js").then((module) => ({
+    default: module.ConnectionCatalog,
+  }))
+);
 const ExpandedProviderMesh = lazy(() =>
   import("./components/providers/expanded-provider-mesh.js").then((module) => ({
     default: module.ExpandedProviderMesh,
@@ -1778,6 +1783,7 @@ function SettingsWorkspace({
   );
   const [selectedPermissionId, setSelectedPermissionId] = useState("project-folder");
   const [privacyScreen, setPrivacyScreen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState("connections");
   const [preset, setPreset] = useState<"Guided" | "Balanced" | "Autonomous">("Balanced");
   const [permissionNotice, setPermissionNotice] = useState(
     "Permissions are scoped to Main project."
@@ -1798,13 +1804,13 @@ function SettingsWorkspace({
 
   return (
     <>
-    <Tabs defaultValue="connections">
+    <Tabs value={settingsSection} onValueChange={setSettingsSection}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsList aria-label="Settings sections">
-          <TabsTrigger value="connections">AI providers</TabsTrigger>
-          <TabsTrigger value="services">Services</TabsTrigger>
+          <TabsTrigger value="connections">Connections</TabsTrigger>
+          <TabsTrigger value="providers">AI providers</TabsTrigger>
           <TabsTrigger value="permissions">Preferences</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
+          <TabsTrigger value="system">Advanced</TabsTrigger>
         </TabsList>
         <Button
           variant={privacyScreen ? "default" : "secondary"}
@@ -1992,10 +1998,10 @@ function SettingsWorkspace({
       </TabsContent>
 
       <TabsContent value="connections">
-        <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
+        <ConnectionCatalog openProviders={() => setSettingsSection("providers")} />
       </TabsContent>
-      <TabsContent value="services">
-        <IntegrationWorkbench />
+      <TabsContent value="providers">
+        <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
       </TabsContent>
       <TabsContent value="system">
         <div className="space-y-4">
