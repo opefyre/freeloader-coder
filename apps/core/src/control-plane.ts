@@ -168,6 +168,8 @@ export type ControlPlaneServerOptions = {
   integrationConnections?: {
     list: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     probeGitHub: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    connectJira: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    disconnectJira: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
   };
   requests?: {
     list: () => LocalRequestCollection | Promise<LocalRequestCollection>;
@@ -289,6 +291,25 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           return;
         }
         sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.probeGitHub()));
+        return;
+      }
+      if (url.pathname === "/api/v1/integration-connections/jira" && options.integrationConnections) {
+        if (request.method === "POST") {
+          requireIdempotencyKey(request);
+          const body = await readJsonBody(request);
+          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.connectJira(body)));
+          return;
+        }
+        if (request.method === "DELETE") {
+          requireIdempotencyKey(request);
+          if (requestBodyDeclared(request)) {
+            sendJson(response, 413, { error: "Request body is not accepted." });
+            return;
+          }
+          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.disconnectJira()));
+          return;
+        }
+        sendJson(response, 405, { error: "Method is not allowed." });
         return;
       }
       if (

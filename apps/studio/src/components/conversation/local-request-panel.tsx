@@ -9,6 +9,7 @@ import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
 import { GithubLogo } from "@phosphor-icons/react/GithubLogo";
 import { HourglassMedium } from "@phosphor-icons/react/HourglassMedium";
+import { Kanban } from "@phosphor-icons/react/Kanban";
 import { LockKey } from "@phosphor-icons/react/LockKey";
 import { PaperclipHorizontal } from "@phosphor-icons/react/PaperclipHorizontal";
 import { Play } from "@phosphor-icons/react/Play";
@@ -92,6 +93,7 @@ export function LocalRequestPanel(props: {
   const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
   const [integrationConnections, setIntegrationConnections] = useState<PublicIntegrationConnectionCollection | null>(null);
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<readonly string[]>([]);
+  const [selectedJiraProjectId, setSelectedJiraProjectId] = useState("");
   const [outcome, setOutcome] = useState("");
   const [lastSubmission, setLastSubmission] = useState<{
     idea: string;
@@ -252,6 +254,7 @@ export function LocalRequestPanel(props: {
       const collection = await listIntegrationConnections({ endpoint });
       setIntegrationConnections(collection);
       setSelectedRepositoryIds((project.resources ?? []).filter((resource) => resource.kind === "github_repository").map((resource) => resource.resourceId));
+      setSelectedJiraProjectId((project.resources ?? []).find((resource) => resource.kind === "jira_project")?.resourceId ?? "");
       setResourcePickerOpen(true);
       setStatus("ready");
     } catch (error) {
@@ -263,11 +266,12 @@ export function LocalRequestPanel(props: {
   async function saveProjectResources() {
     const project = projects.find((candidate) => candidate.id === projectId);
     const github = integrationConnections?.connections.find((connection) => connection.provider === "github" && connection.state === "ready");
-    if (!project || !github) return;
+    const jira = integrationConnections?.connections.find((connection) => connection.provider === "jira" && connection.state === "ready");
+    if (!project) return;
     setStatus("working");
     try {
       const retained = (project.resources ?? [])
-        .filter((resource) => resource.kind !== "github_repository")
+        .filter((resource) => resource.kind !== "github_repository" && resource.kind !== "jira_project")
         .map(({ kind, connectionId, resourceId, label, url, role }) => ({
           kind,
           connectionId,
@@ -276,11 +280,13 @@ export function LocalRequestPanel(props: {
           url,
           role,
         }));
-      const repositories = github.resources.filter((resource) => selectedRepositoryIds.includes(resource.id)).map((resource, index) => ({ kind: "github_repository" as const, connectionId: `github-cli:${github.accountLabel ?? "account"}`, resourceId: resource.id, label: resource.label, url: resource.url, role: index === 0 ? "primary" as const : "additional" as const }));
-      await setLocalProjectResources({ endpoint, projectId: project.id, selection: { schemaVersion: 1, resources: [...retained, ...repositories] }, idempotencyKey: `resources:${crypto.randomUUID()}` });
+      const repositories = (github?.resources ?? []).filter((resource) => selectedRepositoryIds.includes(resource.id)).map((resource, index) => ({ kind: "github_repository" as const, connectionId: `github-cli:${github?.accountLabel ?? "account"}`, resourceId: resource.id, label: resource.label, url: resource.url, role: index === 0 ? "primary" as const : "additional" as const }));
+      const jiraProject = jira?.resources.find((resource) => resource.id === selectedJiraProjectId);
+      const jiraResources = jiraProject ? [{ kind: "jira_project" as const, connectionId: `jira:${jira?.accountLabel ?? "account"}`, resourceId: jiraProject.id, label: jiraProject.label, url: jiraProject.url, role: "primary" as const }] : [];
+      await setLocalProjectResources({ endpoint, projectId: project.id, selection: { schemaVersion: 1, resources: [...retained, ...repositories, ...jiraResources] }, idempotencyKey: `resources:${crypto.randomUUID()}` });
       setResourcePickerOpen(false);
       await refresh();
-      setNotice(`${repositories.length} GitHub ${repositories.length === 1 ? "repository" : "repositories"} saved to this project.`);
+      setNotice(`${repositories.length + jiraResources.length} connected ${repositories.length + jiraResources.length === 1 ? "resource" : "resources"} saved to this project.`);
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Resources could not be saved.");
@@ -763,14 +769,22 @@ export function LocalRequestPanel(props: {
                 </Button>
               </div>
               {resourcePickerOpen && <div role="dialog" aria-modal="false" aria-labelledby="project-resources-title" className="rounded-3xl bg-muted/55 p-4">
-                <div className="flex items-center justify-between gap-3"><strong id="project-resources-title">GitHub repositories</strong><Button size="sm" variant="ghost" aria-label="Close resources" onClick={() => setResourcePickerOpen(false)}><X /></Button></div>
+                <div className="flex items-center justify-between gap-3"><strong id="project-resources-title">Project resources</strong><Button size="sm" variant="ghost" aria-label="Close resources" onClick={() => setResourcePickerOpen(false)}><X /></Button></div>
+                <h4 className="mt-4 text-xs font-semibold text-muted-foreground">GitHub repositories</h4>
                 {integrationConnections?.connections.find((connection) => connection.provider === "github")?.state !== "ready" ? <p className="mt-4 text-sm text-muted-foreground">Connect GitHub in Settings first.</p> : <div className="mt-3 grid max-h-64 gap-2 overflow-auto sm:grid-cols-2">
                   {integrationConnections.connections.find((connection) => connection.provider === "github")?.resources.map((repository) => {
                     const selected = selectedRepositoryIds.includes(repository.id);
                     return <button key={repository.id} type="button" aria-pressed={selected} onClick={() => setSelectedRepositoryIds((current) => selected ? current.filter((id) => id !== repository.id) : [...current, repository.id])} className={`flex items-center gap-3 rounded-2xl p-3 text-left ${selected ? "bg-primary/10" : "bg-background/70"}`}><GithubLogo className="shrink-0 text-primary" /><span className="min-w-0"><strong className="block truncate text-xs">{repository.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{repository.detail}</span></span></button>;
                   })}
                 </div>}
-                <div className="mt-4 flex justify-end"><Button size="sm" onClick={() => void saveProjectResources()} disabled={status === "working" || integrationConnections?.connections.find((connection) => connection.provider === "github")?.state !== "ready"}>Save</Button></div>
+                <h4 className="mt-4 text-xs font-semibold text-muted-foreground">Jira project</h4>
+                {integrationConnections?.connections.find((connection) => connection.provider === "jira")?.state !== "ready" ? <p className="mt-3 text-sm text-muted-foreground">Connect Jira in Settings first.</p> : <div className="mt-3 grid max-h-48 gap-2 overflow-auto sm:grid-cols-2">
+                  {integrationConnections.connections.find((connection) => connection.provider === "jira")?.resources.map((jiraProject) => {
+                    const selected = selectedJiraProjectId === jiraProject.id;
+                    return <button key={jiraProject.id} type="button" aria-pressed={selected} onClick={() => setSelectedJiraProjectId(selected ? "" : jiraProject.id)} className={`flex items-center gap-3 rounded-2xl p-3 text-left ${selected ? "bg-primary/10" : "bg-background/70"}`}><Kanban className="shrink-0 text-primary" /><span className="min-w-0"><strong className="block truncate text-xs">{jiraProject.label}</strong><span className="block truncate text-[11px] text-muted-foreground">{jiraProject.detail}</span></span></button>;
+                  })}
+                </div>}
+                <div className="mt-4 flex justify-end"><Button size="sm" onClick={() => void saveProjectResources()} disabled={status === "working"}>Save</Button></div>
               </div>}
             </div>
           )}

@@ -10,5 +10,8 @@ test("Settings uses an honest minimal app-level connection catalogue", async () 
   assert.equal(source.includes("Not connected"), true);
   assert.equal(source.includes("opefyre"), false);
   assert.equal(source.includes("PIPE-72"), false);
-  assert.equal(source.includes("<input"), false);
+  assert.equal(source.includes('type="password"'), true);
+  assert.equal(source.includes('autoComplete="off"'), true);
+  assert.equal(source.includes("connectJiraConnection"), true);
+  assert.equal(source.includes("secret-token"), false);
 });

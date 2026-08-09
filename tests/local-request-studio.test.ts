@@ -20,6 +20,8 @@ test("Studio separates real request state from guided orchestration examples", a
     "Attach files",
     "GitHub repositories",
     "Connect GitHub in Settings first.",
+    "Jira project",
+    "Connect Jira in Settings first.",
     "saved to this project.",
     "No worker or provider activity is implied",
     "Approve zero-effect contract",
@@ -82,6 +84,7 @@ test("Studio separates real request state from guided orchestration examples", a
   assert.equal(panel.includes("listIntegrationConnections"), true);
   assert.equal(panel.includes("setLocalProjectResources"), true);
   assert.equal(panel.includes('connection.provider === "github"'), true);
+  assert.equal(panel.includes('connection.provider === "jira"'), true);
   assert.equal(panel.includes("connections[0]"), false);
   const app = await readFile("apps/studio/src/App.tsx", "utf8");
   assert.equal(app.includes('LocalRequestPanel mode="compose"'), true);

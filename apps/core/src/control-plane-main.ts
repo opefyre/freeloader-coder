@@ -39,7 +39,6 @@ const instanceId = randomUUID();
 const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
 const nativePicker = new NativePicker();
-const integrationConnections = new IntegrationConnectionService();
 const localRequests = new LocalRequestStore(
   stateDirectory,
   (projectId) => localProjects.has(projectId),
@@ -67,6 +66,7 @@ const credentialVault = new ProviderCredentialVaultBridge(
   ),
   Date.now
 );
+const integrationConnections = new IntegrationConnectionService(undefined, credentialVault);
 const adapterCache = new Map<string, ReturnType<typeof createOpenAiCompatibleAdapter>>();
 const proposalGenerator = new LocalProposalGenerator(
   stateDirectory,
@@ -298,6 +298,8 @@ const controlPlane = createControlPlaneServer({
   integrationConnections: {
     list: () => integrationConnections.list(),
     probeGitHub: () => integrationConnections.probeGitHub(),
+    connectJira: (input) => integrationConnections.connectJira(input),
+    disconnectJira: () => integrationConnections.disconnectJira(),
   },
   requests: {
     list: () => localRequests.list(),
