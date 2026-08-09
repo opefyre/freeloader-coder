@@ -13,10 +13,11 @@ test("Studio separates real request state from guided orchestration examples", a
   );
   const studioUi = `${panel}\n${proposal}`;
   for (const phrase of [
-    "Tell me what you have in mind",
+    "What do you want to build?",
     "Work in progress",
-    "Start a new project",
-    "Nothing changes until you approve it",
+    "New project",
+    "Choose folder",
+    "Attach files",
     "No worker or provider activity is implied",
     "Approve zero-effect contract",
     "Authorize isolated preparation",

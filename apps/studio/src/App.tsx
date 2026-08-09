@@ -1247,13 +1247,7 @@ function BuildWorkspace({ navigate }: { navigate: (view: StudioView) => void }) 
         openActivity={openActivity}
         startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()}
       />
-      <div>
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold">Start or continue work</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Choose a project, provide the outcome, and add its working context.</p>
-        </div>
-        <LocalRequestPanel mode="compose" navigate={navigate} />
-      </div>
+      <LocalRequestPanel mode="compose" navigate={navigate} />
     </div>
   );
 }

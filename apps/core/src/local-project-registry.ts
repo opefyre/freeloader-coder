@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   chmod,
+  copyFile,
   mkdir,
   open,
   readFile,
@@ -13,6 +14,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
+import { constants as fileConstants } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
@@ -21,11 +23,14 @@ import {
   localProjectCreationSchema,
   projectResourceBindingSchema,
   projectResourceSelectionSchema,
+  localProjectFileImportSchema,
+  localProjectFileImportResponseSchema,
   localProjectSnapshotSchema,
   validateLocalProjectCollection,
   type LocalProjectCollection,
   type LocalProjectSnapshot,
   type ProjectResourceBinding,
+  type LocalProjectFileImportResponse,
 } from "../../../packages/runtime/src/local-projects.js";
 import {
   localPlanningSnapshotSchema,
@@ -308,6 +313,41 @@ export class LocalProjectRegistry {
       ),
     });
     return snapshot;
+  }
+
+  async addFiles(projectId: string, input: unknown): Promise<LocalProjectFileImportResponse> {
+    assertProjectId(projectId);
+    const request = localProjectFileImportSchema.parse(input);
+    const projectRoot = await this.canonicalRoot(projectId);
+    const destination = resolve(projectRoot, ".pipeline", "inputs");
+    await mkdir(destination, { recursive: true, mode: 0o700 });
+    await chmod(resolve(projectRoot, ".pipeline"), 0o700);
+    await chmod(destination, 0o700);
+    const imported: Array<{ label: string; projectRelativePath: string; bytes: number }> = [];
+    let totalBytes = 0;
+    for (const requestedPath of request.paths) {
+      if (!isAbsolute(requestedPath) || requestedPath.includes("\0")) {
+        throw new LocalProjectError("invalid_path", "Choose regular local files.");
+      }
+      const source = await realpath(requestedPath);
+      const info = await lstat(source);
+      if (!info.isFile() || info.isSymbolicLink()) {
+        throw new LocalProjectError("invalid_path", "Folders and symbolic links cannot be attached.");
+      }
+      totalBytes += info.size;
+      if (info.size > 5_000_000 || totalBytes > 20_000_000) {
+        throw new LocalProjectError("scan_limit", "Selected files exceed the 5 MB per-file or 20 MB total limit.");
+      }
+      const label = basename(source).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 180) || "attachment";
+      const extension = extname(label);
+      const stem = label.slice(0, label.length - extension.length);
+      const storedName = `${stem}-${hash(source).slice(0, 8)}${extension}`;
+      await copyFile(source, resolve(destination, storedName), fileConstants.COPYFILE_EXCL).catch(async (error) => {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      });
+      imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size });
+    }
+    return localProjectFileImportResponseSchema.parse({ schemaVersion: 1, outcome: "imported", files: imported });
   }
 
   async rescan(projectId: string): Promise<LocalProjectSnapshot> {

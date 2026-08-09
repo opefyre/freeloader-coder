@@ -96,6 +96,23 @@ test("registry creates a private Git workspace from a plain-language product ide
   }
 });
 
+test("registry safely copies picker-selected attachments into the private project", async () => {
+  const fixture = await createRepositoryFixture();
+  try {
+    const source = join(fixture.root, "product-brief.md");
+    await writeFile(source, "# Product brief\n", "utf8");
+    const registry = new LocalProjectRegistry(fixture.state);
+    const project = await registry.register({ schemaVersion: 1, path: fixture.repository });
+    const result = await registry.addFiles(project.id, { schemaVersion: 1, paths: [source] });
+    assert.equal(result.files.length, 1);
+    assert.equal(result.files[0]?.label, "product-brief.md");
+    assert.equal(await readFile(join(fixture.repository, result.files[0]!.projectRelativePath), "utf8"), "# Product brief\n");
+    assert.equal(JSON.stringify(result).includes(fixture.root), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("registry rejects broad, missing, non-git, duplicate-name, and malformed state", async () => {
   const fixture = await createRepositoryFixture();
   try {

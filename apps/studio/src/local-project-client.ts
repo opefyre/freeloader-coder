@@ -1,9 +1,11 @@
 import {
   localProjectCollectionSchema,
   localProjectMutationResponseSchema,
+  localProjectFileImportResponseSchema,
   type LocalProjectCollection,
   type LocalProjectMutationResponse,
   type ProjectResourceSelection,
+  type LocalProjectFileImportResponse,
 } from "../../../packages/runtime/src/local-projects.js";
 
 const MAX_RESPONSE_BYTES = 131_072;
@@ -86,6 +88,26 @@ export async function setLocalProjectResources(input: {
       path: `/api/v1/projects/${input.projectId}/resources`,
       method: "PUT",
       body: input.selection,
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
+export async function addLocalProjectFiles(input: {
+  endpoint: string;
+  projectId: string;
+  paths: readonly string[];
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalProjectFileImportResponse> {
+  assertProjectId(input.projectId);
+  return localProjectFileImportResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/projects/${input.projectId}/files`,
+      method: "POST",
+      body: { schemaVersion: 1, paths: input.paths },
       idempotencyKey: input.idempotencyKey,
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
     })

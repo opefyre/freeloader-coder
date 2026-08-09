@@ -57,14 +57,10 @@ export function ProjectPortfolio(props: {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 id="projects-title" className="text-lg font-semibold">Your projects</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            One workspace, its selected tools, and its latest verified update.
-          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={() => void refresh()} aria-label="Refresh projects">
             <ArrowClockwise />
-            Refresh
           </Button>
           <Button size="sm" onClick={props.startProject}>New project</Button>
         </div>
@@ -83,7 +79,6 @@ export function ProjectPortfolio(props: {
           <span>
             <FolderOpen className="mx-auto text-primary" size={28} weight="duotone" />
             <strong className="mt-3 block">Start your first project</strong>
-            <span className="mt-1 block text-sm text-muted-foreground">Choose a local folder, describe the outcome, then connect its resources.</span>
           </span>
         </button>
       ) : (

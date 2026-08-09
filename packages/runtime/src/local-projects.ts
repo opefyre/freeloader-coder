@@ -118,6 +118,21 @@ export const projectResourceSelectionSchema = z.strictObject({
   resources: z.array(projectResourceBindingSchema.omit({ id: true, selectedAt: true })).max(100),
 });
 
+export const localProjectFileImportSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  paths: z.array(z.string().trim().min(1).max(4_096)).min(1).max(20),
+});
+
+export const localProjectFileImportResponseSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  outcome: z.literal("imported"),
+  files: z.array(z.strictObject({
+    label: z.string().trim().min(1).max(255),
+    projectRelativePath: z.string().regex(/^\.pipeline\/inputs\/[a-zA-Z0-9._-]+$/),
+    bytes: z.number().int().nonnegative().max(10_000_000),
+  })).min(1).max(20),
+});
+
 export const localProjectMutationResponseSchema = z.strictObject({
   schemaVersion: z.literal(1),
   outcome: z.enum(["created", "registered", "rescanned", "forgotten"]),
@@ -130,6 +145,7 @@ export type LocalProjectRegistration = z.infer<typeof localProjectRegistrationSc
 export type LocalProjectCreation = z.infer<typeof localProjectCreationSchema>;
 export type ProjectResourceBinding = z.infer<typeof projectResourceBindingSchema>;
 export type ProjectResourceSelection = z.infer<typeof projectResourceSelectionSchema>;
+export type LocalProjectFileImportResponse = z.infer<typeof localProjectFileImportResponseSchema>;
 export type LocalProjectMutationResponse = z.infer<
   typeof localProjectMutationResponseSchema
 >;

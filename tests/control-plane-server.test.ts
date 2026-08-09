@@ -171,6 +171,10 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
         calls.push(`resources:${projectId}:${JSON.stringify(input)}`);
         return project;
       },
+      addFiles: (projectId, input) => {
+        calls.push(`files:${projectId}:${JSON.stringify(input)}`);
+        return { schemaVersion: 1, outcome: "imported", files: [{ label: "brief.pdf", projectRelativePath: ".pipeline/inputs/brief-01234567.pdf", bytes: 42 }] };
+      },
       forget: (projectId) => {
         calls.push(`forget:${projectId}`);
       },
@@ -233,6 +237,12 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       }),
     });
     assert.equal(resources.status, 200);
+    const files = await fetch(`${base}/api/v1/projects/${project.id}/files`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "files:0123456789" },
+      body: JSON.stringify({ schemaVersion: 1, paths: ["/Users/example/brief.pdf"] }),
+    });
+    assert.equal(files.status, 200);
     assert.equal((await create.json() as { outcome: string }).outcome, "created");
 
     const rescan = await fetch(
@@ -246,7 +256,7 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       { method: "DELETE", headers: { Origin: origin } }
     );
     assert.equal(forget.status, 200);
-    assert.equal(calls.length, 5);
+    assert.equal(calls.length, 6);
 
     assert.equal(
       (
@@ -256,6 +266,26 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       ).status,
       403
     );
+  } finally {
+    await controlPlane.close();
+  }
+});
+
+test("native picker endpoints expose only validated local selections", async () => {
+  const controlPlane = createControlPlaneServer({
+    host: "127.0.0.1", port: 0,
+    allowedOrigins: ["http://127.0.0.1:4310"],
+    health: () => health, snapshot: () => snapshot,
+    nativePicker: {
+      folder: () => ({ schemaVersion: 1, outcome: "selected", selections: [{ path: "/Users/example/project", label: "project" }] }),
+      files: () => ({ schemaVersion: 1, outcome: "cancelled", selections: [] }),
+    },
+  });
+  const port = await controlPlane.listen();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/system/pick-folder`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json() as { selections: unknown[] }).selections.length, 1);
   } finally {
     await controlPlane.close();
   }

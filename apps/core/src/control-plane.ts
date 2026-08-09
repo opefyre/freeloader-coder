@@ -12,6 +12,8 @@ import {
   localProjectCreationSchema,
   localProjectRegistrationSchema,
   projectResourceSelectionSchema,
+  localProjectFileImportSchema,
+  localProjectFileImportResponseSchema,
   validateLocalProjectCollection,
   type LocalProjectCollection,
   type LocalProjectSnapshot,
@@ -105,6 +107,10 @@ import {
   type AttentionSnapshot,
 } from "../../../packages/runtime/src/attention.js";
 import { AttentionError } from "./attention-center.js";
+import {
+  nativePickerResponseSchema,
+  type NativePickerResponse,
+} from "../../../packages/runtime/src/native-picker.js";
 
 const MAX_CONCURRENT_REQUESTS = 16;
 const MAX_REQUEST_BYTES = 900_000;
@@ -148,7 +154,12 @@ export type ControlPlaneServerOptions = {
     register: (input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     rescan: (projectId: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     setResources?: (projectId: string, input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
+    addFiles?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     forget: (projectId: string) => void | Promise<void>;
+  };
+  nativePicker?: {
+    folder: () => NativePickerResponse | Promise<NativePickerResponse>;
+    files: () => NativePickerResponse | Promise<NativePickerResponse>;
   };
   requests?: {
     list: () => LocalRequestCollection | Promise<LocalRequestCollection>;
@@ -970,6 +981,21 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         sendJson(response, 200, controlPlaneHealthSchema.parse(await options.health()));
         return;
       }
+      if (
+        request.method === "POST" &&
+        (url.pathname === "/api/v1/system/pick-folder" || url.pathname === "/api/v1/system/pick-files") &&
+        options.nativePicker
+      ) {
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        const selection = url.pathname.endsWith("pick-folder")
+          ? await options.nativePicker.folder()
+          : await options.nativePicker.files();
+        sendJson(response, 200, nativePickerResponseSchema.parse(selection));
+        return;
+      }
       if (request.method === "GET" && url.pathname === "/api/v1/snapshot") {
         if (requestBodyDeclared(request)) {
           sendJson(response, 413, { error: "Request body is not accepted." });
@@ -1033,8 +1059,20 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const projectRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files)$/
       );
+      if (
+        request.method === "POST" &&
+        projectRoute?.[2] === "files" &&
+        options.projects?.addFiles
+      ) {
+        requireIdempotencyKey(request);
+        const body = localProjectFileImportSchema.parse(await readJsonBody(request));
+        sendJson(response, 200, localProjectFileImportResponseSchema.parse(
+          await options.projects.addFiles(projectRoute[1] ?? "", body)
+        ));
+        return;
+      }
       if (
         request.method === "PUT" &&
         projectRoute?.[2] === "resources" &&

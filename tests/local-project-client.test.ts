@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addLocalProjectFiles,
   createLocalProject,
   forgetLocalProject,
   listLocalProjects,
@@ -86,6 +87,22 @@ test("browser client creates a private project from a product idea", async () =>
   assert.match(observedBody, /"workspacePath":"\/Users\/example\/projects\/calm-planner"/);
   assert.match(observedBody, /calm team planning app/);
   assert.doesNotMatch(observedBody, /path/);
+});
+
+test("browser client imports picker-selected files into a project", async () => {
+  let observedBody = "";
+  const result = await addLocalProjectFiles({
+    endpoint: "http://127.0.0.1:4312",
+    projectId: "project_0123456789abcdef",
+    paths: ["/Users/example/brief.pdf"],
+    idempotencyKey: "files:0123456789",
+    fetcher: async (_url, init) => {
+      observedBody = String(init?.body ?? "");
+      return Response.json({ schemaVersion: 1, outcome: "imported", files: [{ label: "brief.pdf", projectRelativePath: ".pipeline/inputs/brief-01234567.pdf", bytes: 42 }] });
+    },
+  });
+  assert.equal(result.files[0]?.label, "brief.pdf");
+  assert.match(observedBody, /brief\.pdf/);
 });
 
 test("browser client rejects remote endpoints, malformed data, and oversized data", async () => {

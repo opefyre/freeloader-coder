@@ -5,14 +5,17 @@ import { ArrowUp } from "@phosphor-icons/react/ArrowUp";
 import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
 import { Fingerprint } from "@phosphor-icons/react/Fingerprint";
 import { FloppyDisk } from "@phosphor-icons/react/FloppyDisk";
+import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { GitBranch } from "@phosphor-icons/react/GitBranch";
 import { HourglassMedium } from "@phosphor-icons/react/HourglassMedium";
 import { LockKey } from "@phosphor-icons/react/LockKey";
+import { PaperclipHorizontal } from "@phosphor-icons/react/PaperclipHorizontal";
 import { Play } from "@phosphor-icons/react/Play";
 import { ShieldCheck } from "@phosphor-icons/react/ShieldCheck";
 import { Stop } from "@phosphor-icons/react/Stop";
 import { Trash } from "@phosphor-icons/react/Trash";
 import { Warning } from "@phosphor-icons/react/Warning";
+import { X } from "@phosphor-icons/react/X";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
@@ -20,7 +23,12 @@ import type {
   LocalDraftPlan,
   LocalRequest,
 } from "../../../../../packages/runtime/src/local-requests.js";
-import { createLocalProject, listLocalProjects } from "../../local-project-client.js";
+import {
+  addLocalProjectFiles,
+  createLocalProject,
+  listLocalProjects,
+} from "../../local-project-client.js";
+import { openNativePicker } from "../../native-picker-client.js";
 import {
   archiveLocalRequest,
   approveLocalPlan,
@@ -73,8 +81,10 @@ export function LocalRequestPanel(props: {
   const [projects, setProjects] = useState<readonly LocalProjectSnapshot[]>([]);
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);
   const [projectId, setProjectId] = useState("");
-  const [projectName, setProjectName] = useState("");
   const [workspacePath, setWorkspacePath] = useState("");
+  const [workspaceLabel, setWorkspaceLabel] = useState("");
+  const [attachments, setAttachments] = useState<readonly { path: string; label: string }[]>([]);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [outcome, setOutcome] = useState("");
   const [lastSubmission, setLastSubmission] = useState<{
     idea: string;
@@ -151,12 +161,19 @@ export function LocalRequestPanel(props: {
           endpoint,
           idea: submittedIdea,
           workspacePath: workspacePath.trim(),
-          ...(projectName.trim() ? { displayName: projectName.trim() } : {}),
           idempotencyKey: `project:${crypto.randomUUID()}`,
         });
         if (!created.project) throw new Error("The new project workspace was not returned.");
         targetProjectId = created.project.id;
         targetProjectName = created.project.displayName;
+      }
+      if (attachments.length > 0) {
+        await addLocalProjectFiles({
+          endpoint,
+          projectId: targetProjectId,
+          paths: attachments.map((attachment) => attachment.path),
+          idempotencyKey: `files:${crypto.randomUUID()}`,
+        });
       }
       await createLocalRequest({
         endpoint,
@@ -165,8 +182,9 @@ export function LocalRequestPanel(props: {
         idempotencyKey: `request:${crypto.randomUUID()}`,
       });
       setOutcome("");
-      setProjectName("");
       setWorkspacePath("");
+      setWorkspaceLabel("");
+      setAttachments([]);
       setLastSubmission({
         idea: submittedIdea,
         project: targetProjectName,
@@ -181,6 +199,41 @@ export function LocalRequestPanel(props: {
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Request failed safely.");
+    }
+  }
+
+  async function chooseFolder() {
+    setStatus("working");
+    try {
+      const result = await openNativePicker({ endpoint, kind: "folder" });
+      const selection = result.selections[0];
+      if (selection) {
+        setWorkspacePath(selection.path);
+        setWorkspaceLabel(selection.label);
+        setNotice(`${selection.label} selected.`);
+      }
+      setStatus("ready");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "Folder picker failed safely.");
+    }
+  }
+
+  async function chooseFiles() {
+    setStatus("working");
+    try {
+      const result = await openNativePicker({ endpoint, kind: "files" });
+      if (result.selections.length > 0) {
+        setAttachments((current) => {
+          const unique = new Map([...current, ...result.selections].map((item) => [item.path, item]));
+          return [...unique.values()].slice(0, 20);
+        });
+        setNotice(`${result.selections.length} file${result.selections.length === 1 ? "" : "s"} attached.`);
+      }
+      setStatus("ready");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(error instanceof Error ? error.message : "File picker failed safely.");
     }
   }
 
@@ -595,8 +648,9 @@ export function LocalRequestPanel(props: {
   const projectNames = new Map(projects.map((project) => [project.id, project.displayName]));
   return (
     <section className="space-y-4" aria-labelledby={`local-request-${props.mode}-title`}>
+      {props.mode === "compose" && <h2 id="local-request-compose-title" className="sr-only">What do you want to build?</h2>}
       <Card className={props.mode === "compose" ? "bg-primary/[.025]" : "bg-primary/[.035]"}>
-        <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
+        {props.mode === "queue" && <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             {props.mode === "queue" && <div className="flex flex-wrap gap-2">
               <Badge tone={status === "offline" ? "caution" : "positive"}>
@@ -604,62 +658,17 @@ export function LocalRequestPanel(props: {
               </Badge>
               <Badge>No AI · no source changes</Badge>
             </div>}
-            <CardTitle id={`local-request-${props.mode}-title`} className={props.mode === "compose" ? "text-xl" : "mt-4 text-xl"}>
-              {props.mode === "compose" ? "Tell me what you have in mind" : "Work in progress"}
-            </CardTitle>
-            <CardDescription>
-              {props.mode === "compose"
-                ? "A rough idea is enough. I will save the starting point, organize the work, and keep important decisions visible before anything changes."
-                : "Current and queued work, with expandable plans and technical evidence."}
-            </CardDescription>
+            <CardTitle id={`local-request-${props.mode}-title`} className="mt-4 text-xl">Work in progress</CardTitle>
+            {props.mode === "queue" && <CardDescription>Current and queued work.</CardDescription>}
           </div>
           {props.mode === "queue" && <Button variant="secondary" onClick={() => void refresh()} disabled={status === "working"}>
             <ArrowClockwise />
             Refresh
           </Button>}
-        </CardHeader>
-        <CardContent className="mt-6">
+        </CardHeader>}
+        <CardContent className={props.mode === "compose" ? "p-4" : "mt-6"}>
           {props.mode === "compose" && (
-            <div className="space-y-4">
-              <label className="block text-xs font-semibold text-muted-foreground">
-                Working in
-                <select
-                  value={projectId}
-                  onChange={(event) => setProjectId(event.target.value)}
-                  className="ml-2 h-9 rounded-xl bg-muted px-3 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-                >
-                  <option value="__new__">Start a new project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {projectId === "__new__" && (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block text-xs font-semibold text-muted-foreground">
-                    Project name <span className="font-normal">(optional)</span>
-                    <input
-                      value={projectName}
-                      onChange={(event) => setProjectName(event.target.value)}
-                      maxLength={160}
-                      placeholder="I can name it from your idea"
-                      className="mt-2 h-11 w-full rounded-2xl bg-muted px-4 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-                    />
-                  </label>
-                  <label className="block text-xs font-semibold text-muted-foreground">
-                    Local folder <span className="text-primary">required</span>
-                    <input
-                      value={workspacePath}
-                      onChange={(event) => setWorkspacePath(event.target.value)}
-                      maxLength={2_048}
-                      placeholder="/Users/you/Projects/my-app"
-                      className="mt-2 h-11 w-full rounded-2xl bg-muted px-4 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-                    />
-                  </label>
-                </div>
-              )}
+            <div className="space-y-3">
               <label className="sr-only" htmlFor="build-request">
                 What would you like to build?
               </label>
@@ -669,13 +678,31 @@ export function LocalRequestPanel(props: {
                   onChange={(event) => setOutcome(event.target.value)}
                   rows={3}
                   maxLength={20_000}
-                  placeholder="Describe your idea, problem, feature, or change in your own words…"
-                  className="min-h-36 w-full resize-y rounded-3xl bg-muted px-5 py-4 text-base leading-7 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                  placeholder="Describe your idea…"
+                  className="min-h-40 w-full resize-y rounded-3xl bg-muted px-5 py-4 text-base leading-7 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
                 />
+              {attachments.length > 0 && <div className="flex flex-wrap gap-2">
+                {attachments.map((attachment) => <span key={attachment.path} className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs">
+                  {attachment.label}
+                  <button type="button" aria-label={`Remove ${attachment.label}`} onClick={() => setAttachments((current) => current.filter((item) => item.path !== attachment.path))} className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"><X /></button>
+                </span>)}
+              </div>}
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-xs text-muted-foreground">
-                  Start anywhere. Nothing changes until you approve it.
-                </span>
+                <div className="relative flex flex-wrap items-center gap-2">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => setProjectPickerOpen((open) => !open)} aria-expanded={projectPickerOpen}>
+                    {projectId === "__new__" ? "New project" : projects.find((project) => project.id === projectId)?.displayName ?? "Project"}
+                  </Button>
+                  {projectPickerOpen && <div className="absolute bottom-11 left-0 z-30 min-w-64 rounded-2xl bg-popover p-2 shadow-2xl ring-1 ring-foreground/10">
+                    <button type="button" onClick={() => { setProjectId("__new__"); setProjectPickerOpen(false); }} className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-muted">New project</button>
+                    {projects.map((project) => <button key={project.id} type="button" onClick={() => { setProjectId(project.id); setProjectPickerOpen(false); }} className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-muted">{project.displayName}</button>)}
+                  </div>}
+                  {projectId === "__new__" && <Button type="button" size="sm" variant={workspacePath ? "secondary" : "ghost"} onClick={() => void chooseFolder()} disabled={status === "working"}>
+                    <FolderOpen />{workspaceLabel || "Choose folder"}
+                  </Button>}
+                  <Button type="button" size="sm" variant="ghost" aria-label="Attach files" onClick={() => void chooseFiles()} disabled={status === "working"}>
+                    <PaperclipHorizontal />
+                  </Button>
+                </div>
                 <Button
                   onClick={() => void submit()}
                   disabled={status !== "ready" || !projectId || outcome.trim().length < 3 || (projectId === "__new__" && !workspacePath.trim())}
