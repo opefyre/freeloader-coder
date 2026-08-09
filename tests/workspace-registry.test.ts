@@ -48,11 +48,11 @@ test("duplicate paths and incomplete copy fail registry validation", () => {
 });
 
 test("registry copy distinguishes live-backed surfaces from demo-sensitive surfaces", () => {
-  assert.match(workspaceDefinitions.overview.description, /Live projects/);
+  assert.match(workspaceDefinitions.overview.description, /idea.*existing project/i);
   assert.doesNotMatch(workspaceDefinitions.overview.description, /synthetic/);
   assert.match(workspaceDefinitions.work.eyebrow, /Live local coordination/);
   assert.doesNotMatch(workspaceDefinitions.work.eyebrow, /Demo:/);
-  assert.match(workspaceDefinitions.activity.eyebrow, /Live local history/);
+  assert.match(workspaceDefinitions.activity.eyebrow, /Live progress/);
   assert.doesNotMatch(workspaceDefinitions.activity.eyebrow, /Demo:/);
   assert.match(workspaceDefinitions.decisions.eyebrow, /Live local queue/);
   assert.doesNotMatch(workspaceDefinitions.decisions.eyebrow, /Demo:/);

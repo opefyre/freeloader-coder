@@ -6,8 +6,8 @@ const source = readFileSync("apps/studio/src/components/control-center/control-c
 const app = readFileSync("apps/studio/src/App.tsx", "utf8");
 const client = readFileSync("apps/studio/src/live-operations-client.ts", "utf8");
 
-test("Overview mounts the endpoint-backed live Control Center", () => {
-  assert.match(app, /<ControlCenter endpoint=\{controlPlane\.endpoint\} navigate=\{navigate\} \/>/);
+test("Activity mounts the endpoint-backed live Control Center", () => {
+  assert.match(app, /<ControlCenter endpoint=\{endpoint\} navigate=\{navigate\} \/>/);
   for (const heading of ["Live operations", "Work distribution", "Recent operational evidence", "Free-provider readiness"]) {
     assert.match(source, new RegExp(heading));
   }

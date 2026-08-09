@@ -9,9 +9,9 @@ const app = readFileSync("apps/studio/src/App.tsx", "utf8");
 test("Decisions route mounts a lazy live inbox while global attention remains separate", () => {
   assert.match(app, /DecisionInbox = lazy/);
   assert.match(app, /view === "decisions"/);
-  assert.match(app, /<DecisionInbox endpoint=\{controlPlaneEndpoint\} \/>/);
+  assert.match(app, /<DecisionInbox endpoint=\{endpoint\} \/>/);
   assert.match(app, /AttentionBell = lazy/);
-  assert.match(app, /openCenter=\{\(\) => navigate\("attention"\)\}/);
+  assert.match(app, /openCenter=\{\(\) => navigate\("activity"\)\}/);
   assert.match(app, /activeView !== "decisions"/);
 });
 

@@ -58,6 +58,30 @@ test("registry persists an idempotent bounded repository observation across rest
   }
 });
 
+test("registry creates a private Git workspace from a plain-language product idea", async () => {
+  const fixture = await createRepositoryFixture();
+  try {
+    const registry = new LocalProjectRegistry(fixture.state);
+    const input = {
+      schemaVersion: 1 as const,
+      displayName: "Garden planner",
+      idea: "Help apartment residents plan and track a small balcony garden.",
+    };
+    const project = await registry.create(input, "create:garden-planner");
+    const replay = await registry.create(input, "create:garden-planner");
+    assert.equal(replay.id, project.id);
+    assert.equal(project.displayName, "Garden planner");
+    assert.equal(project.state, "warning");
+    assert.equal((await registry.list()).projects.some((item) => item.id === project.id), true);
+    const grounding = await registry.grounding(project.id);
+    assert.equal(grounding.grounding.sources[0]?.path, "README.md");
+    assert.match(grounding.grounding.sources[0]?.excerpt ?? "", /balcony garden/);
+    assert.doesNotMatch(JSON.stringify(project), /\.pipeline-studio|\/projects\//);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("registry rejects broad, missing, non-git, duplicate-name, and malformed state", async () => {
   const fixture = await createRepositoryFixture();
   try {

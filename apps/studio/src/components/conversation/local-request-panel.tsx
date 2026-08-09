@@ -20,7 +20,7 @@ import type {
   LocalDraftPlan,
   LocalRequest,
 } from "../../../../../packages/runtime/src/local-requests.js";
-import { listLocalProjects } from "../../local-project-client.js";
+import { createLocalProject, listLocalProjects } from "../../local-project-client.js";
 import {
   archiveLocalRequest,
   approveLocalPlan,
@@ -68,12 +68,18 @@ const endpoint =
 
 export function LocalRequestPanel(props: {
   mode: "compose" | "queue";
-  navigate?: (view: "work" | "projects") => void;
+  navigate?: (view: "work" | "projects" | "activity" | "settings") => void;
 }) {
   const [projects, setProjects] = useState<readonly LocalProjectSnapshot[]>([]);
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);
   const [projectId, setProjectId] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [outcome, setOutcome] = useState("");
+  const [lastSubmission, setLastSubmission] = useState<{
+    idea: string;
+    project: string;
+    created: boolean;
+  }>();
   const [status, setStatus] = useState<"loading" | "ready" | "working" | "offline">(
     "loading"
   );
@@ -99,9 +105,11 @@ export function LocalRequestPanel(props: {
       setProjects(projectCollection.projects);
       setRequests(requestCollection.requests);
       setProjectId((current) =>
-        projectCollection.projects.some((project) => project.id === current)
+        current === "__new__"
           ? current
-          : projectCollection.projects[0]?.id ?? ""
+          : projectCollection.projects.some((project) => project.id === current)
+            ? current
+            : "__new__"
       );
       setStatus("ready");
       setNotice("Live local state observed. No worker or provider activity is implied.");
@@ -124,20 +132,45 @@ export function LocalRequestPanel(props: {
 
   async function submit() {
     if (!projectId || outcome.trim().length < 3) {
-      setNotice("Choose a registered project and describe an outcome.");
+      setNotice("Describe what you want to build or change.");
       return;
     }
     setStatus("working");
     try {
+      const submittedIdea = outcome.trim();
+      let targetProjectId = projectId;
+      let targetProjectName =
+        projects.find((project) => project.id === projectId)?.displayName ?? "New project";
+      if (projectId === "__new__") {
+        const created = await createLocalProject({
+          endpoint,
+          idea: submittedIdea,
+          ...(projectName.trim() ? { displayName: projectName.trim() } : {}),
+          idempotencyKey: `project:${crypto.randomUUID()}`,
+        });
+        if (!created.project) throw new Error("The new project workspace was not returned.");
+        targetProjectId = created.project.id;
+        targetProjectName = created.project.displayName;
+      }
       await createLocalRequest({
         endpoint,
-        projectId,
-        outcome: outcome.trim(),
+        projectId: targetProjectId,
+        outcome: submittedIdea,
         idempotencyKey: `request:${crypto.randomUUID()}`,
       });
       setOutcome("");
+      setProjectName("");
+      setLastSubmission({
+        idea: submittedIdea,
+        project: targetProjectName,
+        created: projectId === "__new__",
+      });
       await refresh();
-      setNotice("Request saved locally and queued. No worker or model has started.");
+      setNotice(
+        projectId === "__new__"
+          ? "Private project workspace created and discovery request saved. No model has started."
+          : "Request saved locally and queued. No worker or model has started."
+      );
     } catch (error) {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "Request failed safely.");
@@ -555,39 +588,40 @@ export function LocalRequestPanel(props: {
   const projectNames = new Map(projects.map((project) => [project.id, project.displayName]));
   return (
     <section className="space-y-4" aria-labelledby={`local-request-${props.mode}-title`}>
-      <Card className="bg-primary/[.035]">
+      <Card className={props.mode === "compose" ? "bg-primary/[.025]" : "bg-primary/[.035]"}>
         <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="flex flex-wrap gap-2">
+            {props.mode === "queue" && <div className="flex flex-wrap gap-2">
               <Badge tone={status === "offline" ? "caution" : "positive"}>
                 {status === "offline" ? "Runtime offline" : "Live local state"}
               </Badge>
               <Badge>No AI · no source changes</Badge>
-            </div>
-            <CardTitle id={`local-request-${props.mode}-title`} className="mt-4 text-xl">
-              {props.mode === "compose" ? "Create real local work" : "Real local work queue"}
+            </div>}
+            <CardTitle id={`local-request-${props.mode}-title`} className={props.mode === "compose" ? "text-xl" : "mt-4 text-xl"}>
+              {props.mode === "compose" ? "Tell me what you have in mind" : "Work in progress"}
             </CardTitle>
             <CardDescription>
               {props.mode === "compose"
-                ? "Turn an outcome into a durable, project-linked queue entry after local safety checks."
-                : "Observed request state only. Time passing never becomes invented progress."}
+                ? "A rough idea is enough. I will save the starting point, organize the work, and keep important decisions visible before anything changes."
+                : "Current and queued work, with expandable plans and technical evidence."}
             </CardDescription>
           </div>
-          <Button variant="secondary" onClick={() => void refresh()} disabled={status === "working"}>
+          {props.mode === "queue" && <Button variant="secondary" onClick={() => void refresh()} disabled={status === "working"}>
             <ArrowClockwise />
             Refresh
-          </Button>
+          </Button>}
         </CardHeader>
         <CardContent className="mt-6">
-          {props.mode === "compose" && projects.length > 0 && (
-            <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
-              <label className="text-xs font-semibold">
-                Target project
+          {props.mode === "compose" && (
+            <div className="space-y-4">
+              <label className="block text-xs font-semibold text-muted-foreground">
+                Working in
                 <select
                   value={projectId}
                   onChange={(event) => setProjectId(event.target.value)}
-                  className="mt-2 h-11 w-full rounded-2xl bg-muted px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                  className="ml-2 h-9 rounded-xl bg-muted px-3 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
                 >
+                  <option value="__new__">Start a new project</option>
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.displayName}
@@ -595,54 +629,76 @@ export function LocalRequestPanel(props: {
                   ))}
                 </select>
               </label>
-              <label className="text-xs font-semibold">
-                Outcome
+              {projectId === "__new__" && (
+                <label className="block text-xs font-semibold text-muted-foreground">
+                  Project name <span className="font-normal">(optional)</span>
+                  <input
+                    value={projectName}
+                    onChange={(event) => setProjectName(event.target.value)}
+                    maxLength={160}
+                    placeholder="I can name it from your idea"
+                    className="mt-2 h-11 w-full rounded-2xl bg-muted px-4 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                  />
+                </label>
+              )}
+              <label className="sr-only" htmlFor="build-request">
+                What would you like to build?
+              </label>
                 <textarea
+                  id="build-request"
                   value={outcome}
                   onChange={(event) => setOutcome(event.target.value)}
                   rows={3}
                   maxLength={20_000}
-                  placeholder="Describe the result you want…"
-                  className="mt-2 w-full resize-none rounded-3xl bg-muted px-4 py-3 text-sm leading-6 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                  placeholder="Describe your idea, problem, feature, or change in your own words…"
+                  className="min-h-36 w-full resize-y rounded-3xl bg-muted px-5 py-4 text-base leading-7 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
                 />
-              </label>
-              <div className="lg:col-start-2 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs text-muted-foreground">
-                  Deterministic preview · smallest reversible change · repository checks
+                  Start anywhere. Nothing changes until you approve it.
                 </span>
                 <Button
                   onClick={() => void submit()}
                   disabled={status !== "ready" || !projectId || outcome.trim().length < 3}
                 >
-                  Queue local request
+                  Start
                   <ArrowRight />
                 </Button>
               </div>
             </div>
           )}
-          {props.mode === "compose" && projects.length === 0 && status !== "loading" && (
-            <div className="grid min-h-32 place-items-center text-center">
-              <div>
-                <Warning size={28} className="mx-auto text-primary" />
-                <strong className="mt-3 block text-sm">Register a project first</strong>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Requests cannot target an unregistered or browser-supplied path.
-                </p>
-                {props.navigate && (
-                  <Button className="mt-4" variant="secondary" onClick={() => props.navigate?.("projects")}>
-                    Open Projects
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-          <p aria-live="polite" className="mt-4 rounded-2xl bg-muted/55 p-4 text-xs leading-5 text-muted-foreground">
+          <p aria-live="polite" className={props.mode === "compose" ? "sr-only" : "mt-4 rounded-2xl bg-muted/55 p-4 text-xs leading-5 text-muted-foreground"}>
             {notice}
           </p>
         </CardContent>
       </Card>
 
-      {(props.mode === "queue" || requests.length > 0) && (
+      {props.mode === "compose" && lastSubmission && (
+        <div className="mx-auto max-w-3xl space-y-3" aria-live="polite">
+          <div className="ml-auto max-w-[85%] rounded-3xl bg-primary px-5 py-3 text-sm leading-6 text-primary-foreground">
+            {lastSubmission.idea}
+          </div>
+          <div className="max-w-[90%] rounded-3xl bg-muted px-5 py-4 text-sm leading-6">
+            <strong className="block">{lastSubmission.project} is ready.</strong>
+            <p className="mt-1 text-muted-foreground">
+              {lastSubmission.created
+                ? "I created a private local workspace and saved this as its first discovery request."
+                : "I saved this request inside the selected project."}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => props.navigate?.("activity")}>
+                Follow progress
+                <ArrowRight />
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => props.navigate?.("settings")}>
+                AI setup
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {props.mode === "queue" && (
         <div className="grid gap-3 xl:grid-cols-2">
           {requests.map((request) => (
             <Card key={request.id}>

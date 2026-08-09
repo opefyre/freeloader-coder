@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createLocalProject,
   forgetLocalProject,
   listLocalProjects,
   registerLocalProject,
@@ -47,6 +48,37 @@ test("browser client sends bounded loopback registration and validates responses
     (observed[0]?.init?.headers as Record<string, string>)["Idempotency-Key"],
     "register:0123456789"
   );
+});
+
+test("browser client creates a private project from a product idea", async () => {
+  let observedBody = "";
+  const result = await createLocalProject({
+    endpoint: "http://127.0.0.1:4312",
+    idea: "Build a calm team planning app",
+    idempotencyKey: "create:0123456789",
+    fetcher: async (_url, init) => {
+      observedBody = String(init?.body ?? "");
+      return Response.json({
+        schemaVersion: 1,
+        outcome: "created",
+        project: {
+          schemaVersion: 1,
+          id: "project_0123456789abcdef",
+          displayName: "Build a calm team planning app",
+          state: "warning",
+          observedAt: 10_000,
+          validForMs: 60_000,
+          facts: [],
+          inferences: [],
+          decisions: [],
+          warnings: ["Git status not evaluated."],
+        },
+      });
+    },
+  });
+  assert.equal(result.outcome, "created");
+  assert.match(observedBody, /calm team planning app/);
+  assert.doesNotMatch(observedBody, /path/);
 });
 
 test("browser client rejects remote endpoints, malformed data, and oversized data", async () => {

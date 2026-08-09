@@ -154,6 +154,10 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
         calls.push(`register:${JSON.stringify(input)}`);
         return project;
       },
+      create: (input, idempotencyKey) => {
+        calls.push(`create:${idempotencyKey}:${JSON.stringify(input)}`);
+        return project;
+      },
       rescan: (projectId) => {
         calls.push(`rescan:${projectId}`);
         return project;
@@ -194,6 +198,18 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
     });
     assert.equal(register.status, 200);
 
+    const create = await fetch(`${base}/api/v1/projects/new`, {
+      method: "POST",
+      headers: {
+        Origin: origin,
+        "Content-Type": "application/json",
+        "Idempotency-Key": "create:0123456789",
+      },
+      body: JSON.stringify({ schemaVersion: 1, idea: "Build a garden planner" }),
+    });
+    assert.equal(create.status, 200);
+    assert.equal((await create.json() as { outcome: string }).outcome, "created");
+
     const rescan = await fetch(
       `${base}/api/v1/projects/project_0123456789abcdef/rescan`,
       { method: "POST", headers: { Origin: origin } }
@@ -205,7 +221,7 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       { method: "DELETE", headers: { Origin: origin } }
     );
     assert.equal(forget.status, 200);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
 
     assert.equal(
       (
@@ -215,6 +231,37 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       ).status,
       403
     );
+  } finally {
+    await controlPlane.close();
+  }
+});
+
+test("project listing remains available when project creation is not configured", async () => {
+  const controlPlane = createControlPlaneServer({
+    host: "127.0.0.1",
+    port: 0,
+    allowedOrigins: ["http://127.0.0.1:4310"],
+    health: () => health,
+    snapshot: () => snapshot,
+    projects: {
+      list: () => ({
+        schemaVersion: 1,
+        provenance: "local_observation",
+        observedAt,
+        projects: [],
+      }),
+      register: () => { throw new Error("not used"); },
+      rescan: () => { throw new Error("not used"); },
+      forget: () => { throw new Error("not used"); },
+    },
+  });
+  const port = await controlPlane.listen();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/projects`, {
+      headers: { Origin: "http://127.0.0.1:4310" },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json() as { projects: unknown[] }).projects, []);
   } finally {
     await controlPlane.close();
   }

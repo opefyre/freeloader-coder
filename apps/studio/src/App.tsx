@@ -219,8 +219,9 @@ const workspaceIcons: Record<StudioView, typeof Gauge> = {
   settings: Gear,
 };
 
-const navItems = studioViews
-  .filter((id) => workspaceDefinitions[id].group === "primary")
+const primaryStudioViews = ["overview", "activity", "settings"] as const satisfies readonly StudioView[];
+
+const navItems = primaryStudioViews
   .map((id) => ({
     id,
     ...workspaceDefinitions[id],
@@ -228,16 +229,29 @@ const navItems = studioViews
     count: undefined,
   }));
 
-const secondaryNavItems = studioViews
-  .filter((id) => workspaceDefinitions[id].group === "secondary")
-  .map((id) => ({
-    id,
-    ...workspaceDefinitions[id],
-    icon: workspaceIcons[id],
-  }));
-
 function initialView(): StudioView {
   return viewFromLocation(window.location);
+}
+
+function primarySurface(view: StudioView): (typeof primaryStudioViews)[number] {
+  if (["work", "decisions", "attention", "activity", "evidence"].includes(view)) {
+    return "activity";
+  }
+  if (
+    [
+      "providers",
+      "integrations",
+      "help",
+      "launch",
+      "releases",
+      "trust",
+      "accessibility",
+      "settings",
+    ].includes(view)
+  ) {
+    return "settings";
+  }
+  return "overview";
 }
 
 const stages = [
@@ -296,6 +310,7 @@ function App() {
     return total === 0 ? 0 : Math.round((successfulProviderCalls / total) * 100);
   }, []);
   const activeCopy = workspaceDefinition(activeView);
+  const activePrimarySurface = primarySurface(activeView);
   function navigate(view: StudioView, replace = false) {
     setActiveView(view);
     setCommandOpen(false);
@@ -360,41 +375,22 @@ function App() {
           </div>
         </div>
 
-        <Button
-          variant="secondary"
-          onClick={() => navigate("projects")}
-          className="mt-6 h-auto w-full justify-between rounded-2xl px-3 py-2.5"
-        >
-          <span className="flex items-center gap-2.5 text-left">
-            <span className="grid size-8 place-items-center rounded-xl bg-background/70 text-xs font-bold">
-              FC
-            </span>
-            <span>
-              <span className="block text-xs font-semibold">Main project</span>
-              <span className="block text-[11px] font-normal text-muted-foreground">
-                Open local workspace
-              </span>
-            </span>
-          </span>
-          <CaretDown />
-        </Button>
-
-        <nav className="mt-7 space-y-1" aria-label="Workspace">
+        <nav className="mt-10 space-y-1" aria-label="Workspace">
           {navItems.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => navigate(item.id)}
-              aria-current={activeView === item.id ? "page" : undefined}
+              aria-current={activePrimarySurface === item.id ? "page" : undefined}
               className={cn(
                 "flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                activeView === item.id &&
+                activePrimarySurface === item.id &&
                   "bg-sidebar-accent text-sidebar-accent-foreground"
               )}
             >
               <item.icon
                 size={18}
-                weight={activeView === item.id ? "fill" : "regular"}
+                weight={activePrimarySurface === item.id ? "fill" : "regular"}
               />
               <span>{item.label}</span>
               {item.count && (
@@ -404,41 +400,6 @@ function App() {
           ))}
         </nav>
 
-        <div className="mt-auto rounded-3xl bg-primary/[.08] p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold text-primary">
-            <Sparkle weight="fill" />
-            Free-tier protection
-          </div>
-          <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            Paid routes are disabled. The pipeline stops before any charge.
-          </p>
-          <button
-            type="button"
-            className="mt-3 text-xs font-semibold text-foreground hover:text-primary"
-            onClick={() => setCostOpen(true)}
-          >
-            View safeguards
-          </button>
-        </div>
-
-        <div className="mt-3 space-y-1">
-          {secondaryNavItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => navigate(item.id)}
-              aria-current={activeView === item.id ? "page" : undefined}
-              className={cn(
-                "flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-                activeView === item.id &&
-                  "bg-sidebar-accent text-sidebar-accent-foreground"
-              )}
-            >
-              <item.icon size={18} />
-              {item.label}
-            </button>
-          ))}
-        </div>
       </aside>
 
       <main id="workspace" className="min-w-0">
@@ -455,7 +416,7 @@ function App() {
             className="hidden h-10 w-full max-w-sm items-center gap-2 rounded-full bg-muted px-4 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 sm:flex"
           >
             <MagnifyingGlass size={17} />
-            Find tasks, runs, or evidence
+            Find anything
             <kbd className="ml-auto rounded-lg bg-background/70 px-2 py-1 text-[10px]">⌘ K</kbd>
           </button>
           <div className="flex items-center gap-2">
@@ -481,7 +442,7 @@ function App() {
             </Button>
             <ThemeControl mode={theme.mode} setMode={theme.setMode} />
             <Suspense fallback={<Button variant="ghost" size="icon" aria-label="Loading Attention Center"><Bell /></Button>}>
-              <AttentionBell endpoint={controlPlane.endpoint} openCenter={() => navigate("attention")} activate={activateSearchResult} />
+              <AttentionBell endpoint={controlPlane.endpoint} openCenter={() => navigate("activity")} activate={activateSearchResult} />
             </Suspense>
             <button
               type="button"
@@ -507,23 +468,23 @@ function App() {
                 {activeCopy.description}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {activeView !== "overview" && activeView !== "work" && activeView !== "decisions" && activeView !== "activity" && (
+            {!primaryStudioViews.includes(activeView as (typeof primaryStudioViews)[number]) && <div className="flex flex-wrap gap-2">
+              {activeView !== "overview" && activeView !== "work" && activeView !== "decisions" && activeView !== "activity" && activeView !== "settings" && (
                 <Button variant="secondary">
                   <Pause />
                   Pause after step
                 </Button>
               )}
-              <Button onClick={() => navigate("conversation")}>
+              <Button onClick={() => navigate("overview")}>
                 <ChatCircleDots weight="fill" />
-                Ask the pipeline
+                Build
               </Button>
-            </div>
+            </div>}
           </div>
 
           {activeView === "overview" ? (
             <>
-          <ControlCenter endpoint={controlPlane.endpoint} navigate={navigate} />
+          <BuildWorkspace navigate={navigate} />
           <div className="hidden" aria-hidden="true">
           <section className="metric-grid grid gap-3" aria-label="Pipeline summary">
             <Metric
@@ -967,15 +928,15 @@ function App() {
             key={item.id}
             type="button"
             onClick={() => navigate(item.id)}
-            aria-current={activeView === item.id ? "page" : undefined}
+            aria-current={activePrimarySurface === item.id ? "page" : undefined}
             className={cn(
               "flex min-h-13 min-w-[4.25rem] flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-medium text-muted-foreground",
-              activeView === item.id && "bg-primary/12 text-primary"
+              activePrimarySurface === item.id && "bg-primary/12 text-primary"
             )}
           >
             <item.icon
               size={18}
-              weight={activeView === item.id ? "fill" : "regular"}
+              weight={activePrimarySurface === item.id ? "fill" : "regular"}
             />
             <span>{item.mobileLabel}</span>
           </button>
@@ -1063,7 +1024,7 @@ function WorkspaceSurface({
   }
 
   if (view === "activity") {
-    return <ActivityExplorer endpoint={controlPlaneEndpoint} />;
+    return <ActivityWorkspace endpoint={controlPlaneEndpoint} navigate={navigate} />;
   }
 
   if (view === "decisions") {
@@ -1262,6 +1223,54 @@ function WorkspaceSurface({
       selectedConnection={selectedConnection}
       setSelectedConnection={setSelectedConnection}
     />
+  );
+}
+
+function BuildWorkspace({ navigate }: { navigate: (view: StudioView) => void }) {
+  return (
+    <div className="mx-auto max-w-5xl">
+      <LocalRequestPanel mode="compose" navigate={navigate} />
+    </div>
+  );
+}
+
+function ActivityWorkspace({
+  endpoint,
+  navigate,
+}: {
+  endpoint: string;
+  navigate: (view: StudioView) => void;
+}) {
+  return (
+    <Tabs defaultValue="progress">
+      <TabsList aria-label="Activity sections">
+        <TabsTrigger value="progress">Progress</TabsTrigger>
+        <TabsTrigger value="work">Work</TabsTrigger>
+        <TabsTrigger value="attention">Needs you</TabsTrigger>
+        <TabsTrigger value="history">History</TabsTrigger>
+      </TabsList>
+      <TabsContent value="progress">
+        <ControlCenter endpoint={endpoint} navigate={navigate} />
+      </TabsContent>
+      <TabsContent value="work">
+        <div className="space-y-4">
+          <AutonomousWorkCenter endpoint={endpoint} />
+          <LocalRequestPanel mode="queue" />
+        </div>
+      </TabsContent>
+      <TabsContent value="attention">
+        <div className="space-y-4">
+          <DecisionInbox endpoint={endpoint} />
+          <AttentionCenter
+            endpoint={endpoint}
+            activate={(path) => navigate(viewFromLocation(new URL(path, window.location.origin)))}
+          />
+        </div>
+      </TabsContent>
+      <TabsContent value="history">
+        <ActivityExplorer endpoint={endpoint} />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -1792,12 +1801,13 @@ function SettingsWorkspace({
 
   return (
     <>
-    <ResilienceCenter />
-    <Tabs defaultValue="permissions">
+    <Tabs defaultValue="connections">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsList aria-label="Settings sections">
-          <TabsTrigger value="permissions">Permissions</TabsTrigger>
-          <TabsTrigger value="connections">Connections</TabsTrigger>
+          <TabsTrigger value="connections">AI providers</TabsTrigger>
+          <TabsTrigger value="services">Services</TabsTrigger>
+          <TabsTrigger value="permissions">Preferences</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
         <Button
           variant={privacyScreen ? "default" : "secondary"}
@@ -1986,6 +1996,15 @@ function SettingsWorkspace({
 
       <TabsContent value="connections">
         <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
+      </TabsContent>
+      <TabsContent value="services">
+        <IntegrationWorkbench />
+      </TabsContent>
+      <TabsContent value="system">
+        <div className="space-y-4">
+          <RuntimeSetupPanel />
+          <ResilienceCenter />
+        </div>
       </TabsContent>
     </Tabs>
     </>

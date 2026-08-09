@@ -9,7 +9,7 @@ const app = readFileSync("apps/studio/src/App.tsx", "utf8");
 test("Activity route mounts a lazy live explorer backed by the loopback control plane", () => {
   assert.match(app, /ActivityExplorer = lazy/);
   assert.match(app, /view === "activity"/);
-  assert.match(app, /<ActivityExplorer endpoint=\{controlPlaneEndpoint\} \/>/);
+  assert.match(app, /<ActivityExplorer endpoint=\{endpoint\} \/>/);
   assert.match(app, /activeView !== "activity"/);
 });
 

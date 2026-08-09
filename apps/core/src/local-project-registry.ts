@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import {
   chmod,
   mkdir,
@@ -13,9 +14,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 
 import {
   localProjectRegistrationSchema,
+  localProjectCreationSchema,
   localProjectSnapshotSchema,
   validateLocalProjectCollection,
   type LocalProjectCollection,
@@ -69,6 +72,7 @@ const groundingFiles = [
 ] as const;
 const MAX_TOPOLOGY_ENTRIES = 800;
 const MAX_TOPOLOGY_DEPTH = 8;
+const execFileAsync = promisify(execFile);
 
 type PrivateProjectRecord = {
   schemaVersion: 1;
@@ -222,6 +226,60 @@ export class LocalProjectRegistry {
     return snapshot;
   }
 
+  async create(input: unknown, idempotencyKey: string): Promise<LocalProjectSnapshot> {
+    const request = localProjectCreationSchema.parse(input);
+    const registry = await this.#load();
+    const requestedName = request.displayName ?? projectNameFromIdea(request.idea);
+    const displayName = uniqueProjectName(
+      requestedName,
+      registry.projects.map((project) => project.displayName)
+    );
+    const projectDirectory = resolve(dirname(this.#registryPath), "projects");
+    await mkdir(projectDirectory, { recursive: true, mode: 0o700 });
+    await chmod(projectDirectory, 0o700);
+    const slug = projectSlug(requestedName);
+    const workspace = resolve(
+      projectDirectory,
+      `${slug}-${hash(idempotencyKey).slice(0, 10)}`
+    );
+    try {
+      const existing = await stat(workspace);
+      if (!existing.isDirectory()) throw new Error();
+      return this.register({ schemaVersion: 1, path: workspace, displayName });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        if (error instanceof LocalProjectError) throw error;
+        throw new LocalProjectError(
+          "scan_failed",
+          "The previous project creation attempt needs recovery before retrying."
+        );
+      }
+    }
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(
+      resolve(workspace, "README.md"),
+      `# ${displayName}\n\n## Product idea\n\n${request.idea}\n`,
+      { encoding: "utf8", mode: 0o600, flag: "wx" }
+    );
+    try {
+      await execFileAsync("git", ["init", "--initial-branch=main", workspace], {
+        timeout: 15_000,
+        maxBuffer: 64_000,
+        windowsHide: true,
+      });
+    } catch {
+      throw new LocalProjectError(
+        "scan_failed",
+        "The private project workspace was created, but Git could not initialize it."
+      );
+    }
+    return this.register({
+      schemaVersion: 1,
+      path: workspace,
+      displayName,
+    });
+  }
+
   async rescan(projectId: string): Promise<LocalProjectSnapshot> {
     assertProjectId(projectId);
     const active = this.#scanLocks.get(projectId);
@@ -317,6 +375,37 @@ export class LocalProjectRegistry {
       await unlink(temporary).catch(() => undefined);
     }
   }
+}
+
+function projectNameFromIdea(idea: string): string {
+  const words = idea
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 6);
+  const candidate = words.join(" ").trim();
+  return candidate.length >= 3 ? candidate.slice(0, 80) : "New project";
+}
+
+function projectSlug(displayName: string): string {
+  const slug = displayName
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 48);
+  return slug || "project";
+}
+
+function uniqueProjectName(requested: string, existing: readonly string[]): string {
+  const names = new Set(existing.map((name) => name.toLocaleLowerCase()));
+  if (!names.has(requested.toLocaleLowerCase())) return requested;
+  for (let index = 2; index <= 999; index += 1) {
+    const suffix = ` ${index}`;
+    const candidate = `${requested.slice(0, 160 - suffix.length)}${suffix}`;
+    if (!names.has(candidate.toLocaleLowerCase())) return candidate;
+  }
+  return `${requested.slice(0, 151)} ${randomUUID().slice(0, 8)}`;
 }
 
 export class LocalProjectError extends Error {

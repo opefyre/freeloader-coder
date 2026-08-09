@@ -8,16 +8,13 @@ test("workspace exposes trusted destinations and keyboard command semantics", as
     readFile("apps/studio/src/components/search/global-command-center.tsx", "utf8"),
   ]);
   for (const label of [
-    "Overview",
-    "Conversation",
-    "Work",
-    "Providers",
-    "Evidence",
+    "Build",
+    "Activity",
     "Settings"
   ]) {
     assert.match(source, new RegExp(label));
   }
-  assert.match(source, /Find tasks, runs, or evidence/);
+  assert.match(source, /Find anything/);
   assert.match(source, /⌘ K/);
   assert.match(source, /aria-current=/);
   assert.match(source, /window\.history\[replace \? "replaceState" : "pushState"\]/);
@@ -33,7 +30,7 @@ test("workspace labels fixture claims and prevents inert decision controls", asy
     readFile("apps/studio/src/App.tsx", "utf8"),
     readFile("apps/studio/src/routing.ts", "utf8"),
   ]);
-  assert.match(routing, /Local operations/);
+  assert.match(routing, /Your product workspace/);
   assert.match(routing, /Demo:/);
   assert.match(source, /Choose the public product name/);
   assert.match(source, /Demo message received locally\. No task was created\./);
@@ -53,16 +50,14 @@ test("workspace provides dedicated interactive surfaces rather than inert anchor
   ]);
   const shellContract = `${source}\n${routing}`;
   for (const title of [
-    "Build through conversation",
-    "Work that explains itself",
-    "Models working as one system",
-    "Trust, with receipts",
-    "Connections and safeguards",
+    "What would you like to build?",
+    "Everything that is happening",
+    "Set up your workspace",
   ]) {
     assert.match(shellContract, new RegExp(title));
   }
   assert.match(source, /onClick=\{\(\) => navigate\(item\.id\)\}/);
-  assert.match(source, /onClick=\{\(\) => navigate\("conversation"\)\}/);
+  assert.match(source, /onClick=\{\(\) => navigate\("overview"\)\}/);
   assert.match(workbench, /https:\/\/opefyre\.atlassian\.net\/browse\/PIPE-56/);
 });
 

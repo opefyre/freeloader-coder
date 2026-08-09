@@ -46,6 +46,29 @@ export async function registerLocalProject(input: {
   );
 }
 
+export async function createLocalProject(input: {
+  endpoint: string;
+  idea: string;
+  displayName?: string;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalProjectMutationResponse> {
+  return localProjectMutationResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: "/api/v1/projects/new",
+      method: "POST",
+      body: {
+        schemaVersion: 1,
+        idea: input.idea,
+        ...(input.displayName ? { displayName: input.displayName } : {}),
+      },
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
 export async function rescanLocalProject(input: {
   endpoint: string;
   projectId: string;

@@ -35,15 +35,22 @@ export const localProjectRegistrationSchema = z.strictObject({
   displayName: boundedLabel.optional(),
 });
 
+export const localProjectCreationSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  idea: z.string().trim().min(3).max(20_000),
+  displayName: boundedLabel.optional(),
+});
+
 export const localProjectMutationResponseSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  outcome: z.enum(["registered", "rescanned", "forgotten"]),
+  outcome: z.enum(["created", "registered", "rescanned", "forgotten"]),
   project: localProjectSnapshotSchema.nullable(),
 });
 
 export type LocalProjectSnapshot = z.infer<typeof localProjectSnapshotSchema>;
 export type LocalProjectCollection = z.infer<typeof localProjectCollectionSchema>;
 export type LocalProjectRegistration = z.infer<typeof localProjectRegistrationSchema>;
+export type LocalProjectCreation = z.infer<typeof localProjectCreationSchema>;
 export type LocalProjectMutationResponse = z.infer<
   typeof localProjectMutationResponseSchema
 >;

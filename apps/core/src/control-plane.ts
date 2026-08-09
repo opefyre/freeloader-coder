@@ -9,6 +9,7 @@ import {
 } from "../../../packages/runtime/src/control-plane.js";
 import {
   localProjectMutationResponseSchema,
+  localProjectCreationSchema,
   localProjectRegistrationSchema,
   validateLocalProjectCollection,
   type LocalProjectCollection,
@@ -142,6 +143,7 @@ export type ControlPlaneServerOptions = {
   };
   projects?: {
     list: () => LocalProjectCollection | Promise<LocalProjectCollection>;
+    create?: (input: unknown, idempotencyKey: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     register: (input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     rescan: (projectId: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     forget: (projectId: string) => void | Promise<void>;
@@ -987,6 +989,25 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           response,
           200,
           validateLocalProjectCollection(await options.projects.list())
+        );
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/projects/new" &&
+        options.projects?.create
+      ) {
+        const idempotencyKey = requireIdempotencyKey(request);
+        const body = localProjectCreationSchema.parse(await readJsonBody(request));
+        const project = await options.projects.create(body, idempotencyKey);
+        sendJson(
+          response,
+          200,
+          localProjectMutationResponseSchema.parse({
+            schemaVersion: 1,
+            outcome: "created",
+            project,
+          })
         );
         return;
       }
