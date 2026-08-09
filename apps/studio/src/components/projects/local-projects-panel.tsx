@@ -16,6 +16,7 @@ import {
   registerLocalProject,
   rescanLocalProject,
 } from "../../local-project-client.js";
+import { openNativePicker } from "../../native-picker-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import {
@@ -43,7 +44,7 @@ export function LocalProjectsPanel() {
     collection: null,
     error: null,
   });
-  const [path, setPath] = useState("");
+  const [folderLabel, setFolderLabel] = useState("");
   const [notice, setNotice] = useState(
     "Only bounded repository metadata is read. Source files, secrets, and absolute paths never enter Studio."
   );
@@ -77,20 +78,25 @@ export function LocalProjectsPanel() {
     };
   }, [refresh]);
 
-  const register = async () => {
-    if (!path.trim()) {
-      setNotice("Paste an absolute path to an existing local Git repository.");
-      return;
-    }
+  const chooseAndRegister = async () => {
     setState((previous) => ({ ...previous, status: "working", error: null }));
-    setNotice("Inspecting bounded metadata. No repository command is running.");
+    setNotice("Choose the project folder on this device.");
     try {
+      const selection = await openNativePicker({ endpoint, kind: "folder" });
+      const folder = selection.selections[0];
+      if (selection.outcome === "cancelled" || !folder) {
+        setState((previous) => ({ ...previous, status: "ready", error: null }));
+        setNotice("Nothing selected. Your project list is unchanged.");
+        return;
+      }
+      setFolderLabel(folder.label);
+      setNotice("Inspecting bounded metadata. No repository command is running.");
       await registerLocalProject({
         endpoint,
-        path: path.trim(),
+        path: folder.path,
         idempotencyKey: `register:${crypto.randomUUID()}`,
       });
-      setPath("");
+      setFolderLabel("");
       setNotice("Project registered. Review observed facts and explicit limitations below.");
       await refresh();
     } catch (error) {
@@ -166,26 +172,19 @@ export function LocalProjectsPanel() {
           </Button>
         </CardHeader>
         <CardContent className="mt-6">
-          <label htmlFor="local-project-path" className="text-xs font-semibold">
-            Absolute repository path
-          </label>
-          <div className="mt-2 flex flex-col gap-2 lg:flex-row">
-            <input
-              id="local-project-path"
-              value={path}
-              onChange={(event) => setPath(event.target.value)}
-              placeholder="/Users/you/Projects/my-app"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={state.status === "working"}
-              className="h-11 min-w-0 flex-1 rounded-2xl bg-muted px-4 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-            />
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <div className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-2xl bg-muted px-4 text-sm" aria-live="polite">
+              <FolderOpen className="shrink-0 text-primary" />
+              <span className="truncate text-muted-foreground">
+                {folderLabel || "No project folder selected"}
+              </span>
+            </div>
             <Button
-              onClick={() => void register()}
+              onClick={() => void chooseAndRegister()}
               disabled={state.status === "working" || state.status === "offline"}
             >
               <FolderOpen weight="fill" />
-              Register and inspect
+              Choose project folder
             </Button>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">

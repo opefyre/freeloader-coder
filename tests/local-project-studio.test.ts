@@ -14,7 +14,8 @@ test("Projects mounts a real local registry journey before the synthetic example
   assert.ok(app.indexOf("<LocalProjectsPanel />") < app.indexOf("Guided synthetic example"));
   for (const phrase of [
     "Your real local projects",
-    "Register and inspect",
+    "Choose project folder",
+    "No project folder selected",
     "Live local registry",
     "Repository writes",
     "Commands or AI",
@@ -26,6 +27,9 @@ test("Projects mounts a real local registry journey before the synthetic example
   ]) {
     assert.equal(panel.includes(phrase), true, `Missing local project contract: ${phrase}`);
   }
+  assert.match(panel, /openNativePicker\(\{ endpoint, kind: "folder" \}\)/);
+  assert.doesNotMatch(panel, /Absolute repository path/);
+  assert.doesNotMatch(panel, /placeholder="\/Users\/you\/Projects\/my-app"/);
 });
 
 test("real project UI keeps facts, inferences, decisions, warnings, and recovery explicit", async () => {
@@ -44,4 +48,18 @@ test("real project UI keeps facts, inferences, decisions, warnings, and recovery
   ]) {
     assert.equal(panel.includes(phrase), true, `Missing truthfulness state: ${phrase}`);
   }
+});
+
+test("opening a portfolio project keeps the owner in Build with project-scoped conversation", async () => {
+  const [app, portfolio, panel] = await Promise.all([
+    readFile("apps/studio/src/App.tsx", "utf8"),
+    readFile("apps/studio/src/components/projects/project-portfolio.tsx", "utf8"),
+    readFile("apps/studio/src/components/conversation/local-request-panel.tsx", "utf8"),
+  ]);
+  assert.match(portfolio, /openProject: \(projectId: string\) => void/);
+  assert.match(app, /`\/\?project=\$\{encodeURIComponent\(projectId\)\}`/);
+  assert.match(app, /initialProjectId=\{selectedProjectId \|\| undefined\}/);
+  assert.match(app, />\s*All projects\s*</);
+  assert.match(panel, /initialProjectId\?: string/);
+  assert.doesNotMatch(app, /function BuildWorkspace[\s\S]*\/activity\?project=/);
 });

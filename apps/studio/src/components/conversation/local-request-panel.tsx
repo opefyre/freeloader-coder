@@ -87,11 +87,12 @@ const endpoint =
 
 export function LocalRequestPanel(props: {
   mode: "compose" | "queue";
+  initialProjectId?: string | undefined;
   navigate?: (view: "work" | "projects" | "activity" | "settings") => void;
 }) {
   const [projects, setProjects] = useState<readonly LocalProjectSnapshot[]>([]);
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(props.initialProjectId ?? "");
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceLabel, setWorkspaceLabel] = useState("");
   const [attachments, setAttachments] = useState<readonly { path: string; label: string }[]>([]);
@@ -135,7 +136,9 @@ export function LocalRequestPanel(props: {
       setProjects(projectCollection.projects);
       setRequests(requestCollection.requests);
       setProjectId((current) =>
-        current === "__new__"
+        props.initialProjectId && projectCollection.projects.some((project) => project.id === props.initialProjectId)
+          ? props.initialProjectId
+          : current === "__new__"
           ? current
           : projectCollection.projects.some((project) => project.id === current)
             ? current
@@ -148,7 +151,7 @@ export function LocalRequestPanel(props: {
       setStatus("offline");
       setNotice("Local runtime is offline. Last observed queue state is preserved.");
     }
-  }, []);
+  }, [props.initialProjectId]);
 
   useEffect(() => {
     disposed.current = false;

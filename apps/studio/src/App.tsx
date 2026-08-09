@@ -1242,17 +1242,42 @@ function WorkspaceSurface({
 }
 
 function BuildWorkspace({ navigate }: { navigate: (view: StudioView) => void }) {
-  const openActivity = (projectId: string) => {
-    window.history.pushState({}, "", `/activity?project=${encodeURIComponent(projectId)}`);
-    window.dispatchEvent(new PopStateEvent("popstate"));
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    () => new URLSearchParams(window.location.search).get("project") ?? ""
+  );
+  useEffect(() => {
+    const syncProject = () => setSelectedProjectId(new URLSearchParams(window.location.search).get("project") ?? "");
+    window.addEventListener("popstate", syncProject);
+    return () => window.removeEventListener("popstate", syncProject);
+  }, []);
+  const openProject = (projectId: string) => {
+    window.history.pushState({}, "", `/?project=${encodeURIComponent(projectId)}`);
+    setSelectedProjectId(projectId);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const closeProject = () => {
+    window.history.pushState({}, "", "/");
+    setSelectedProjectId("");
   };
   return (
     <div className="mx-auto max-w-6xl space-y-10">
-      <ProjectPortfolio
-        openActivity={openActivity}
-        startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()}
+      {selectedProjectId ? (
+        <Button variant="ghost" size="sm" onClick={closeProject}>
+          <ArrowRight className="rotate-180" />
+          All projects
+        </Button>
+      ) : (
+        <ProjectPortfolio
+          openProject={openProject}
+          startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()}
+        />
+      )}
+      <LocalRequestPanel
+        key={selectedProjectId || "new-project"}
+        mode="compose"
+        initialProjectId={selectedProjectId || undefined}
+        navigate={navigate}
       />
-      <LocalRequestPanel mode="compose" navigate={navigate} />
     </div>
   );
 }

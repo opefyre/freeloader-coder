@@ -17,7 +17,7 @@ import { ProjectResearchControl } from "./project-research-control.js";
 const endpoint = import.meta.env.VITE_PIPELINE_STUDIO_CONTROL_URL ?? "http://127.0.0.1:4312";
 
 export function ProjectPortfolio(props: {
-  openActivity: (projectId: string) => void;
+  openProject: (projectId: string) => void;
   startProject: () => void;
 }) {
   const [projects, setProjects] = useState<readonly LocalProjectSnapshot[]>([]);
@@ -130,7 +130,7 @@ export function ProjectPortfolio(props: {
                     <span className="text-xs text-muted-foreground">
                       {project.progress ? `${project.progress.percent}% from Jira` : "Progress appears after Jira is selected"}
                     </span>
-                    <Button variant="secondary" size="sm" onClick={() => props.openActivity(project.id)}>
+                    <Button variant="secondary" size="sm" onClick={() => props.openProject(project.id)}>
                       Open project
                       <ArrowRight />
                     </Button>
