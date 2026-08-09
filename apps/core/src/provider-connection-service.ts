@@ -100,19 +100,19 @@ export class LiveProviderConnectionProbes implements ProviderConnectionProbes {
         messages: [
           {
             role: "system",
-            content: "Return only JSON matching the supplied schema. Do not include prose."
+            content: "Return exactly this JSON object and nothing else: {\"ok\":true}"
           },
           {
             role: "user",
-            content: "Confirm this bounded Pipeline Studio connection canary."
+            content: "Return the requested object now."
           }
         ],
-        maxOutputTokens: 64,
+        maxOutputTokens: 128,
         temperature: 0,
         responseSchema: {
           type: "object",
           additionalProperties: false,
-          properties: { ok: { type: "boolean", const: true } },
+          properties: { ok: { type: "boolean" } },
           required: ["ok"]
         },
         timeoutMs: 45_000

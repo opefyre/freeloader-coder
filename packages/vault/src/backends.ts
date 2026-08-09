@@ -56,6 +56,7 @@ interface BackendCommands {
   readonly write: (reference: string, value: string) => SensitiveCommand;
   readonly read: (reference: string) => SensitiveCommand;
   readonly delete: (reference: string) => SensitiveCommand;
+  readonly decode?: (value: string) => string;
 }
 
 export class CommandCredentialBackend implements NativeCredentialBackend {
@@ -72,7 +73,8 @@ export class CommandCredentialBackend implements NativeCredentialBackend {
 
   public async read(reference: string): Promise<string | null> {
     try {
-      return (await this.runner.run(this.commands.read(reference))).stdout;
+      const value = (await this.runner.run(this.commands.read(reference))).stdout;
+      return this.commands.decode ? this.commands.decode(value) : value;
     } catch {
       return null;
     }
@@ -87,16 +89,8 @@ export function macosKeychainCommands(): BackendCommands {
   return {
     write: (reference, value) => ({
       executable: "/usr/bin/security",
-      args: [
-        "add-generic-password",
-        "-U",
-        "-s",
-        "Pipeline Studio",
-        "-a",
-        reference,
-        "-w"
-      ],
-      stdin: value,
+      args: ["-i"],
+      stdin: `add-generic-password -U -s "Pipeline Studio" -a ${quotedReference(reference)} -w "ps1:${Buffer.from(value, "utf8").toString("base64")}"\n`,
       outputContainsSecret: false
     }),
     read: (reference) => ({
@@ -121,8 +115,21 @@ export function macosKeychainCommands(): BackendCommands {
         reference
       ],
       outputContainsSecret: false
-    })
+    }),
+    decode: decodeMacosValue
   };
+}
+
+function quotedReference(reference: string) {
+  if (!/^[a-zA-Z0-9._:/-]{1,240}$/.test(reference)) throw new Error("Credential reference is invalid for macOS Keychain.");
+  return `"${reference}"`;
+}
+
+function decodeMacosValue(value: string) {
+  if (!value.startsWith("ps1:")) throw new Error("Stored macOS credential encoding is invalid.");
+  const encoded = value.slice(4);
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encoded) || encoded.length % 4 !== 0) throw new Error("Stored macOS credential encoding is invalid.");
+  return Buffer.from(encoded, "base64").toString("utf8");
 }
 
 export function linuxSecretServiceCommands(): BackendCommands {

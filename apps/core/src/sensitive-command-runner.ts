@@ -60,10 +60,15 @@ export class LocalSensitiveCommandRunner implements SensitiveCommandRunner {
         if (code === 0) finish();
         else finish(new Error("Credential backend command failed."));
       });
-      if (command.stdin !== undefined) child.stdin.end(command.stdin);
+      if (command.stdin !== undefined) child.stdin.end(terminateSensitiveInput(command));
       else child.stdin.end();
     });
   }
+}
+
+export function terminateSensitiveInput(command: SensitiveCommand) {
+  if (command.executable === "/usr/bin/security" && command.args[0] === "add-generic-password") return `${command.stdin ?? ""}\n`;
+  return command.stdin ?? "";
 }
 
 function isAllowedExecutable(executable: string): boolean {
@@ -73,4 +78,3 @@ function isAllowedExecutable(executable: string): boolean {
     "powershell.exe",
   ].includes(executable);
 }
-

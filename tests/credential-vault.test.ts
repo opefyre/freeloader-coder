@@ -104,7 +104,13 @@ test("native command adapters never place credential material in process argumen
   for (const adapter of commands) {
     const write = adapter.write(reference, value);
     assert.equal(write.args.includes(value), false);
-    assert.equal(write.stdin, value);
+    if (write.executable === "/usr/bin/security") {
+      assert.equal(write.args[0], "-i");
+      assert.equal(write.stdin?.includes(value), false);
+      assert.match(write.stdin ?? "", /^add-generic-password .* -w "ps1:[A-Za-z0-9+/]+=*"\n$/);
+    } else {
+      assert.equal(write.stdin, value);
+    }
     assert.equal(write.outputContainsSecret, false);
     assert.equal(adapter.read(reference).outputContainsSecret, true);
   }
