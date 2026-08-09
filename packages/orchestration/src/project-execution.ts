@@ -3,6 +3,7 @@ import { z } from "zod";
 const projectId = z.string().regex(/^project_[a-f0-9]{16}$/);
 const planItemId = z.string().regex(/^plan_[a-f0-9]{16}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
+const gitDigest = z.string().regex(/^[a-f0-9]{40,64}$/);
 const relativeFile = z.string().trim().min(1).max(500).refine((value) => !value.startsWith("/") && !value.startsWith("\\") && !value.split(/[\\/]/).includes(".."), "Execution files must remain project-relative.");
 
 export const executionAssignmentSchema = z.strictObject({
@@ -58,7 +59,7 @@ export const executionTaskSchema = z.strictObject({
   implementationEvidence: z.array(digest).max(100),
   validations: z.array(executionValidationSchema).max(100),
   reviews: z.array(executionReviewSchema).max(20),
-  commitDigest: digest.nullable(),
+  commitDigest: gitDigest.nullable(),
   integrationDigest: digest.nullable(),
   failureClass: z.enum(["implementation", "environment", "flaky", "provider", "contract", "product_decision", "unsafe"]).nullable(),
   safeMessage: z.string().trim().min(1).max(500),
