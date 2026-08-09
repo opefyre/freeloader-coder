@@ -60,10 +60,12 @@ export class TelegramOwnerChannelService {
     let sent = 0;
     for (const lifecycle of lifecycles) {
       const project = projects.projects.find((candidate) => candidate.id === lifecycle.projectId);
-      const channel = project?.resources?.find((resource) => resource.kind === "telegram_chat" && resource.role === "notifications");
-      if (!project || !channel) continue;
-      if (lifecycle.stage === "awaiting_design_approval") sent += await this.#sendSolution(credential, lifecycle, channel.resourceId, project.displayName);
-      if (lifecycle.stage === "clarification") sent += await this.#sendClarifications(credential, lifecycle, channel.resourceId, project.displayName);
+      const channels = project?.resources?.filter((resource) => resource.kind === "telegram_chat" && resource.role === "notifications") ?? [];
+      if (!project || channels.length === 0) continue;
+      for (const channel of channels) {
+        if (lifecycle.stage === "awaiting_design_approval") sent += await this.#sendSolution(credential, lifecycle, channel.resourceId, project.displayName);
+        if (lifecycle.stage === "clarification") sent += await this.#sendClarifications(credential, lifecycle, channel.resourceId, project.displayName);
+      }
     }
     return { sent, handled: await this.#poll(credential) };
   }
@@ -72,8 +74,8 @@ export class TelegramOwnerChannelService {
     const artifact = lifecycle.artifacts.find((item) => item.kind === "solution");
     if (!artifact) return 0;
     const state = await this.#load();
-    const seed = `${lifecycle.projectId}:${lifecycle.revision}:${artifact.digest}:solution`;
-    if (Object.values(state.deliveries).some((item) => `${item.projectId}:${item.revision}:${item.artifactDigest}:solution` === seed)) return 0;
+    const seed = `${lifecycle.projectId}:${lifecycle.revision}:${artifact.digest}:${chatId}:solution`;
+    if (Object.values(state.deliveries).some((item) => `${item.projectId}:${item.revision}:${item.artifactDigest}:${item.chatId}:solution` === seed)) return 0;
     const buttons = (["approved", "declined"] as const).map((decision) => {
       const delivery = this.#delivery({ projectId: lifecycle.projectId, revision: lifecycle.revision, kind: "solution", questionId: null, optionId: null, decision, artifactDigest: artifact.digest, chatId });
       return { text: decision === "approved" ? "Approve" : "Decline", callback_data: this.#callback(delivery, state.signingSecret), delivery };
@@ -87,7 +89,7 @@ export class TelegramOwnerChannelService {
     let sent = 0;
     for (const question of lifecycle.questions) {
       const state = await this.#load();
-      const alreadySent = Object.values(state.deliveries).some((item) => item.projectId === lifecycle.projectId && item.revision === lifecycle.revision && item.questionId === question.id);
+      const alreadySent = Object.values(state.deliveries).some((item) => item.projectId === lifecycle.projectId && item.revision === lifecycle.revision && item.questionId === question.id && item.chatId === chatId);
       if (alreadySent) continue;
       const deliveries = question.options.map((option) => this.#delivery({ projectId: lifecycle.projectId, revision: lifecycle.revision, kind: "clarification", questionId: question.id, optionId: option.id, decision: null, artifactDigest: null, chatId }));
       const rows = deliveries.map((delivery, index) => [{ text: question.options[index]!.label, callback_data: this.#callback(delivery, state.signingSecret) }]);

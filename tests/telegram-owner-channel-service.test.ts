@@ -65,3 +65,23 @@ test("Telegram owner channel rejects a valid signed response from a different ch
     assert.equal(decisions, 0);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("Telegram owner channel delivers one independently signed decision to every selected project chat", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pipeline-telegram-owner-multi-"));
+  try {
+    const lifecycle = projectLifecycleRecordSchema.parse({ schemaVersion: 1, projectId, stage: "awaiting_design_approval", revision: 1, mission: "Build a connected product", assessment: null, questions: [], answers: [], artifacts: [{ kind: "solution", projectRelativePath: ".pipeline/SOLUTION.md", digest, revision: 1, createdAt: 100, citations: ["README.md"], reviewerIds: ["reviewer-a", "reviewer-b"], qaPassed: true }], designApproval: null, designFeedback: [], jiraEpicId: null, blockedReason: null, updatedAt: 100 });
+    const resources = [chatId, "-1009876543210"].map((resourceId, index) => ({ id: `binding_${String(index + 1).padStart(16, "0")}`, kind: "telegram_chat" as const, connectionId: "telegram:bot", resourceId, label: `Approvals ${index + 1}`, url: "https://t.me", role: "notifications" as const, selectedAt: 100 }));
+    const projects = localProjectCollectionSchema.parse({ schemaVersion: 1, provenance: "local_observation", observedAt: 100, projects: [{ schemaVersion: 1, id: projectId, displayName: "Multi-channel project", resources, state: "ready", observedAt: 100, validForMs: 60_000, facts: [], inferences: [], decisions: [], warnings: [] }] });
+    const sent = new Set<string>();
+    const callbacks = new Set<string>();
+    const service = new TelegramOwnerChannelService(root, { list: async () => projects }, { list: async () => [lifecycle], get: async () => lifecycle, answer: async () => lifecycle, decideSolution: async () => lifecycle }, { read: async () => JSON.stringify({ schemaVersion: 1, botToken: token, chatId }) }, async (input, init) => {
+      const method = String(input).split("/").pop(); const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, any>;
+      if (method === "sendMessage") { sent.add(String(body.chat_id)); callbacks.add(String(body.reply_markup.inline_keyboard[0][0].callback_data)); return Response.json({ ok: true, result: {} }); }
+      return Response.json({ ok: true, result: [] });
+    }, () => 1_000);
+    assert.deepEqual(await service.synchronize(), { sent: 2, handled: 0 });
+    assert.deepEqual(sent, new Set(resources.map((resource) => resource.resourceId)));
+    assert.equal(callbacks.size, 2);
+    assert.deepEqual(await service.synchronize(), { sent: 0, handled: 0 });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
