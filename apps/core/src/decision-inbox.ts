@@ -12,12 +12,14 @@ import {
 } from "../../../packages/runtime/src/decisions.js";
 import type { AutonomySnapshot } from "../../../packages/runtime/src/autonomy.js";
 import type { LiveOperationsSnapshot } from "../../../packages/runtime/src/live-operations.js";
+import type { ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 
 const priorityWeight: Record<DecisionPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 export function buildDecisionSnapshot(input: {
   live: LiveOperationsSnapshot;
   autonomy: AutonomySnapshot;
+  lifecycles?: readonly ProjectLifecycleRecord[];
   query?: Partial<DecisionQuery>;
   now?: number;
 }): DecisionSnapshot {
@@ -27,6 +29,7 @@ export function buildDecisionSnapshot(input: {
     ...input.live.recentEvents.flatMap((event) => fromLiveEvent(event, now)),
     ...input.live.providers.flatMap((provider) => fromProvider(provider, now)),
     ...input.autonomy.recommendations.flatMap((recommendation) => fromRecommendation(recommendation, now)),
+    ...(input.lifecycles ?? []).flatMap((lifecycle) => fromLifecycle(lifecycle, now)),
     ...input.autonomy.leases.filter((lease) => lease.expiresAt <= now).map((lease) => decision({
       seed: `lease:${lease.requestId}:${lease.expiresAt}`,
       category: "recovery",
@@ -123,6 +126,33 @@ export function buildDecisionSnapshot(input: {
     },
     items,
   });
+}
+
+function fromLifecycle(record: ProjectLifecycleRecord, now: number): DecisionItem[] {
+  if (record.stage !== "clarification" || record.questions.length === 0) return [];
+  return record.questions.map((question) => decision({
+    seed: `clarification:${record.projectId}:${record.revision}:${question.id}`,
+    category: "input",
+    priority: "medium",
+    owner: "user",
+    state: "open",
+    title: question.prompt,
+    reason: question.whyItMatters,
+    nextAction: "Choose an answer in Build",
+    authorityBoundary: "provide_input",
+    effect: "none",
+    reversible: true,
+    observedAt: record.updatedAt,
+    deadlineAt: null,
+    retryAt: null,
+    projectId: record.projectId,
+    requestId: null,
+    providerId: null,
+    source: "project_clarification",
+    sourceRecordId: question.id,
+    evidence: [`${question.options.length} selectable options`, ...question.sourceFindingIds.slice(0, 8).map((id) => `Finding: ${id}`)],
+    reference: { surface: "work", path: `/work?project=${encodeURIComponent(record.projectId)}`, label: "Review in Build" },
+  }, now));
 }
 
 function fromLiveEvent(event: LiveOperationsSnapshot["recentEvents"][number], now: number): DecisionItem[] {

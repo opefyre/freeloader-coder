@@ -45,7 +45,7 @@ export const decisionItemSchema = z.strictObject({
   projectId: projectId.nullable(),
   requestId: requestId.nullable(),
   providerId: providerId.nullable(),
-  source: z.enum(["live_request", "project_observation", "provider_connection", "system_observation", "autonomy_recommendation", "autonomy_lease", "autonomy_receipt"]),
+  source: z.enum(["live_request", "project_observation", "provider_connection", "system_observation", "autonomy_recommendation", "autonomy_lease", "autonomy_receipt", "project_clarification"]),
   sourceRecordId: z.string().trim().min(1).max(160),
   evidence: z.array(z.string().trim().min(1).max(240)).min(1).max(12),
   reference: decisionReferenceSchema,

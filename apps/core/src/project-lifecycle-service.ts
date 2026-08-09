@@ -36,6 +36,10 @@ export class ProjectLifecycleService {
     return (await this.#load()).records.find((record) => record.projectId === projectId) ?? null;
   }
 
+  async list(): Promise<readonly ProjectLifecycleRecord[]> {
+    return (await this.#load()).records;
+  }
+
   async begin(input: { projectId: string; mission: string; now?: number }): Promise<ProjectLifecycleRecord> {
     return this.#mutate(async (state) => {
       const existing = state.records.find((record) => record.projectId === input.projectId);

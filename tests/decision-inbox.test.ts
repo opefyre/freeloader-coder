@@ -63,3 +63,19 @@ test("decision privacy, authority, aging, cost, and bounded-retention rules are 
   assert.equal(snapshot.retention.maximumItems, 250);
   assert.ok(snapshot.items.every((item) => item.reference.path.startsWith("/")));
 });
+
+test("unanswered lifecycle clarifications appear as project-scoped owner actions", () => {
+  const lifecycle = {
+    schemaVersion: 1 as const, projectId, stage: "clarification" as const, revision: 2, mission: "Build a portal.", assessment: null,
+    questions: [{ id: "question_0123456789abcdef", prompt: "Who can sign up?", whyItMatters: "Identity architecture changes.", options: [{ id: "invite", label: "Invite", consequence: "Admins invite." }, { id: "public", label: "Public", consequence: "Anyone registers." }], allowsCustomAnswer: false, sourceFindingIds: ["identity-gap"] }],
+    answers: [], artifacts: [], designApproval: null, jiraEpicId: null, blockedReason: null, updatedAt: now - 25,
+  };
+  const snapshot = buildDecisionSnapshot({ live: { ...live, providers: [], recentEvents: [] }, autonomy: { ...autonomy, recommendations: [], leases: [] }, lifecycles: [lifecycle], query: { range: "all" }, now });
+  assert.equal(snapshot.items.length, 1);
+  assert.equal(snapshot.items[0]?.category, "input");
+  assert.equal(snapshot.items[0]?.owner, "user");
+  assert.equal(snapshot.items[0]?.projectId, projectId);
+  assert.equal(snapshot.items[0]?.source, "project_clarification");
+  assert.equal(snapshot.items[0]?.reference.path, `/work?project=${projectId}`);
+  assert.equal(snapshot.summary.blockedProjects, 1);
+});

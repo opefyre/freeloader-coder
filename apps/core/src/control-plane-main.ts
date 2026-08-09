@@ -138,7 +138,7 @@ async function attentionInputs() {
     providers: await providerConnectionService.list(),
   });
   const autonomySnapshot = await autonomy.snapshot();
-  const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } });
+  const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles: await projectLifecycles.list(), query: { range: "all" } });
   return { live, decisions };
 }
 
@@ -233,6 +233,7 @@ const controlPlane = createControlPlaneServer({
         providers: await providerConnectionService.list(),
       }),
       autonomy: await autonomy.snapshot(),
+      lifecycles: await projectLifecycles.list(),
       query,
     }),
   search: async (query) => {
@@ -242,7 +243,7 @@ const controlPlane = createControlPlaneServer({
       providers: await providerConnectionService.list(),
     });
     const autonomySnapshot = await autonomy.snapshot();
-    const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } });
+    const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles: await projectLifecycles.list(), query: { range: "all" } });
     return buildUniversalSearchSnapshot({
       live,
       activity: buildActivitySnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } }),
