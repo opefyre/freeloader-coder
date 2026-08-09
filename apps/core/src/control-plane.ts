@@ -115,6 +115,7 @@ import { solutionDocumentSchema, type SolutionDocument } from "../../../packages
 import { projectEgressPermitSchema, type ProjectEgressPermit } from "./project-egress-policy-service.js";
 import { solutionRunSchema, type SolutionRun } from "./project-solution-coordinator.js";
 import { deliveryPlanDocumentSchema, deliveryPlanRunSchema, type DeliveryPlanDocument, type DeliveryPlanRun } from "../../../packages/orchestration/src/delivery-plan.js";
+import { projectExecutionRecordSchema, type ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
 import {
   nativePickerResponseSchema,
   type NativePickerResponse,
@@ -183,6 +184,7 @@ export type ControlPlaneServerOptions = {
     getBacklog?: (projectId: string) => DeliveryPlanDocument | Promise<DeliveryPlanDocument>;
     backlogRun?: (projectId: string) => DeliveryPlanRun | null | Promise<DeliveryPlanRun | null>;
     generateBacklog?: (projectId: string) => DeliveryPlanRun | Promise<DeliveryPlanRun>;
+    getExecution?: (projectId: string) => ProjectExecutionRecord | null | Promise<ProjectExecutionRecord | null>;
     getEgressConsent?: (projectId: string) => ProjectEgressPermit | null | Promise<ProjectEgressPermit | null>;
     grantEgressConsent?: (projectId: string, input: unknown) => ProjectEgressPermit | Promise<ProjectEgressPermit>;
     revokeEgressConsent?: (projectId: string) => void | Promise<void>;
@@ -1142,7 +1144,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context)$/
       );
       const projectLifecycleRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications|eligibility|solution|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|provider-consent)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications|eligibility|solution|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "lifecycle" && options.projectLifecycles) {
         if (requestBodyDeclared(request)) {
@@ -1203,6 +1205,10 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       if (request.method === "POST" && projectLifecycleRoute?.[2] === "backlog-generate" && options.projectLifecycles?.generateBacklog) {
         requireIdempotencyKey(request); if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
         sendJson(response, 202, deliveryPlanRunSchema.parse(await options.projectLifecycles.generateBacklog(projectLifecycleRoute[1] ?? ""))); return;
+      }
+      if (request.method === "GET" && projectLifecycleRoute?.[2] === "execution" && options.projectLifecycles?.getExecution) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, projectExecutionRecordSchema.nullable().parse(await options.projectLifecycles.getExecution(projectLifecycleRoute[1] ?? ""))); return;
       }
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "provider-consent" && options.projectLifecycles?.getEgressConsent) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }

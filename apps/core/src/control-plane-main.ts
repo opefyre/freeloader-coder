@@ -16,6 +16,8 @@ import { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
 import { ProjectDeliveryPlanOrchestrator } from "./project-delivery-plan-orchestrator.js";
 import { ProjectDeliveryPlanCoordinator } from "./project-delivery-plan-coordinator.js";
 import { JiraDeliveryService } from "./jira-delivery-service.js";
+import { ProjectExecutionService } from "./project-execution-service.js";
+import { ProjectExecutionJiraObserver } from "./project-execution-jira-observer.js";
 import { ProjectEgressPolicyService } from "./project-egress-policy-service.js";
 import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
@@ -112,6 +114,8 @@ const projectEgress = new ProjectEgressPolicyService(stateDirectory);
 const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
 const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new ProjectSolutionOrchestrator(projectLifecycles, projectSolutions, projectContexts, projectEgress, solutionModel));
 const jiraDelivery = new JiraDeliveryService(stateDirectory, localProjects, projectDeliveryPlans, projectLifecycles, credentialVault);
+const projectExecutions = new ProjectExecutionService(stateDirectory, projectDeliveryPlans, jiraDelivery);
+const projectExecutionJira = new ProjectExecutionJiraObserver(stateDirectory, projectExecutions, jiraDelivery, credentialVault);
 const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
   stateDirectory,
   new ProjectDeliveryPlanOrchestrator(
@@ -123,7 +127,11 @@ const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
     solutionModel
   ),
   Date.now,
-  (projectId) => jiraDelivery.synchronize(projectId)
+  async (projectId) => {
+    await jiraDelivery.synchronize(projectId);
+    await projectExecutions.initialize(projectId);
+    await projectExecutionJira.synchronize(projectId);
+  }
 );
 const autonomy = new LocalAutonomyService(
   stateDirectory,
@@ -348,6 +356,7 @@ const controlPlane = createControlPlaneServer({
     getBacklog: (projectId) => projectDeliveryPlans.read(projectId),
     backlogRun: (projectId) => deliveryPlanCoordinator.get(projectId),
     generateBacklog: (projectId) => deliveryPlanCoordinator.schedule(projectId),
+    getExecution: (projectId) => projectExecutions.get(projectId),
     getEgressConsent: (projectId) => projectEgress.get(projectId),
     grantEgressConsent: (projectId, input) => projectEgress.grant(projectId, input),
     revokeEgressConsent: (projectId) => projectEgress.revoke(projectId),
@@ -423,6 +432,14 @@ await proposalGenerator.resumePending();
 await solutionCoordinator.resumePending();
 await deliveryPlanCoordinator.resumePending();
 autonomy.start();
+const executionJiraTimer = setInterval(() => {
+  void localProjects.list().then(async ({ projects }) => {
+    for (const project of projects) {
+      if (await projectExecutions.get(project.id)) await projectExecutionJira.synchronize(project.id).catch(() => undefined);
+    }
+  }).catch(() => undefined);
+}, 60_000);
+executionJiraTimer.unref();
 console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
 console.log(
   "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state."
@@ -433,6 +450,7 @@ async function close(signal: string) {
   if (closing) return;
   closing = true;
   autonomy.stop();
+  clearInterval(executionJiraTimer);
   console.log(`Stopping local control plane (${signal}).`);
   await controlPlane.close();
 }

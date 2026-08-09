@@ -5,8 +5,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProjectLifecycleRecord } from "../../../../../packages/orchestration/src/project-lifecycle.js";
 import type { ProjectEgressPermit, SolutionRun } from "../../../../../packages/orchestration/src/solution-design.js";
 import type { DeliveryPlanRun } from "../../../../../packages/orchestration/src/delivery-plan.js";
+import type { ProjectExecutionRecord } from "../../../../../packages/orchestration/src/project-execution.js";
 import type { PublicProviderConnection } from "../../../../../packages/runtime/src/provider-connections.js";
-import { generateProjectBacklog, generateProjectSolution, getProjectBacklogRun, getProjectLifecycle, getProjectProviderConsent, getProjectSolutionRun, grantProjectProviderConsent, revokeProjectProviderConsent } from "../../local-project-client.js";
+import { generateProjectBacklog, generateProjectSolution, getProjectBacklogRun, getProjectExecution, getProjectLifecycle, getProjectProviderConsent, getProjectSolutionRun, grantProjectProviderConsent, revokeProjectProviderConsent } from "../../local-project-client.js";
 import { listProviderConnections } from "../../provider-connection-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -20,21 +21,27 @@ export function ProjectResearchControl(props: { endpoint: string; projectId: str
   const [consent, setConsent] = useState<ProjectEgressPermit | null>(null);
   const [run, setRun] = useState<SolutionRun | null>(null);
   const [backlogRun, setBacklogRun] = useState<DeliveryPlanRun | null>(null);
+  const [execution, setExecution] = useState<ProjectExecutionRecord | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState("");
   const [working, setWorking] = useState(false);
   const refresh = useCallback(async () => {
     try {
-      const [nextLifecycle, providerCollection, nextConsent, nextRun, nextBacklogRun] = await Promise.all([getProjectLifecycle({ endpoint: props.endpoint, projectId: props.projectId }), listProviderConnections({ endpoint: props.endpoint }), getProjectProviderConsent({ endpoint: props.endpoint, projectId: props.projectId }), getProjectSolutionRun({ endpoint: props.endpoint, projectId: props.projectId }), getProjectBacklogRun({ endpoint: props.endpoint, projectId: props.projectId })]);
+      const [nextLifecycle, providerCollection, nextConsent, nextRun, nextBacklogRun, nextExecution] = await Promise.all([getProjectLifecycle({ endpoint: props.endpoint, projectId: props.projectId }), listProviderConnections({ endpoint: props.endpoint }), getProjectProviderConsent({ endpoint: props.endpoint, projectId: props.projectId }), getProjectSolutionRun({ endpoint: props.endpoint, projectId: props.projectId }), getProjectBacklogRun({ endpoint: props.endpoint, projectId: props.projectId }), getProjectExecution({ endpoint: props.endpoint, projectId: props.projectId })]);
       const eligible = providerCollection.connections.filter((provider) => provider.state === "ready" && provider.admission.admitted && provider.cost.zeroCost && !provider.cost.billingEnabled);
-      setLifecycle(nextLifecycle); setProviders(eligible); setConsent(nextConsent); setRun(nextRun); setBacklogRun(nextBacklogRun);
+      setLifecycle(nextLifecycle); setProviders(eligible); setConsent(nextConsent); setRun(nextRun); setBacklogRun(nextBacklogRun); setExecution(nextExecution);
       setSelected((current) => current.filter((id) => eligible.some((provider) => provider.providerId === id)));
     } catch { setNotice("Project research status is temporarily unavailable."); }
   }, [props.endpoint, props.projectId]);
   useEffect(() => { void refresh(); const active = [run?.state, backlogRun?.state].some((state) => state && ["queued", "running", "deferred"].includes(state)); const timer = window.setInterval(() => void refresh(), active ? 3_000 : 15_000); return () => window.clearInterval(timer); }, [refresh, run?.state, backlogRun?.state]);
   const contextDigest = useMemo(() => lifecycle?.artifacts.filter((artifact) => artifact.kind === "context").at(-1)?.digest ?? null, [lifecycle]);
   const validConsent = consent && consent.contextDigest === contextDigest && consent.expiresAt > Date.now() ? consent : null;
-  if (!lifecycle || !["solution_design", "awaiting_design_approval", "backlog_design", "backlog_qa"].includes(lifecycle.stage)) return null;
+  if (!lifecycle || !["solution_design", "awaiting_design_approval", "backlog_design", "backlog_qa", "delivery"].includes(lifecycle.stage)) return null;
+  if (lifecycle.stage === "delivery") {
+    const completed = execution?.tasks.filter((task) => task.status === "completed").length ?? 0;
+    const total = execution?.tasks.length ?? 0;
+    return <div className="mt-4 rounded-2xl bg-muted/55 p-4"><div className="flex items-center justify-between gap-3"><strong className="text-sm">Implementation</strong>{execution && <Badge tone={execution.state === "completed" ? "positive" : execution.state === "running" ? "neutral" : "caution"}>{execution.state.replaceAll("_", " ")}</Badge>}</div><div className="mt-3 h-2 overflow-hidden rounded-full bg-background"><div className="h-full rounded-full bg-primary" style={{ width: `${total > 0 ? Math.round(completed / total * 100) : 0}%` }} /></div><p className="mt-3 text-xs text-muted-foreground">{execution ? `${completed} of ${total} verified` : "Waiting for the verified Jira execution graph."}</p></div>;
+  }
   if (["backlog_design", "backlog_qa"].includes(lifecycle.stage)) {
     return <div className="mt-4 rounded-2xl bg-muted/55 p-4"><div className="flex items-center justify-between gap-3"><strong className="text-sm">Delivery plan</strong>{backlogRun && <Badge tone={backlogRun.state === "needs_user" ? "caution" : backlogRun.state === "completed" ? "positive" : "neutral"}>{backlogRun.state.replaceAll("_", " ")}</Badge>}</div><p className="mt-3 text-xs leading-5 text-muted-foreground">{backlogRun?.safeMessage ?? "Preparing the reviewed Jira delivery plan."}</p>{backlogRun?.state === "needs_user" && <Button className="mt-3 w-full" size="sm" disabled={working} onClick={() => { setWorking(true); setNotice(""); void generateProjectBacklog({ endpoint: props.endpoint, projectId: props.projectId, idempotencyKey: `backlog-generate:${crypto.randomUUID()}` }).then(setBacklogRun).catch((error) => setNotice(error instanceof Error ? error.message : "Delivery planning could not restart safely.")).finally(() => setWorking(false)); }}><Play weight="fill" />Retry planning</Button>}{notice && <p aria-live="polite" className="mt-3 text-xs text-muted-foreground">{notice}</p>}</div>;
   }

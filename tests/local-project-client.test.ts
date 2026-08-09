@@ -17,6 +17,7 @@ import {
   generateProjectBacklog,
   getProjectBacklog,
   getProjectBacklogRun,
+  getProjectExecution,
   grantProjectProviderConsent,
   listLocalProjects,
   registerLocalProject,
@@ -98,6 +99,14 @@ test("browser client binds delivery planning to exact loopback routes", async ()
   assert.deepEqual(await getProjectBacklog({ endpoint: "http://127.0.0.1:4312", projectId, fetcher }), backlog);
   assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [`/api/v1/projects/${projectId}/backlog-generate`, `/api/v1/projects/${projectId}/backlog-run`, `/api/v1/projects/${projectId}/backlog`]);
   assert.equal(calls[0]?.key, "backlog:0123456789");
+});
+
+test("browser client reads durable project execution from the exact loopback route", async () => {
+  const projectId = lifecycle.projectId;
+  const execution = { schemaVersion: 1 as const, projectId, planDigest: "d".repeat(64), state: "running" as const, revision: 0, tasks: [{ id: "plan_0000000000000004", jiraIssueKey: "PIPE-4", title: "Implement bounded work", dependsOn: [], uiChanged: false, requiredCapabilities: ["chat"], privacyClass: "source_code" as const, status: "queued" as const, revision: 0, attempt: 0, assignment: null, lease: null, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Queued.", updatedAt: 1 }], updatedAt: 1 };
+  let observed = "";
+  assert.deepEqual(await getProjectExecution({ endpoint: "http://127.0.0.1:4312", projectId, fetcher: async (url) => { observed = String(url); return Response.json(execution); } }), execution);
+  assert.equal(new URL(observed).pathname, `/api/v1/projects/${projectId}/execution`);
 });
 
 test("browser client sends bounded loopback registration and validates responses", async () => {

@@ -9,7 +9,8 @@ import type { LocalRequest } from "../../../../../packages/runtime/src/local-req
 import type { ProjectLifecycleRecord } from "../../../../../packages/orchestration/src/project-lifecycle.js";
 import type { SolutionDocument, SolutionRun } from "../../../../../packages/orchestration/src/solution-design.js";
 import type { DeliveryPlanRun } from "../../../../../packages/orchestration/src/delivery-plan.js";
-import { decideProjectSolution, getProjectBacklogRun, getProjectLifecycle, getProjectSolution, getProjectSolutionRun, listLocalProjects } from "../../local-project-client.js";
+import type { ProjectExecutionRecord } from "../../../../../packages/orchestration/src/project-execution.js";
+import { decideProjectSolution, getProjectBacklogRun, getProjectExecution, getProjectLifecycle, getProjectSolution, getProjectSolutionRun, listLocalProjects } from "../../local-project-client.js";
 import { listLocalRequests } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -28,6 +29,7 @@ export function ProjectActivityDashboard(props: {
   const [lifecycles, setLifecycles] = useState<readonly ProjectLifecycleRecord[]>([]);
   const [solutionRuns, setSolutionRuns] = useState<readonly SolutionRun[]>([]);
   const [backlogRuns, setBacklogRuns] = useState<readonly DeliveryPlanRun[]>([]);
+  const [executions, setExecutions] = useState<readonly ProjectExecutionRecord[]>([]);
   const [selectedSolution, setSelectedSolution] = useState<ProjectLifecycleRecord | null>(null);
   const [solution, setSolution] = useState<SolutionDocument | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -45,6 +47,7 @@ export function ProjectActivityDashboard(props: {
       setLifecycles((await Promise.all(projectCollection.projects.map((project) => getProjectLifecycle({ endpoint: props.endpoint, projectId: project.id }).catch(() => null)))).filter((record): record is ProjectLifecycleRecord => record !== null));
       setSolutionRuns((await Promise.all(projectCollection.projects.map((project) => getProjectSolutionRun({ endpoint: props.endpoint, projectId: project.id }).catch(() => null)))).filter((record): record is SolutionRun => record !== null));
       setBacklogRuns((await Promise.all(projectCollection.projects.map((project) => getProjectBacklogRun({ endpoint: props.endpoint, projectId: project.id }).catch(() => null)))).filter((record): record is DeliveryPlanRun => record !== null));
+      setExecutions((await Promise.all(projectCollection.projects.map((project) => getProjectExecution({ endpoint: props.endpoint, projectId: project.id }).catch(() => null)))).filter((record): record is ProjectExecutionRecord => record !== null));
       setStatus("live");
     } catch {
       setStatus("offline");
@@ -70,6 +73,7 @@ export function ProjectActivityDashboard(props: {
   const solutionItems = lifecycles.filter((lifecycle) => lifecycle.stage === "awaiting_design_approval" && (projectId === "all" || lifecycle.projectId === projectId));
   const researchActions = solutionRuns.filter((run) => run.state === "needs_user" && (projectId === "all" || run.projectId === projectId));
   const backlogActions = backlogRuns.filter((run) => run.state === "needs_user" && (projectId === "all" || run.projectId === projectId));
+  const executionActions = executions.filter((record) => ["needs_user", "quarantined"].includes(record.state) && (projectId === "all" || record.projectId === projectId));
 
   async function openSolution(lifecycle: ProjectLifecycleRecord) {
     setSelectedSolution(lifecycle); setFeedback(""); setNotice("");
@@ -116,10 +120,11 @@ export function ProjectActivityDashboard(props: {
       {status === "offline" ? (
         <Empty title="Local runtime unavailable" detail="No cached or sample status is substituted." />
       ) : props.mode === "actions" ? (
-        actionItems.length === 0 && solutionItems.length === 0 && researchActions.length === 0 && backlogActions.length === 0 ? (
+        actionItems.length === 0 && solutionItems.length === 0 && researchActions.length === 0 && backlogActions.length === 0 && executionActions.length === 0 ? (
           <Empty title="Nothing needs you" detail="The pipeline can continue without an owner decision right now." positive />
         ) : (
           <div className="grid gap-3">
+            {executionActions.map((record) => { const task = record.tasks.find((candidate) => ["needs_user", "quarantined"].includes(candidate.status)); return <a href="/build" key={`execution-${record.projectId}`} className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"><div className="flex items-start gap-4"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500"><Warning weight="fill" /></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong>Implementation needs you</strong><Badge>{projectNames.get(record.projectId) ?? "Unknown project"}</Badge></span><span className="mt-2 block text-sm leading-6 text-muted-foreground">{task?.safeMessage ?? "A verified execution task requires attention."}</span></span><span className="text-xs text-muted-foreground">Resolve</span></div></a>; })}
             {backlogActions.map((run) => <a href="/build" key={`backlog-${run.projectId}`} className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"><div className="flex items-start gap-4"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500"><Warning weight="fill" /></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong>Delivery planning needs you</strong><Badge>{projectNames.get(run.projectId) ?? "Unknown project"}</Badge></span><span className="mt-2 block text-sm leading-6 text-muted-foreground">{run.safeMessage}</span></span><span className="text-xs text-muted-foreground">Resolve</span></div></a>)}
             {researchActions.map((run) => <a href="/build" key={`research-${run.projectId}`} className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"><div className="flex items-start gap-4"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500"><Warning weight="fill" /></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong>Solution research needs you</strong><Badge>{projectNames.get(run.projectId) ?? "Unknown project"}</Badge></span><span className="mt-2 block text-sm leading-6 text-muted-foreground">{run.safeMessage}</span></span><span className="text-xs text-muted-foreground">Resolve</span></div></a>)}
             {solutionItems.map((lifecycle) => (
@@ -155,6 +160,8 @@ export function ProjectActivityDashboard(props: {
             const projectRequests = requests.filter((request) => request.projectId === project.id);
             const jira = (project.resources ?? []).find((resource) => resource.kind === "jira_project");
             const latest = [...projectRequests].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+            const execution = executions.find((record) => record.projectId === project.id);
+            const verified = execution?.tasks.filter((task) => task.status === "completed").length ?? 0;
             return (
               <Card key={project.id}>
                 <CardContent className="p-5">
@@ -179,6 +186,7 @@ export function ProjectActivityDashboard(props: {
                   <div className="mt-4">
                     <span className="text-[10px] font-semibold uppercase tracking-[.14em] text-muted-foreground">Latest update</span>
                     <p className="mt-2 line-clamp-2 text-sm leading-6">{latest?.outcome ?? "No pipeline work has started."}</p>
+                    {execution && <p className="mt-2 text-xs text-muted-foreground">{verified} of {execution.tasks.length} implementation tasks verified</p>}
                   </div>
                 </CardContent>
               </Card>
