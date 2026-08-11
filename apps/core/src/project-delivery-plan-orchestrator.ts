@@ -43,7 +43,8 @@ export class ProjectDeliveryPlanOrchestrator {
     if (delivery.discipline !== "delivery" || technical.discipline !== "technical") throw new Error("Backlog reviewers returned mismatched disciplines.");
     if (delivery.verdict !== "pass" || technical.verdict !== "pass") throw new DeliveryPlanReviewDissentError([...delivery.findings, ...technical.findings]);
     const reviewerIds = [identity(deliveryEvidence, delivery.reviewerId), identity(technicalEvidence, technical.reviewerId)];
-    if (reviewerIds[0] === reviewerIds[1]) throw new Error("Backlog QA requires independent reviewer identities.");
+    const executors = [executorIdentity(evidence), executorIdentity(deliveryEvidence), executorIdentity(technicalEvidence)];
+    if (reviewerIds[0] === reviewerIds[1] || new Set(executors).size !== executors.length) throw new Error("Backlog QA requires a planner and two independent reviewer identities.");
     const artifact = await this.plans.publish(projectId, { ...plan, revision: (existing?.revision ?? 0) + 1, reviews: [{ ...delivery, reviewerId: reviewerIds[0], verdict: "pass" }, { ...technical, reviewerId: reviewerIds[1], verdict: "pass" }] }, this.now());
     return this.lifecycles.publishBacklog(projectId, artifact);
   }
@@ -53,6 +54,7 @@ export class ProjectDeliveryPlanOrchestrator {
 
 export class DeliveryPlanReviewDissentError extends Error { constructor(readonly findings: readonly string[]) { super("Independent backlog QA did not reach approval."); } }
 function identity(evidence: SolutionModelEvidence, declared: string) { return `${evidence.providerId}/${evidence.modelId}/${declared}`.slice(0, 160); }
+function executorIdentity(evidence: SolutionModelEvidence) { return `${evidence.providerId}/${evidence.modelId}`; }
 function boundedJson(value: unknown) { const result = JSON.stringify(value); if (!result || result.length > 2_000_000) throw new Error("Delivery plan output is not safely bounded."); return result; }
 function planningInstruction() { return "Transform the approved solution into a self-contained delivery hierarchy. Include epics, stories, tasks, and 60–120 minute subtasks; estimates, dependencies, acceptance criteria, Definition of Done, role capabilities, rollback requirements, implementation notes, and citations. Provide a complete coverage matrix for behavior, architecture, user_experience, data, integrations, security, privacy, reliability, rollout, and metrics; each requirement must map to executable subtask IDs and deterministic validation profiles. Provide explicit owner_approval and infrastructure gates wherever authority or resources are required. Every subtask must name the exact safe project-relative files it may change in allowedFiles and select validationProfiles only from format, lint, typecheck, unit, integration, build, and visual. Use stable plan and gate IDs, preserve exact context and solution digests, and return strict JSON only."; }
 function reviewInstruction(discipline: "delivery" | "technical") { return `Independently audit the candidate delivery plan from the ${discipline} discipline against CONTEXT.md and the approved SOLUTION.md. Fail on omissions, invalid hierarchy, work larger than two hours at subtask level, missing estimates or dependencies, vague criteria, invented facts, or non-executable instructions.`; }

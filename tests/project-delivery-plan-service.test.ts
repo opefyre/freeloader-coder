@@ -32,6 +32,11 @@ test("reviewed backlog publishes privately with digest evidence and a complete h
     assert.match(document.markdown, /Capabilities: typescript implementation, independent validation/);
     assert.match(document.markdown, /### Rollback requirements/);
     assert.match(document.markdown, /## Independent QA/);
+    const secondWorkspace = join(root, "workspace-two");
+    await mkdir(join(secondWorkspace, ".git"), { recursive: true });
+    const secondProject = await projects.register({ schemaVersion: 1, path: secondWorkspace });
+    const secondArtifact = await service.publish(secondProject.id, { ...plan, revision: 1, reviews: [{ schemaVersion: 1, reviewerId: "delivery-reviewer", discipline: "delivery", verdict: "pass", findings: [] }, { schemaVersion: 1, reviewerId: "technical-reviewer", discipline: "technical", verdict: "pass", findings: [] }] }, 10_000);
+    assert.equal(secondArtifact.digest, artifact.digest);
     const source = await service.readDraft(project.id);
     assert.equal(source.document.digest, document.digest);
     assert.equal(source.draft.items.length, 4);

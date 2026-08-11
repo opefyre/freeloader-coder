@@ -32,15 +32,16 @@ test("approved major solution becomes an independently reviewed backlog artifact
   assert.equal((published as { qaPassed: boolean }).qaPassed, true);
 });
 
-test("backlog planning fails closed on reviewer dissent and evidence mismatch", async () => {
-  const run = async (mismatch: boolean, dissent: boolean) => new ProjectDeliveryPlanOrchestrator(
+test("backlog planning fails closed on reviewer dissent, planner self-review, and evidence mismatch", async () => {
+  const run = async (mismatch: boolean, dissent: boolean, selfReview = false) => new ProjectDeliveryPlanOrchestrator(
     { get: async () => lifecycle, eligibility: async () => ({ schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: lifecycle.assessment, evidence: ["New product."], alternatives: [], override: null, decidedAt: 1 }), publishBacklog: async () => { throw new Error("must not publish"); } },
     { read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); }, publish: async () => { throw new Error("must not publish"); } },
     { readVerified: async () => ({ digest: contextDigest, markdown: "context" }) },
     { read: async () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: solutionDigest, markdown: "solution" }) },
     { authorize: async () => permit },
-    { run: async (input) => input.role === "delivery_planning" ? { providerId: "groq", modelId: "planner", response: { ...completeDeliveryPlan(), ...(mismatch ? { solutionDigest: "d".repeat(64) } : {}) } } : { providerId: input.role, modelId: "reviewer", response: { schemaVersion: 1, reviewerId: input.role, discipline: input.role === "delivery_review" ? "delivery" : "technical", verdict: dissent && input.role === "delivery_review" ? "fail" : "pass", findings: dissent ? ["Missing recovery detail."] : [] } } },
+    { run: async (input) => input.role === "delivery_planning" ? { providerId: "groq", modelId: "planner", response: { ...completeDeliveryPlan(), ...(mismatch ? { solutionDigest: "d".repeat(64) } : {}) } } : { providerId: selfReview && input.role === "delivery_review" ? "groq" : input.role, modelId: selfReview && input.role === "delivery_review" ? "planner" : "reviewer", response: { schemaVersion: 1, reviewerId: input.role, discipline: input.role === "delivery_review" ? "delivery" : "technical", verdict: dissent && input.role === "delivery_review" ? "fail" : "pass", findings: dissent ? ["Missing recovery detail."] : [] } } },
   ).run(projectId);
   await assert.rejects(() => run(true, false), /not bound/);
   await assert.rejects(() => run(false, true), DeliveryPlanReviewDissentError);
+  await assert.rejects(() => run(false, false, true), /planner and two independent reviewer identities/);
 });
