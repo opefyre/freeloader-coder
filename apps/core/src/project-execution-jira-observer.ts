@@ -79,7 +79,11 @@ class ExecutionJiraClient {
   async comment(issueKey: string, marker: string, summary: string) { await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`, { method: "POST", body: JSON.stringify({ body: document([summary, marker]) }) }); }
   async ensureStatus(issueKey: string, desired: string) {
     const issue = await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=status`);
-    if (String(issue.fields?.status?.name ?? "").toLowerCase() === desired.toLowerCase()) return true;
+    const current = String(issue.fields?.status?.name ?? "");
+    if (current.toLowerCase() === desired.toLowerCase()) return true;
+    if (!safePredecessors(desired).includes(current.toLowerCase())) {
+      throw new ProjectExecutionJiraObserverError("external_edit", `${issueKey} is ${current || "in an unknown status"} in Jira. Codkesh will not overwrite that external change.`);
+    }
     const response = await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`);
     const transitions = Array.isArray(response.transitions) ? response.transitions : [];
     const match = transitions.find((transition: any) => String(transition?.to?.name ?? transition?.name ?? "").toLowerCase() === desired.toLowerCase());
@@ -92,8 +96,9 @@ class ExecutionJiraClient {
 }
 
 function jiraStatus(status: ExecutionTask["status"]): string | null { if (["running", "validating", "healing"].includes(status)) return "In Progress"; if (["reviewing", "integrating"].includes(status)) return "In Review"; if (status === "completed") return "Done"; return null; }
+function safePredecessors(desired: string) { if (desired === "In Progress") return ["to do", "open", "selected for development"]; if (desired === "In Review") return ["in progress"]; if (desired === "Done") return ["in progress", "in review"]; return []; }
 function markerFor(task: ExecutionTask) { return `pipeline_exec_${hash(`${task.id}:${task.revision}:${task.status}`).slice(0, 24)}`; }
-function evidenceSummary(task: ExecutionTask) { const passed = task.validations.filter((item) => item.passed).map((item) => item.tier).join(", ") || "none"; const reviewers = task.reviews.map((item) => `${item.role}:${item.verdict}`).join(", ") || "none"; return `Pipeline Studio · ${task.status.replaceAll("_", " ")} · attempt ${task.attempt + 1}. Checks: ${passed}. Reviews: ${reviewers}. Commit: ${task.commitDigest?.slice(0, 12) ?? "pending"}. ${task.safeMessage}`; }
+function evidenceSummary(task: ExecutionTask) { const passed = task.validations.filter((item) => item.passed).map((item) => item.tier).join(", ") || "none"; const reviewers = task.reviews.map((item) => `${item.role}:${item.verdict}`).join(", ") || "none"; return `Codkesh · ${task.status.replaceAll("_", " ")} · attempt ${task.attempt + 1}. Checks: ${passed}. Reviews: ${reviewers}. Commit: ${task.commitDigest?.slice(0, 12) ?? "pending"}. ${task.safeMessage}`; }
 function parseCredential(value: string) { let parsed: Record<string, unknown>; try { parsed = JSON.parse(value) as Record<string, unknown>; } catch { throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); } if (typeof parsed.siteUrl !== "string" || typeof parsed.email !== "string" || typeof parsed.apiToken !== "string") throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); const site = new URL(parsed.siteUrl); if (site.protocol !== "https:" || !site.hostname.endsWith(".atlassian.net") || site.port) throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira site is invalid."); return { siteUrl: site.origin, email: parsed.email, apiToken: parsed.apiToken }; }
 function document(lines: readonly string[]) { return { type: "doc", version: 1, content: lines.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) }; }
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }

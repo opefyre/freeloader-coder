@@ -39,9 +39,35 @@ test("Jira observer publishes verified completion once and reconciles remote sta
     assert.equal(comments.length, 1);
     assert.equal(transitionPosts, 1);
     assert.match(JSON.stringify(comments[0]), /pipeline_exec_/);
+    assert.match(JSON.stringify(comments[0]), /Codkesh/);
     assert.deepEqual(await observer.synchronize(projectId), { synchronized: 0, pending: 0 });
     assert.equal(comments.length, 1);
     assert.equal(transitionPosts, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("Jira observer detects an external workflow edit instead of overwriting it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-jira-conflict-"));
+  try {
+    let transitionPosts = 0;
+    const fetcher: typeof fetch = async (url, init) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname.endsWith("/comment") && init?.method === "POST") return json({ id: "1" }, 201);
+      if (parsed.pathname.endsWith("/comment")) return json({ comments: [] });
+      if (parsed.pathname.endsWith("/transitions") && init?.method === "POST") { transitionPosts += 1; return new Response(null, { status: 204 }); }
+      if (parsed.pathname.includes("/issue/PIPE-4")) return json({ fields: { status: { name: "Blocked by owner" } } });
+      throw new Error(`Unexpected request: ${parsed.pathname}`);
+    };
+    const observer = new ProjectExecutionJiraObserver(
+      root,
+      { get: async () => completedRecord() },
+      { get: async () => ({ completed: true, issues: { [taskId]: { issueKey: "PIPE-4" } } }) },
+      { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) },
+      fetcher,
+      () => 200
+    );
+    await assert.rejects(() => observer.synchronize(projectId), /will not overwrite that external change/);
+    assert.equal(transitionPosts, 0);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

@@ -63,6 +63,49 @@ test("failed validation permits only bounded healing and expired outcomes requir
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("protected paths are rejected before execution and reviewer dissent cannot integrate", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-guards-"));
+  try {
+    const protectedDraft = { ...draft, items: draft.items.map((item) => item.id === taskId ? { ...item, allowedFiles: [".env.production"] } : item) };
+    const protectedService = new ProjectExecutionService(root, { readDraft: async () => ({ draft: protectedDraft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100);
+    await assert.rejects(() => protectedService.initialize(projectId), /protected credential, environment, or Git path/);
+
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    const implemented = await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    assert.equal(implemented.status, "validating", "model implementation evidence alone cannot complete work");
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: true, exitCode: 0, evidenceDigest: evidence });
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: evidence });
+    const dissent = await service.recordReviews(projectId, taskId, lease.leaseId, "worker-a", [review("functional-reviewer", "gemini", "functional"), { ...review("design-reviewer", "cloudflare", "design"), verdict: "fail" as const }]);
+    assert.equal(dissent.status, "quarantined");
+    assert.equal(dissent.lease, null);
+    assert.equal(dissent.commitDigest, null);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("repeated validation failures exhaust the bounded repair budget and quarantine once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-budget-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    let task = claimed.task!;
+    const policy = { maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["typecheck", "test"], requiredReviewRoles: ["functional", "design"], minimumGoldenScore: 90 };
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      task = await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+      task = await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 1, evidenceDigest: evidence });
+      task = await service.assessHealing(projectId, taskId, lease.leaseId, "worker-a", { failureClass: "implementation", changedFiles: ["src/app.ts"], policy, goldenScore: 95, previousGoldenScore: 95 });
+    }
+    assert.equal(task.status, "quarantined");
+    assert.equal(task.attempt, 2);
+    assert.equal(task.lease, null);
+    assert.equal((await service.get(projectId))?.state, "quarantined");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 function makeService(root: string, now: () => number) {
   return new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, now);
 }
