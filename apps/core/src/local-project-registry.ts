@@ -2,19 +2,18 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
   chmod,
-  copyFile,
   mkdir,
   open,
   readFile,
   readdir,
   realpath,
   rename,
+  rm,
   stat,
   lstat,
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { constants as fileConstants } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
@@ -360,36 +359,62 @@ export class LocalProjectRegistry {
     const request = localProjectFileImportSchema.parse(input);
     const projectRoot = await this.canonicalRoot(projectId);
     const destination = resolve(projectRoot, ".pipeline", "inputs");
+    const staging = resolve(destination, ".staging");
     await mkdir(destination, { recursive: true, mode: 0o700 });
     await chmod(resolve(projectRoot, ".pipeline"), 0o700);
     await chmod(destination, 0o700);
+    await rm(staging, { recursive: true, force: true });
+    await mkdir(staging, { recursive: true, mode: 0o700 });
+    await cleanupInterruptedInputImports(destination);
     const imported: Array<{ label: string; projectRelativePath: string; bytes: number; evidence: { status: "extracted" | "unsupported" | "encrypted" | "corrupt" | "limit_exceeded"; mediaType: string; sourceDigest: string; unitCount: number; warning: string | null } }> = [];
     let totalBytes = 0;
+    const importedDigests = new Set<string>();
     for (const requestedPath of request.paths) {
       if (!isAbsolute(requestedPath) || requestedPath.includes("\0")) {
         throw new LocalProjectError("invalid_path", "Choose regular local files.");
       }
-      const source = await realpath(requestedPath);
-      const info = await lstat(source);
-      if (!info.isFile() || info.isSymbolicLink()) {
+      const requestedInfo = await lstat(requestedPath);
+      if (!requestedInfo.isFile() || requestedInfo.isSymbolicLink()) {
         throw new LocalProjectError("invalid_path", "Folders and symbolic links cannot be attached.");
       }
+      const source = await realpath(requestedPath);
+      const info = await lstat(source);
       totalBytes += info.size;
       if (info.size > 5_000_000 || totalBytes > 20_000_000) {
         throw new LocalProjectError("scan_limit", "Selected files exceed the 5 MB per-file or 20 MB total limit.");
       }
       const label = basename(source).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 180) || "attachment";
       const extension = extname(label);
-      const stem = label.slice(0, label.length - extension.length);
-      const storedName = `${stem}-${hash(source).slice(0, 8)}${extension}`;
-      await copyFile(source, resolve(destination, storedName), fileConstants.COPYFILE_EXCL).catch(async (error) => {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      });
+      const content = await readFile(source);
+      if (content.length > 5_000_000 || totalBytes - info.size + content.length > 20_000_000) {
+        throw new LocalProjectError("scan_limit", "Selected files exceed the 5 MB per-file or 20 MB total limit.");
+      }
+      assertInputSignature(extension, content);
+      const digest = createHash("sha256").update(content).digest("hex");
+      if (importedDigests.has(digest)) continue;
+      importedDigests.add(digest);
+      const storedName = `${digest}${extension}`;
       const storedPath = resolve(destination, storedName);
-      const extraction = await extractProjectInput(storedPath);
-      await writeFile(`${storedPath}.evidence.json`, `${JSON.stringify(extraction)}\n`, { encoding: "utf8", mode: 0o600 });
+      const stagedPath = resolve(staging, `${randomUUID()}${extension}`);
+      await writeFile(stagedPath, content, { mode: 0o600, flag: "wx" });
+      const extraction = await extractProjectInput(stagedPath);
+      if (extraction.status === "corrupt") {
+        await rm(stagedPath, { force: true });
+        throw new LocalProjectError("invalid_path", `The selected ${extension || "file"} does not match its format or is corrupt.`);
+      }
+      const stagedEvidence = `${stagedPath}.evidence.json`;
+      await writeFile(stagedEvidence, `${JSON.stringify(extraction)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await rename(stagedPath, storedPath).catch(async (error) => {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        await rm(stagedPath, { force: true });
+      });
+      await rename(stagedEvidence, `${storedPath}.evidence.json`).catch(async (error) => {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        await rm(stagedEvidence, { force: true });
+      });
       imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size, evidence: { status: extraction.status, mediaType: extraction.mediaType, sourceDigest: extraction.sourceDigest, unitCount: extraction.units.length, warning: extraction.warning } });
     }
+    await rm(staging, { recursive: true, force: true });
     return localProjectFileImportResponseSchema.parse({ schemaVersion: 1, outcome: "imported", files: imported });
   }
 
@@ -489,6 +514,28 @@ export class LocalProjectRegistry {
       await unlink(temporary).catch(() => undefined);
     }
   }
+}
+
+async function cleanupInterruptedInputImports(destination: string): Promise<void> {
+  const names = await readdir(destination);
+  const dataNames = new Set(names.filter((name) => /^[a-f0-9]{64}\.[a-zA-Z0-9]+$/.test(name)));
+  for (const name of dataNames) {
+    if (!names.includes(`${name}.evidence.json`)) await rm(resolve(destination, name), { force: true });
+  }
+  for (const name of names.filter((candidate) => /^[a-f0-9]{64}\.[a-zA-Z0-9]+\.evidence\.json$/.test(candidate))) {
+    if (!dataNames.has(name.slice(0, -".evidence.json".length))) await rm(resolve(destination, name), { force: true });
+  }
+}
+
+function assertInputSignature(extension: string, content: Buffer): void {
+  const required = content.subarray(0, 5).toString("latin1") === "%PDF-" ? ".pdf"
+    : content.subarray(0, 4).toString("hex") === "504b0304" ? ".office"
+      : content.subarray(0, 8).toString("hex") === "89504e470d0a1a0a" ? ".png"
+        : content[0] === 0xff && content[1] === 0xd8 ? ".jpeg"
+          : content.subarray(0, 4).toString("ascii") === "RIFF" && content.subarray(8, 12).toString("ascii") === "WEBP" ? ".webp"
+            : null;
+  const matches = required === ".office" ? [".docx", ".xlsx", ".pptx"].includes(extension) : required === ".jpeg" ? [".jpg", ".jpeg"].includes(extension) : required === null || extension === required;
+  if (!matches) throw new LocalProjectError("invalid_path", "The selected file extension does not match its verified content type.");
 }
 
 async function defaultOpenArtifactFile(path: string) {
