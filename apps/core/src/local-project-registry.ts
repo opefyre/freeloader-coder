@@ -39,6 +39,7 @@ import {
   type LocalPlanningSnapshot,
   type LocalTopology,
 } from "../../../packages/runtime/src/local-requests.js";
+import { PROJECT_ARTIFACT_CONTRACTS, ProjectArtifactStore, type ProjectArtifactKind } from "./project-artifact-store.js";
 
 const MAX_ENTRIES = 4_000;
 const MAX_MANIFEST_BYTES = 256_000;
@@ -99,9 +100,17 @@ type PrivateRegistry = {
 export class LocalProjectRegistry {
   readonly #registryPath: string;
   readonly #scanLocks = new Map<string, Promise<LocalProjectSnapshot>>();
+  readonly #artifacts: ProjectArtifactStore;
+  readonly #openArtifactFile: (path: string) => Promise<void>;
 
-  constructor(stateDirectory: string) {
+  constructor(
+    stateDirectory: string,
+    artifacts = new ProjectArtifactStore(),
+    openArtifactFile = defaultOpenArtifactFile,
+  ) {
     this.#registryPath = resolve(stateDirectory, "local-projects.json");
+    this.#artifacts = artifacts;
+    this.#openArtifactFile = openArtifactFile;
   }
 
   async list(): Promise<LocalProjectCollection> {
@@ -128,6 +137,19 @@ export class LocalProjectRegistry {
       throw new LocalProjectError("not_found", "Project registration was not found.");
     }
     return validateRepositoryRoot(record.canonicalPath);
+  }
+
+  async artifacts(projectId: string) {
+    return this.#artifacts.inspect(await this.canonicalRoot(projectId));
+  }
+
+  async openArtifact(projectId: string, kind: ProjectArtifactKind) {
+    const root = await this.canonicalRoot(projectId);
+    await this.#artifacts.read(root, kind);
+    const fileName = PROJECT_ARTIFACT_CONTRACTS[kind].fileName;
+    const target = join(root, fileName);
+    await this.#openArtifactFile(target);
+    return { schemaVersion: 1 as const, outcome: "opened" as const, kind, fileName };
   }
 
   async grounding(projectId: string): Promise<LocalPlanningSnapshot> {
@@ -204,7 +226,10 @@ export class LocalProjectRegistry {
     const existing = registry.projects.find(
       (project) => project.canonicalPath === canonicalPath
     );
-    if (existing) return this.rescan(existing.id);
+    if (existing) {
+      await this.#artifacts.initialize(canonicalPath);
+      return this.rescan(existing.id);
+    }
     const id = `project_${hash(canonicalPath).slice(0, 16)}`;
     const displayName = request.displayName ?? basename(canonicalPath);
     if (
@@ -218,6 +243,7 @@ export class LocalProjectRegistry {
         "That project name is already registered."
       );
     }
+    await this.#artifacts.initialize(canonicalPath);
     const snapshot = await inspectRepository({ id, canonicalPath, displayName, resources: [] });
     await this.#save({
       schemaVersion: registrySchemaVersion,
@@ -446,6 +472,11 @@ export class LocalProjectRegistry {
       await unlink(temporary).catch(() => undefined);
     }
   }
+}
+
+async function defaultOpenArtifactFile(path: string) {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer.exe" : "xdg-open";
+  await execFileAsync(command, [path], { timeout: 5_000, windowsHide: true });
 }
 
 function projectNameFromIdea(idea: string): string {

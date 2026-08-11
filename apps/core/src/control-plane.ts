@@ -169,6 +169,8 @@ export type ControlPlaneServerOptions = {
     setResources?: (projectId: string, input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     addFiles?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     generateContext?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
+    artifacts?: (projectId: string) => unknown | Promise<unknown>;
+    openArtifact?: (projectId: string, kind: "context" | "memory" | "research" | "product" | "design" | "delivery_plan" | "ops_rules" | "infra" | "security" | "decisions" | "status") => unknown | Promise<unknown>;
     forget: (projectId: string) => void | Promise<void>;
   };
   projectLifecycles?: {
@@ -1206,11 +1208,36 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const projectRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context|artifacts)$/
       );
       const projectLifecycleRoute = url.pathname.match(
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|solution|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
+      const projectArtifactOpenRoute = url.pathname.match(/^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/artifacts\/(context|memory|research|product|design|delivery_plan|ops_rules|infra|security|decisions|status)\/open$/);
+      if (request.method === "GET" && projectRoute?.[2] === "artifacts" && options.projects?.artifacts) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, z.array(z.strictObject({
+          fileName: z.string().regex(/^[A-Z][A-Z-]+\.md$/),
+          kind: z.enum(["context", "memory", "research", "product", "design", "delivery_plan", "ops_rules", "infra", "security", "decisions", "status"]),
+          revision: z.number().int().nonnegative(),
+          updatedAt: z.string().datetime(),
+          producer: z.string().min(3).max(120),
+          bodyDigest: z.string().regex(/^[a-f0-9]{64}$/),
+          confidence: z.enum(["unknown", "mixed", "verified"]),
+          approvalState: z.enum(["not_required", "pending", "approved"]),
+          citations: z.strictObject({ verified: z.number().int().nonnegative(), unverified: z.number().int().nonnegative(), invalid: z.number().int().nonnegative() }),
+          state: z.enum(["ready", "missing", "conflicted"]),
+        })).length(11).parse(await options.projects.artifacts(projectRoute[1] ?? "")));
+        return;
+      }
+      if (request.method === "POST" && projectArtifactOpenRoute && options.projects?.openArtifact) {
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, z.strictObject({ schemaVersion: z.literal(1), outcome: z.literal("opened"), kind: z.string(), fileName: z.string().regex(/^[A-Z][A-Z-]+\.md$/) }).parse(
+          await options.projects.openArtifact(projectArtifactOpenRoute[1] ?? "", projectArtifactOpenRoute[2] as Parameters<NonNullable<typeof options.projects.openArtifact>>[1])
+        ));
+        return;
+      }
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "lifecycle" && options.projectLifecycles) {
         if (requestBodyDeclared(request)) {
           sendJson(response, 413, { error: "Request body is not accepted." });

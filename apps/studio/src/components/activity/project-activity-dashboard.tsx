@@ -239,6 +239,7 @@ export function ProjectActivityDashboard(props: {
                     <MiniMetric value={String(retries)} label="Retries" />
                     <MiniMetric value={cycleTime} label="Cycle" />
                   </div>
+                  <a href={`/projects/${project.id}`} className="mt-4 inline-flex min-h-10 items-center text-sm font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30">Open project files</a>
                 </CardContent>
               </Card>
             );

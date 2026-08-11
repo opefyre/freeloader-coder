@@ -75,6 +75,7 @@ export interface ProjectArtifactInspection {
   readonly confidence: ProjectArtifactMetadata["confidence"];
   readonly approvalState: ProjectArtifactMetadata["approvalState"];
   readonly citations: Readonly<Record<ProjectArtifactCitation["state"], number>>;
+  readonly state: "ready" | "missing" | "conflicted";
 }
 
 export interface ProjectArtifactStoreOptions {
@@ -158,21 +159,14 @@ export class ProjectArtifactStore {
   }
 
   async inspect(root: string): Promise<readonly ProjectArtifactInspection[]> {
-    const artifacts = await this.list(root);
-    return artifacts.map(({ fileName, metadata }) => ({
-      fileName,
-      kind: metadata.kind,
-      revision: metadata.revision,
-      updatedAt: metadata.updatedAt,
-      producer: metadata.producer,
-      bodyDigest: metadata.bodyDigest,
-      confidence: metadata.confidence,
-      approvalState: metadata.approvalState,
-      citations: {
-        verified: metadata.citations.filter(({ state }) => state === "verified").length,
-        unverified: metadata.citations.filter(({ state }) => state === "unverified").length,
-        invalid: metadata.citations.filter(({ state }) => state === "invalid").length,
-      },
+    await assertSafeRoot(root);
+    return Promise.all(PROJECT_ARTIFACT_KINDS.map(async (kind) => {
+      try { return inspection(await this.read(root, kind), "ready"); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return missingInspection(kind);
+        try { return inspection({ fileName: ARTIFACT_FILES[kind], ...(await readUnverified(root, kind)) }, "conflicted"); }
+        catch { return { ...missingInspection(kind), state: "conflicted" as const }; }
+      }
     }));
   }
 
@@ -337,6 +331,16 @@ function initialMetadata(kind: ProjectArtifactKind, producer: string, body: stri
     approvalState: PROJECT_ARTIFACT_CONTRACTS[kind].approval === "none" ? "not_required" : "pending",
     citations: [],
   };
+}
+
+function inspection({ fileName, metadata }: ProjectArtifact, state: ProjectArtifactInspection["state"]): ProjectArtifactInspection {
+  return { fileName, kind: metadata.kind, revision: metadata.revision, updatedAt: metadata.updatedAt, producer: metadata.producer,
+    bodyDigest: metadata.bodyDigest, confidence: metadata.confidence, approvalState: metadata.approvalState, state,
+    citations: { verified: metadata.citations.filter((item) => item.state === "verified").length, unverified: metadata.citations.filter((item) => item.state === "unverified").length, invalid: metadata.citations.filter((item) => item.state === "invalid").length } };
+}
+
+function missingInspection(kind: ProjectArtifactKind): ProjectArtifactInspection {
+  return { fileName: ARTIFACT_FILES[kind], kind, revision: 0, updatedAt: new Date(0).toISOString(), producer: "codkesh:unknown", bodyDigest: "0".repeat(64), confidence: "unknown", approvalState: PROJECT_ARTIFACT_CONTRACTS[kind].approval === "none" ? "not_required" : "pending", citations: { verified: 0, unverified: 0, invalid: 0 }, state: "missing" };
 }
 
 function serializeArtifact(metadata: ProjectArtifactMetadata, body: string) {

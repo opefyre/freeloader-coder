@@ -209,6 +209,21 @@ test("normalizes citations, records provenance, and keeps browser inspection fre
   }
 });
 
+test("inspection distinguishes missing and conflicted artifacts without exposing their bodies", async () => {
+  const root = join(process.cwd(), `.test-artifacts-${crypto.randomUUID()}`);
+  await mkdir(root, { recursive: true });
+  try {
+    const store = new ProjectArtifactStore();
+    await store.initialize(root);
+    await rm(join(root, "MEMORY.md"));
+    await writeFile(join(root, "STATUS.md"), (await readFile(join(root, "STATUS.md"), "utf8")).replace("Complete project intake", "Unrecorded owner edit"), "utf8");
+    const inspection = await store.inspect(root);
+    assert.equal(inspection.find(({ kind }) => kind === "memory")?.state, "missing");
+    assert.equal(inspection.find(({ kind }) => kind === "status")?.state, "conflicted");
+    assert.doesNotMatch(JSON.stringify(inspection), /Unrecorded owner edit|No durable knowledge/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("approved meaning cannot change silently and explicit revision withdrawal remains auditable", async () => {
   const root = join(process.cwd(), `.test-artifacts-${crypto.randomUUID()}`);
   await mkdir(root, { recursive: true });

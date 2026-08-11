@@ -216,6 +216,9 @@ const ProjectPortfolio = lazy(() =>
     default: module.ProjectPortfolio,
   }))
 );
+const ProjectArtifactWorkspace = lazy(() =>
+  import("./components/projects/project-artifact-workspace.js").then((module) => ({ default: module.ProjectArtifactWorkspace }))
+);
 
 const workspaceIcons: Record<StudioView, typeof Gauge> = {
   overview: Gauge,
@@ -501,7 +504,7 @@ function App() {
 
           {activeView === "overview" ? (
             <>
-          <BuildWorkspace navigate={navigate} />
+          <BuildWorkspace navigate={navigate} endpoint={controlPlane.endpoint} />
           <div className="hidden" aria-hidden="true">
           <section className="metric-grid grid gap-3" aria-label="Pipeline summary">
             <Metric
@@ -1243,18 +1246,26 @@ function WorkspaceSurface({
   );
 }
 
-function BuildWorkspace({ navigate }: { navigate: (view: StudioView) => void }) {
+function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) => void; endpoint: string }) {
+  const [surface, setSurface] = useState<"canvas" | "projects">(
+    () => projectIdFromLocation(window.location) ? "projects" : "canvas"
+  );
   const [selectedProjectId, setSelectedProjectId] = useState(
     () => projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? ""
   );
   useEffect(() => {
-    const syncProject = () => setSelectedProjectId(projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? "");
+    const syncProject = () => {
+      const projectId = projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? "";
+      setSelectedProjectId(projectId);
+      if (projectId) setSurface("projects");
+    };
     window.addEventListener("popstate", syncProject);
     return () => window.removeEventListener("popstate", syncProject);
   }, []);
   const openProject = (projectId: string) => {
     window.history.pushState({}, "", projectRoute(projectId));
     setSelectedProjectId(projectId);
+    setSurface("projects");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const closeProject = () => {
@@ -1262,24 +1273,28 @@ function BuildWorkspace({ navigate }: { navigate: (view: StudioView) => void }) 
     setSelectedProjectId("");
   };
   return (
-    <div className="mx-auto max-w-6xl space-y-10">
-      {selectedProjectId ? (
-        <Button variant="ghost" size="sm" onClick={closeProject}>
-          <ArrowRight className="rotate-180" />
-          All projects
-        </Button>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="inline-flex rounded-2xl bg-muted p-1" aria-label="Build workspace view">
+          <button type="button" onClick={() => setSurface("canvas")} aria-pressed={surface === "canvas"} className={cn("rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground transition-colors", surface === "canvas" && "bg-background text-foreground shadow-sm")}>Canvas</button>
+          <button type="button" onClick={() => setSurface("projects")} aria-pressed={surface === "projects"} className={cn("rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground transition-colors", surface === "projects" && "bg-background text-foreground shadow-sm")}>Projects</button>
+        </div>
+        {surface === "canvas" && <span className="hidden text-xs text-muted-foreground sm:inline">Coding, files, terminal, previews and conversations</span>}
+      </div>
+      {surface === "canvas" ? (
+        <div className="overflow-hidden rounded-[1.4rem] bg-[#0b0e14] shadow-[0_24px_80px_rgba(0,0,0,0.2)]">
+          <iframe title="Codkesh coding canvas" src={`${import.meta.env.VITE_PIPELINE_CANVAS_URL ?? "http://127.0.0.1:8001"}/?pipeline=1`} className="block h-[calc(100vh-13.5rem)] min-h-[42rem] w-full border-0" allow="clipboard-read; clipboard-write" />
+        </div>
       ) : (
-        <ProjectPortfolio
-          openProject={openProject}
-          startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()}
-        />
+        <div className="mx-auto max-w-6xl space-y-10">
+          {selectedProjectId ? (
+            <><Button variant="ghost" size="sm" onClick={closeProject}><ArrowRight className="rotate-180" />All projects</Button><ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId} /></>
+          ) : (
+            <ProjectPortfolio openProject={openProject} startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()} />
+          )}
+          <LocalRequestPanel key={selectedProjectId || "new-project"} mode="compose" initialProjectId={selectedProjectId || undefined} navigate={navigate} />
+        </div>
       )}
-      <LocalRequestPanel
-        key={selectedProjectId || "new-project"}
-        mode="compose"
-        initialProjectId={selectedProjectId || undefined}
-        navigate={navigate}
-      />
     </div>
   );
 }

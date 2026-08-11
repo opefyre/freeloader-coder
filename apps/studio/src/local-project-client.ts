@@ -14,8 +14,20 @@ import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../pa
 import { solutionDocumentSchema, projectEgressPermitSchema, solutionRunSchema, type SolutionDocument, type ProjectEgressPermit, type SolutionRun } from "../../../packages/orchestration/src/solution-design.js";
 import { deliveryPlanDocumentSchema, deliveryPlanRunSchema, type DeliveryPlanDocument, type DeliveryPlanRun } from "../../../packages/orchestration/src/delivery-plan.js";
 import { projectExecutionRecordSchema, type ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
+import { z } from "zod";
 
 const MAX_RESPONSE_BYTES = 1_100_000;
+
+const artifactKindSchema = z.enum(["context", "memory", "research", "product", "design", "delivery_plan", "ops_rules", "infra", "security", "decisions", "status"]);
+const projectArtifactInspectionSchema = z.strictObject({
+  fileName: z.string().regex(/^[A-Z][A-Z-]+\.md$/), kind: artifactKindSchema,
+  revision: z.number().int().nonnegative(), updatedAt: z.string().datetime(), producer: z.string().min(3).max(120),
+  bodyDigest: z.string().regex(/^[a-f0-9]{64}$/), confidence: z.enum(["unknown", "mixed", "verified"]),
+  approvalState: z.enum(["not_required", "pending", "approved"]),
+  state: z.enum(["ready", "missing", "conflicted"]),
+  citations: z.strictObject({ verified: z.number().int().nonnegative(), unverified: z.number().int().nonnegative(), invalid: z.number().int().nonnegative() }),
+});
+export type ProjectArtifactInspection = z.infer<typeof projectArtifactInspectionSchema>;
 
 export async function listLocalProjects(input: {
   endpoint: string;
@@ -31,6 +43,16 @@ export async function listLocalProjects(input: {
       ...(input.fetcher ? { fetcher: input.fetcher } : {}),
     })
   );
+}
+
+export async function listProjectArtifacts(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<readonly ProjectArtifactInspection[]> {
+  assertProjectId(input.projectId);
+  return z.array(projectArtifactInspectionSchema).length(11).parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/artifacts`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function openProjectArtifact(input: { endpoint: string; projectId: string; kind: z.infer<typeof artifactKindSchema>; idempotencyKey: string; fetcher?: typeof fetch }) {
+  assertProjectId(input.projectId);
+  return z.strictObject({ schemaVersion: z.literal(1), outcome: z.literal("opened"), kind: artifactKindSchema, fileName: z.string() }).parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/artifacts/${input.kind}/open`, method: "POST", idempotencyKey: input.idempotencyKey, ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
 }
 
 export async function registerLocalProject(input: {

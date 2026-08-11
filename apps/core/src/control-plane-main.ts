@@ -374,6 +374,8 @@ const controlPlane = createControlPlaneServer({
     setResources: (projectId, input) => localProjects.setResources(projectId, input),
     addFiles: (projectId, input) => localProjects.addFiles(projectId, input),
     generateContext: (projectId, input) => projectIntake.generate(projectId, input),
+    artifacts: (projectId) => localProjects.artifacts(projectId),
+    openArtifact: (projectId, kind) => localProjects.openArtifact(projectId, kind),
     forget: (projectId) => localProjects.forget(projectId),
   },
   projectLifecycles: {
