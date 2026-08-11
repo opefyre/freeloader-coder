@@ -26,14 +26,19 @@ test("reviewed backlog publishes privately with digest evidence and a complete h
     assert.match(document.markdown, /## SUBTASK · Add workflow contract/);
     assert.match(document.markdown, /### Acceptance criteria/);
     assert.match(document.markdown, /### Definition of Done/);
+    assert.match(document.markdown, /## Requirement coverage/);
+    assert.match(document.markdown, /\*\*security\*\* → `plan_0000000000000004`/);
+    assert.match(document.markdown, /## Delivery gates/);
+    assert.match(document.markdown, /Capabilities: typescript implementation, independent validation/);
+    assert.match(document.markdown, /### Rollback requirements/);
     assert.match(document.markdown, /## Independent QA/);
     const source = await service.readDraft(project.id);
     assert.equal(source.document.digest, document.digest);
     assert.equal(source.draft.items.length, 4);
-    const path = join(workspace, ".pipeline", "BACKLOG.md");
+    const path = join(workspace, "DELIVERY-PLAN.md");
     const content = await readFile(path, "utf8");
     await writeFile(path, content.replace("Verified delivery plan", "Tampered delivery plan"), "utf8");
-    await assert.rejects(() => service.read(project.id), /digest does not match/);
+    await assert.rejects(() => service.read(project.id), /changed outside its recorded revision/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

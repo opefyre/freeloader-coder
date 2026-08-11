@@ -50,7 +50,7 @@ test("owner MVP advances approved major work through Jira-backed execution to du
     const coordinator = new ProjectExecutionCoordinator(root, execution, worker, () => now++, 25, async (id) => { await lifecycle.completeDelivery(id); });
     await coordinator.schedule(projectId);
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
-    coordinator.stop();
+    await coordinator.shutdown();
 
     assert.equal((await lifecycle.get(projectId))?.stage, "complete");
     assert.equal((await execution.get(projectId))?.state, "completed");

@@ -67,6 +67,13 @@ export class ProjectDeliveryPlanCoordinator {
     return runs.length;
   }
 
+  async shutdown() {
+    for (const timer of this.#timers.values()) clearTimeout(timer);
+    this.#timers.clear();
+    await Promise.allSettled([...this.#inFlight.values()]);
+    await this.#mutation;
+  }
+
   async #execute(projectId: string) {
     const current = await this.get(projectId);
     const attempts = (current?.attempts ?? 0) + 1;

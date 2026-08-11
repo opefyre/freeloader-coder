@@ -7,8 +7,19 @@ import { completeDeliveryPlan } from "./delivery-plan-fixture.js";
 test("self-contained delivery hierarchy enforces every executable layer", () => {
   const plan = deliveryPlanContentSchema.parse(completeDeliveryPlan());
   assert.equal(plan.items.length, 4);
+  assert.equal(plan.coverage.length, 10);
+  assert.deepEqual(new Set(plan.coverage.map((entry) => entry.requirement)), new Set(["behavior", "architecture", "user_experience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics"]));
+  assert.equal(plan.gates[0]?.kind, "owner_approval");
   assert.equal(plan.items.at(-1)?.estimatedMinutes, 90);
   assert.deepEqual(plan.items.at(-1)?.allowedFiles, ["src/workflow.ts", "tests/workflow.test.ts"]);
+});
+
+test("delivery hierarchy rejects missing coverage, non-executable mappings, orphan work, and invalid gates", () => {
+  const base = completeDeliveryPlan();
+  assert.throws(() => deliveryPlanContentSchema.parse({ ...base, coverage: base.coverage.slice(1) }), /10 elements|missing approved solution requirement/);
+  assert.throws(() => deliveryPlanContentSchema.parse({ ...base, coverage: base.coverage.map((entry, index) => index === 0 ? { ...entry, itemIds: [base.items[0]!.id] } : entry) }), /executable subtask/);
+  assert.throws(() => deliveryPlanContentSchema.parse({ ...base, items: base.items.filter((item) => item.type !== "subtask") }), /orphaned|at least one subtask/);
+  assert.throws(() => deliveryPlanContentSchema.parse({ ...base, gates: [{ ...base.gates[0]!, beforeItemIds: ["plan_ffffffffffffffff"] }] }), /only work in this plan/);
 });
 
 test("delivery hierarchy rejects oversized subtasks, broken parents, duplicate IDs, and cycles", () => {

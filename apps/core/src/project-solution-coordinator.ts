@@ -30,6 +30,7 @@ export class ProjectSolutionCoordinator {
 
   async get(projectId: string) { return (await this.#load()).runs[projectId] ?? null; }
   async resumePending() { const runs = Object.values((await this.#load()).runs).filter((run) => ["queued", "running", "deferred"].includes(run.state)); for (const run of runs) await this.schedule(run.projectId); return runs.length; }
+  async shutdown() { for (const timer of this.#timers.values()) clearTimeout(timer); this.#timers.clear(); await Promise.allSettled([...this.#inFlight.values()]); await this.#mutation; }
 
   async #execute(projectId: string) {
     const current = await this.get(projectId);

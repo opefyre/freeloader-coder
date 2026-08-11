@@ -20,9 +20,9 @@ test("coordinator serializes a project and persists completion across restart", 
     const coordinator = new ProjectExecutionCoordinator(root, service, worker, Date.now, 25, async (completedProjectId) => { assert.equal(completedProjectId, projectId); completions += 1; });
     await Promise.all([coordinator.schedule(projectId), coordinator.schedule(projectId), coordinator.schedule(projectId)]);
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
-    assert.equal(calls, 1); assert.equal(maximum, 1); assert.equal(completions, 1); coordinator.stop();
+    assert.equal(calls, 1); assert.equal(maximum, 1); assert.equal(completions, 1); await coordinator.shutdown();
     const restarted = new ProjectExecutionCoordinator(root, service, worker, Date.now, 25);
-    await restarted.resumePending(); await delay(30); assert.equal(calls, 1); restarted.stop();
+    await restarted.resumePending(); await delay(30); assert.equal(calls, 1); await restarted.shutdown();
     assert.equal(JSON.parse(await readFile(join(root, "project-execution-runs.json"), "utf8")).runs[projectId].state, "completed");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -36,7 +36,7 @@ test("coordinator durably defers temporary free-provider denial", async () => {
     const coordinator = new ProjectExecutionCoordinator(root, service, worker);
     await coordinator.schedule(projectId);
     await waitFor(async () => (await coordinator.get(projectId))?.state === "deferred");
-    const run = await coordinator.get(projectId); assert.equal(run?.retryAt, retryAt); assert.match(run?.safeMessage ?? "", /Free-provider capacity/); coordinator.stop();
+    const run = await coordinator.get(projectId); assert.equal(run?.retryAt, retryAt); assert.match(run?.safeMessage ?? "", /Free-provider capacity/); await coordinator.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -49,10 +49,10 @@ test("offline worker defers without a busy loop and resumes after restart", asyn
     const worker = { tick: async () => { calls += 1; return record; } };
     const first = new ProjectExecutionCoordinator(root, service, worker, () => now, 60_000);
     await first.schedule(projectId); await waitFor(async () => (await first.get(projectId))?.state === "deferred");
-    const deferred = await first.get(projectId); assert.equal(deferred?.retryAt, 61_000); assert.match(deferred?.safeMessage ?? "", /No eligible free provider or worker/); assert.equal(calls, 1); first.stop();
+    const deferred = await first.get(projectId); assert.equal(deferred?.retryAt, 61_000); assert.match(deferred?.safeMessage ?? "", /No eligible free provider or worker/); assert.equal(calls, 1); await first.shutdown();
     now = 61_000;
     const restarted = new ProjectExecutionCoordinator(root, service, { tick: async () => { calls += 1; return executionRecord("completed"); } }, () => now, 60_000);
-    await restarted.resumePending(); await waitFor(async () => (await restarted.get(projectId))?.state === "completed"); assert.equal(calls, 2); restarted.stop();
+    await restarted.resumePending(); await waitFor(async () => (await restarted.get(projectId))?.state === "completed"); assert.equal(calls, 2); await restarted.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -65,7 +65,7 @@ test("oldest deferred projects dispatch fairly under the concurrency limit", asy
     const coordinator = new ProjectExecutionCoordinator(root, service, worker, Date.now, 60_000, async () => undefined, 1);
     await coordinator.schedule(projectId); await coordinator.schedule(second);
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed" && (await coordinator.get(second))?.state === "completed");
-    assert.deepEqual(order, [projectId, second]); assert.equal(maximum, 1); coordinator.stop();
+    assert.deepEqual(order, [projectId, second]); assert.equal(maximum, 1); await coordinator.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -84,7 +84,7 @@ test("time-controlled 12-hour soak survives hourly restarts without spins or dup
       await waitFor(async () => ((await coordinator.get(projectId))?.attempts ?? 0) > priorAttempts);
     }
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
-    assert.equal(calls, 12); assert.equal(completions, 1); coordinator.stop();
+    assert.equal(calls, 12); assert.equal(completions, 1); await coordinator.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

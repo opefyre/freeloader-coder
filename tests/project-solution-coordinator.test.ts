@@ -23,6 +23,7 @@ test("solution coordinator returns immediately, persists completion, and does no
     const restarted = new ProjectSolutionCoordinator(root, { run: async () => { calls += 1; return {} as any; } } as any, () => 200);
     assert.equal((await restarted.get(projectId))?.state, "completed");
     assert.equal(await restarted.resumePending(), 0);
+    await coordinator.shutdown(); await restarted.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -37,6 +38,7 @@ test("solution coordinator projects owner-safe consent failures without retry lo
     assert.equal(run?.safeMessage, "Approve this project first.");
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal((await coordinator.get(projectId))?.attempts, 1);
+    await coordinator.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -68,6 +70,7 @@ test("solution coordinator defers a free-provider outage and recovers without du
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
     assert.equal((await coordinator.get(projectId))?.attempts, 2);
     assert.equal(calls, 2);
+    await coordinator.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

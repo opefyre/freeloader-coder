@@ -26,6 +26,7 @@ test("delivery plan coordinator persists completion and never duplicates complet
     } as never, () => 200);
     assert.equal((await restarted.get(projectId))?.state, "completed");
     assert.equal(await restarted.resumePending(), 0);
+    await coordinator.shutdown(); await restarted.shutdown();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -44,6 +45,7 @@ test("delivery plan coordinator exposes safe owner action without retry loops", 
     assert.equal(run?.safeMessage, "Approve this project first.");
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal((await coordinator.get(projectId))?.attempts, 1);
+    await coordinator.shutdown();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -60,6 +62,7 @@ test("delivery plan completion includes the resumable Jira synchronization gate"
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
     assert.deepEqual(calls, ["plan", "jira"]);
     assert.match((await coordinator.get(projectId))?.safeMessage ?? "", /Jira hierarchy/);
+    await coordinator.shutdown();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
