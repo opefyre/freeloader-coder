@@ -350,6 +350,7 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "resources:0123456789" },
       body: JSON.stringify({
         schemaVersion: 1,
+        expectedRevision: 0,
         resources: [{
           kind: "jira_project",
           connectionId: "jira-main",

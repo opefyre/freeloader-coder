@@ -81,6 +81,12 @@ export const localProjectSnapshotSchema = z.strictObject({
   displayName: boundedLabel,
   workspaceLabel: boundedLabel.optional(),
   lifecycleStage: projectLifecycleStageSchema.optional(),
+  resourceRevision: z.number().int().nonnegative().optional(),
+  resourceChange: z.strictObject({
+    addedBindingIds: z.array(z.string().regex(/^binding_[a-f0-9]{16}$/)).max(100),
+    removedBindingIds: z.array(z.string().regex(/^binding_[a-f0-9]{16}$/)).max(100),
+    changedAt: z.number().int().nonnegative(),
+  }).optional(),
   resources: z.array(projectResourceBindingSchema).max(100).optional(),
   latestUpdate: projectLatestUpdateSchema.nullable().optional(),
   progress: projectProgressSchema.nullable().optional(),
@@ -115,7 +121,17 @@ export const localProjectCreationSchema = z.strictObject({
 
 export const projectResourceSelectionSchema = z.strictObject({
   schemaVersion: z.literal(1),
+  expectedRevision: z.number().int().nonnegative().default(0),
   resources: z.array(projectResourceBindingSchema.omit({ id: true, selectedAt: true })).max(100),
+}).superRefine((value, context) => {
+  const primaryJira = value.resources.filter((resource) => resource.kind === "jira_project");
+  if (primaryJira.length > 1) context.addIssue({ code: "custom", message: "A project can select only one Jira project." });
+  const identities = new Set<string>();
+  for (const resource of value.resources) {
+    const identity = `${resource.kind}:${resource.connectionId}:${resource.resourceId}`;
+    if (identities.has(identity)) context.addIssue({ code: "custom", message: "A project resource can be selected only once." });
+    identities.add(identity);
+  }
 });
 
 export const localProjectFileImportSchema = z.strictObject({

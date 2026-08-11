@@ -88,6 +88,7 @@ type PrivateProjectRecord = {
   id: string;
   canonicalPath: string;
   displayName: string;
+  resourceRevision: number;
   resources: ProjectResourceBinding[];
   snapshot: LocalProjectSnapshot;
 };
@@ -254,6 +255,7 @@ export class LocalProjectRegistry {
           id,
           canonicalPath,
           displayName,
+          resourceRevision: 0,
           resources: [],
           snapshot,
         },
@@ -325,17 +327,28 @@ export class LocalProjectRegistry {
     const registry = await this.#load();
     const record = registry.projects.find((project) => project.id === projectId);
     if (!record) throw new LocalProjectError("not_found", "Project registration was not found.");
+    const currentRevision = record.resourceRevision ?? 0;
+    if (request.expectedRevision !== currentRevision) {
+      throw new LocalProjectError("conflict", "Project resources changed. Refresh the project and try again.");
+    }
     const now = Date.now();
     const resources = request.resources.map((resource) => ({
       ...resource,
       id: `binding_${hash(`${projectId}:${resource.kind}:${resource.connectionId}:${resource.resourceId}`).slice(0, 16)}`,
       selectedAt: now,
     }));
-    const snapshot = localProjectSnapshotSchema.parse({ ...record.snapshot, resources });
+    const previousIds = new Set(record.resources.map((resource) => resource.id));
+    const nextIds = new Set(resources.map((resource) => resource.id));
+    const resourceChange = {
+      addedBindingIds: resources.filter((resource) => !previousIds.has(resource.id)).map((resource) => resource.id),
+      removedBindingIds: record.resources.filter((resource) => !nextIds.has(resource.id)).map((resource) => resource.id),
+      changedAt: now,
+    };
+    const snapshot = localProjectSnapshotSchema.parse({ ...record.snapshot, resourceRevision: currentRevision + 1, resourceChange, resources });
     await this.#save({
       schemaVersion: registrySchemaVersion,
       projects: registry.projects.map((project) =>
-        project.id === projectId ? { ...project, resources, snapshot } : project
+        project.id === projectId ? { ...project, resources, resourceRevision: currentRevision + 1, snapshot } : project
       ),
     });
     return snapshot;
@@ -541,7 +554,8 @@ export class LocalProjectError extends Error {
       | "scan_active"
       | "scan_failed"
       | "registry_invalid"
-      | "scan_limit",
+      | "scan_limit"
+      | "conflict",
     message: string
   ) {
     super(message);
@@ -861,6 +875,7 @@ function parsePrivateRegistry(input: unknown): PrivateRegistry {
       ![
         "canonicalPath,displayName,id,schemaVersion,snapshot",
         "canonicalPath,displayName,id,resources,schemaVersion,snapshot",
+        "canonicalPath,displayName,id,resourceRevision,resources,schemaVersion,snapshot",
       ].includes(keys) ||
       value.schemaVersion !== 1 ||
       typeof value.id !== "string" ||
@@ -874,15 +889,20 @@ function parsePrivateRegistry(input: unknown): PrivateRegistry {
     const resources = Array.isArray(value.resources)
       ? value.resources.map((resource) => projectResourceBindingSchema.parse(resource))
       : [];
+    const resourceRevision = typeof value.resourceRevision === "number" && Number.isInteger(value.resourceRevision) && value.resourceRevision >= 0
+      ? value.resourceRevision
+      : 0;
     return {
       schemaVersion: registrySchemaVersion,
       id: value.id,
       canonicalPath: value.canonicalPath,
       displayName: value.displayName,
+      resourceRevision,
       resources,
       snapshot: localProjectSnapshotSchema.parse({
         ...(value.snapshot as Record<string, unknown>),
         workspaceLabel: basename(value.canonicalPath),
+        resourceRevision,
         resources,
       }),
     };

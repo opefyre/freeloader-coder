@@ -360,7 +360,7 @@ export function LocalRequestPanel(props: {
         const discovered = telegram?.resources.find((resource) => resource.id === resourceId);
         return discovered ? [{ kind: "telegram_chat" as const, connectionId: `telegram:${telegram?.accountLabel ?? "bot"}`, resourceId: discovered.id, label: discovered.label, url: discovered.url, role: "notifications" as const }] : [];
       });
-      await setLocalProjectResources({ endpoint, projectId: project.id, selection: { schemaVersion: 1, resources: [...retained, ...repositories, ...jiraResources, ...telegramResources] }, idempotencyKey: `resources:${crypto.randomUUID()}` });
+      await setLocalProjectResources({ endpoint, projectId: project.id, selection: { schemaVersion: 1, expectedRevision: project.resourceRevision ?? 0, resources: [...retained, ...repositories, ...jiraResources, ...telegramResources] }, idempotencyKey: `resources:${crypto.randomUUID()}` });
       setResourcePickerOpen(false);
       await refresh();
       const saved = repositories.length + jiraResources.length + telegramResources.length;
