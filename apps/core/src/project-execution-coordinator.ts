@@ -24,6 +24,9 @@ export class ProjectExecutionCoordinator {
   readonly #path: string;
   readonly #inFlight = new Set<string>();
   readonly #timers = new Map<string, NodeJS.Timeout>();
+  readonly #readyQueue: string[] = [];
+  readonly #queued = new Set<string>();
+  #activeProjects = 0;
   #mutation = Promise.resolve();
   #stopped = false;
 
@@ -33,7 +36,8 @@ export class ProjectExecutionCoordinator {
     private readonly worker: ExecutionWorker,
     private readonly now: () => number = Date.now,
     private readonly defaultRetryMs = 300_000,
-    private readonly onCompleted: (projectId: string) => Promise<void> = async () => undefined
+    private readonly onCompleted: (projectId: string) => Promise<void> = async () => undefined,
+    private readonly maxConcurrentProjects = 2
   ) { this.#path = resolve(stateDirectory, "project-execution-runs.json"); }
 
   async get(projectId: string) { return (await this.#load()).runs[projectId] ?? null; }
@@ -48,16 +52,28 @@ export class ProjectExecutionCoordinator {
   async resumePending() {
     this.#stopped = false;
     const state = await this.#load();
-    for (const run of Object.values(state.runs)) if (["queued", "running", "deferred"].includes(run.state)) this.#arm(run.projectId, Math.max(this.now(), run.retryAt ?? this.now()));
+    for (const run of Object.values(state.runs).sort((left, right) => left.updatedAt - right.updatedAt || left.projectId.localeCompare(right.projectId))) if (["queued", "running", "deferred"].includes(run.state)) this.#arm(run.projectId, Math.max(this.now(), run.retryAt ?? this.now()));
   }
 
-  stop() { this.#stopped = true; for (const timer of this.#timers.values()) clearTimeout(timer); this.#timers.clear(); }
+  stop() { this.#stopped = true; for (const timer of this.#timers.values()) clearTimeout(timer); this.#timers.clear(); this.#readyQueue.length = 0; this.#queued.clear(); }
 
   #arm(projectId: string, at: number) {
     if (this.#stopped || this.#inFlight.has(projectId)) return;
     const current = this.#timers.get(projectId); if (current) clearTimeout(current);
-    const timer = setTimeout(() => { this.#timers.delete(projectId); void this.#run(projectId); }, Math.max(0, at - this.now()));
+    const timer = setTimeout(() => { this.#timers.delete(projectId); this.#enqueue(projectId); }, Math.max(0, at - this.now()));
     timer.unref(); this.#timers.set(projectId, timer);
+  }
+
+  #enqueue(projectId: string) {
+    if (this.#stopped || this.#inFlight.has(projectId) || this.#queued.has(projectId)) return;
+    this.#queued.add(projectId); this.#readyQueue.push(projectId); this.#drain();
+  }
+
+  #drain() {
+    while (!this.#stopped && this.#activeProjects < this.maxConcurrentProjects && this.#readyQueue.length > 0) {
+      const projectId = this.#readyQueue.shift()!; this.#queued.delete(projectId); this.#activeProjects += 1;
+      void this.#run(projectId).finally(() => { this.#activeProjects -= 1; this.#drain(); });
+    }
   }
 
   async #run(projectId: string) {
@@ -66,6 +82,7 @@ export class ProjectExecutionCoordinator {
     try {
       await this.#saveRun(projectId, { state: "running", retryAt: null, safeMessage: "Autonomous execution is running." }, true);
       await this.service.reconcileExpired(projectId);
+      const before = await this.service.get(projectId);
       const record = await this.worker.tick(projectId);
       if (!record) return;
       if (record.state === "completed") {
@@ -75,8 +92,9 @@ export class ProjectExecutionCoordinator {
       }
       if (record.state === "needs_user" || record.state === "quarantined") { await this.#saveRun(projectId, { state: "needs_user", retryAt: null, safeMessage: "Execution requires owner attention before it can continue." }); return; }
       const ready = hasReadyTask(record);
-      const retryAt = this.now() + (ready ? 100 : this.defaultRetryMs);
-      await this.#saveRun(projectId, { state: "deferred", retryAt, safeMessage: ready ? "Continuing with the next dependency-ready task." : "No task is currently claimable; the graph will be checked again." });
+      const progressed = executionProgressKey(before) !== executionProgressKey(record);
+      const retryAt = this.now() + (ready && progressed ? 100 : this.defaultRetryMs);
+      await this.#saveRun(projectId, { state: "deferred", retryAt, safeMessage: ready && progressed ? "Continuing with the next dependency-ready task." : ready ? "No eligible free provider or worker is available; a deferred recovery check is scheduled." : "No task is currently claimable; the graph will be checked again." });
       this.#arm(projectId, retryAt);
     } catch (error) {
       if (error instanceof FreeProviderExecutionError && (error.code === "capacity_unavailable" || error.code === "provider_failed")) {
@@ -97,4 +115,5 @@ export class ProjectExecutionCoordinator {
 }
 
 function hasReadyTask(record: ProjectExecutionRecord) { const completed = new Set(record.tasks.filter((task) => task.status === "completed").map((task) => task.id)); return record.tasks.some((task) => task.status === "queued" && task.dependsOn.every((dependency) => completed.has(dependency))); }
+function executionProgressKey(record: ProjectExecutionRecord | null) { return record ? JSON.stringify(record.tasks.map((task) => ({ id: task.id, status: task.status, attempt: task.attempt, assignment: task.assignment?.providerId ?? null, lease: task.lease?.leaseId ?? null, implementation: task.implementationEvidence.length, validations: task.validations.length, reviews: task.reviews.length, commit: task.commitDigest, integration: task.integrationDigest }))) : "missing"; }
 async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }
