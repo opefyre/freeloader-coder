@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { LocalProjectRegistry } from "./local-project-registry.js";
 import { ProjectArtifactStore } from "./project-artifact-store.js";
 import { projectArtifactSchema } from "../../../packages/orchestration/src/project-lifecycle.js";
-import { researchEvidenceGraphSchema, solutionContentSchema, solutionDocumentSchema, solutionDraftSchema, type ResearchEvidenceGraph, type SolutionContent, type SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
+import { researchEvidenceGraphSchema, solutionContentSchema, solutionDocumentSchema, solutionHistorySchema, solutionDraftSchema, type ResearchEvidenceGraph, type SolutionContent, type SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
 
 export class ProjectSolutionService {
   constructor(
@@ -199,6 +199,17 @@ export class ProjectSolutionService {
     } catch {
       throw new Error("Structured solution content is corrupt.");
     }
+  }
+
+  async history(projectId: string): Promise<readonly SolutionDocument[]> {
+    const artifacts = await this.artifacts.history(await this.projects.canonicalRoot(projectId), "design");
+    const seen = new Set<string>();
+    return solutionHistorySchema.parse(artifacts.flatMap((artifact) => {
+      const revision = readSolutionRevision(artifact.body);
+      if (revision < 1 || seen.has(artifact.metadata.bodyDigest)) return [];
+      seen.add(artifact.metadata.bodyDigest);
+      return [{ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision, digest: artifact.metadata.bodyDigest, markdown: artifact.body }];
+    }));
   }
 }
 

@@ -53,3 +53,11 @@ test("project status and Action Center provide direct navigation to project file
   assert.match(app, /projectIdFromLocation\(window\.location\) \? "projects" : "canvas"/);
   assert.match(app, /if \(projectId\) setSurface\("projects"\)/);
 });
+
+test("Action Center exposes immutable solution revisions and keeps historical decisions read only", async () => {
+  const source = await readFile(join(process.cwd(), "apps/studio/src/components/decisions/decision-inbox.tsx"), "utf8");
+  assert.match(source, /getProjectSolutionHistory/);
+  assert.match(source, /aria-label="Solution revision"/);
+  assert.match(source, /Historical revision · read only/);
+  assert.match(source, /viewedSolution\.digest !== solution\.digest/);
+});

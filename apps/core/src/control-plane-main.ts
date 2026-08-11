@@ -179,8 +179,7 @@ const telegramOwnerChannel = new TelegramOwnerChannelService(stateDirectory, loc
     return updated;
   },
   decideSolution: async (projectId, input, idempotencyKey) => {
-    const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey);
-    await projectSolutions.recordDecision(projectId, input, idempotencyKey);
+    const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey, () => projectSolutions.recordDecision(projectId, input, idempotencyKey).then(() => undefined));
     if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
     return lifecycle;
   },
@@ -402,9 +401,9 @@ const controlPlane = createControlPlaneServer({
       return projectLifecycles.publishSolution(projectId, artifact);
     },
     getSolution: (projectId) => projectSolutions.read(projectId),
+    getSolutionHistory: (projectId) => projectSolutions.history(projectId),
     decideSolution: async (projectId, input, idempotencyKey) => {
-      const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey);
-      await projectSolutions.recordDecision(projectId, input, idempotencyKey);
+      const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey, () => projectSolutions.recordDecision(projectId, input, idempotencyKey).then(() => undefined));
       if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
       return lifecycle;
     },

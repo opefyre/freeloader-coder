@@ -187,7 +187,7 @@ export class ProjectLifecycleService {
     });
   }
 
-  async decideSolution(projectId: string, raw: unknown, idempotencyKey: string): Promise<ProjectLifecycleRecord> {
+  async decideSolution(projectId: string, raw: unknown, idempotencyKey: string, beforeCommit: () => Promise<void> = async () => undefined): Promise<ProjectLifecycleRecord> {
     assertProjectId(projectId); assertIdempotencyKey(idempotencyKey);
     const request = solutionDecisionRequestSchema.parse(raw);
     return this.#mutate(async (state) => {
@@ -202,6 +202,7 @@ export class ProjectLifecycleService {
         : request.decision === "declined" ? { type: "design_declined" as const, artifactDigest: request.artifactDigest }
           : { type: "design_revision_requested" as const, artifactDigest: request.artifactDigest, feedback: request.feedback ?? "" };
       const record = advanceProjectLifecycle(current, event, Date.now());
+      await beforeCommit();
       return { state: { ...replaceRecord(state, record), receipts: { ...state.receipts, [receiptKey]: record } }, result: record };
     });
   }

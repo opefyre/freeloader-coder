@@ -81,12 +81,17 @@ test("solution publication is complete, cited, independently reviewed, atomic, a
     await assert.rejects(() => service.publish(project.id, draft), /revision must be 2/);
     const second = await service.publish(project.id, { ...draft, revision: 2, summary: `${draft.summary} The revision includes owner feedback.` }, 20);
     assert.equal(second.revision, 2);
+    const history = await service.history(project.id);
+    assert.deepEqual(history.map((item) => item.revision), [2, 1]);
+    assert.equal(history[0]?.digest, second.digest);
+    assert.equal(history[1]?.digest, first.digest);
     const decision = { schemaVersion: 1 as const, expectedRevision: 8, artifactDigest: second.digest, decision: "approved" as const, feedback: null };
     const approved = await service.recordDecision(project.id, decision, "owner-approval-0001", 30);
     assert.equal(approved.design.metadata.approvedDigest, second.digest);
     assert.equal(approved.product.metadata.approvedDigest, approved.product.metadata.bodyDigest);
     assert.match(approved.decisions.body, /Solution \*\*approved\*\*/);
     assert.match(approved.status.body, /Generate and independently validate the delivery plan/);
+    assert.deepEqual((await service.history(project.id)).map((item) => item.revision), [2, 1]);
     const beforeReplayRevision = approved.decisions.metadata.revision;
     const replay = await service.recordDecision(project.id, decision, "owner-approval-0001", 40);
     assert.equal(replay.decisions.metadata.revision, beforeReplayRevision);

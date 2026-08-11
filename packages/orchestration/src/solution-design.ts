@@ -100,6 +100,7 @@ export const solutionDraftSchema = z.strictObject({
   if (!solution.alternatives.some((item) => item.disposition === "rejected")) context.addIssue({ code: "custom", message: "Solution alternatives must record at least one rejected option." });
 });
 export const solutionDocumentSchema = z.strictObject({ schemaVersion: z.literal(1), projectId: z.string().regex(/^project_[a-f0-9]{16}$/), projectRelativePath: z.literal(".pipeline/SOLUTION.md"), revision: z.number().int().positive(), digest: z.string().regex(/^[a-f0-9]{64}$/), markdown: z.string().min(1).max(1_000_000) });
+export const solutionHistorySchema = z.array(solutionDocumentSchema).max(100);
 export type SolutionDocument = z.infer<typeof solutionDocumentSchema>;
 export type SolutionContent = z.infer<typeof solutionContentSchema>;
 export type SolutionRevisionScope = z.infer<typeof solutionRevisionScopeSchema>;

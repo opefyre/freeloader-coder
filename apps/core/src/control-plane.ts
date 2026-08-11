@@ -111,7 +111,7 @@ import { AttentionError } from "./attention-center.js";
 import { projectLifecycleRecordSchema, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 import { ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
-import { solutionDocumentSchema, type SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
+import { solutionDocumentSchema, solutionHistorySchema, type SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
 import { projectEgressPermitSchema, type ProjectEgressPermit } from "./project-egress-policy-service.js";
 import { solutionRunSchema, type SolutionRun } from "./project-solution-coordinator.js";
 import { deliveryPlanDocumentSchema, deliveryPlanRunSchema, type DeliveryPlanDocument, type DeliveryPlanRun } from "../../../packages/orchestration/src/delivery-plan.js";
@@ -180,6 +180,7 @@ export type ControlPlaneServerOptions = {
     assess: (projectId: string, input: unknown, idempotencyKey: string) => { lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision } | Promise<{ lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision }>;
     publishSolution: (projectId: string, input: unknown) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     getSolution: (projectId: string) => SolutionDocument | Promise<SolutionDocument>;
+    getSolutionHistory?: (projectId: string) => readonly SolutionDocument[] | Promise<readonly SolutionDocument[]>;
     decideSolution: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     reopen?: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     solutionRun?: (projectId: string) => SolutionRun | null | Promise<SolutionRun | null>;
@@ -1211,7 +1212,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context|artifacts)$/
       );
       const projectLifecycleRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|solution|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
       const projectArtifactOpenRoute = url.pathname.match(/^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/artifacts\/(context|memory|research|product|design|delivery_plan|ops_rules|infra|security|decisions|status)\/open$/);
       if (request.method === "GET" && projectRoute?.[2] === "artifacts" && options.projects?.artifacts) {
@@ -1277,6 +1278,10 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
         sendJson(response, 200, solutionDocumentSchema.parse(await options.projectLifecycles.getSolution(projectLifecycleRoute[1] ?? "")));
         return;
+      }
+      if (request.method === "GET" && projectLifecycleRoute?.[2] === "solution-history" && options.projectLifecycles?.getSolutionHistory) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, solutionHistorySchema.parse(await options.projectLifecycles.getSolutionHistory(projectLifecycleRoute[1] ?? ""))); return;
       }
       if (request.method === "POST" && projectLifecycleRoute?.[2] === "solution-decision" && options.projectLifecycles) {
         sendJson(response, 200, projectLifecycleRecordSchema.parse(await options.projectLifecycles.decideSolution(projectLifecycleRoute[1] ?? "", await readJsonBody(request), requireIdempotencyKey(request))));

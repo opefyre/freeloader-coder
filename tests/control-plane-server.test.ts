@@ -78,6 +78,7 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
       },
       publishSolution: (_projectId, input) => { solutionCalls.push(`publish:${JSON.stringify(input)}`); return lifecycle; },
       getSolution: () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: "b".repeat(64), markdown: "# Complete solution\n\nReviewed content." }),
+      getSolutionHistory: () => [{ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: "b".repeat(64), markdown: "# Complete solution\n\nReviewed content." }],
       decideSolution: (_projectId, input, key) => { solutionCalls.push(`${key}:${JSON.stringify(input)}`); return lifecycle; },
       solutionRun: () => solutionRun,
       generateSolution: () => solutionRun,
@@ -120,6 +121,9 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
     const readSolution = await fetch(`${endpoint}/solution`, { headers: { Origin: "http://127.0.0.1:4310" } });
     assert.equal(readSolution.status, 200);
     assert.match((await readSolution.json() as { markdown: string }).markdown, /Complete solution/);
+    const solutionHistory = await fetch(`${endpoint}/solution-history`, { headers: { Origin: "http://127.0.0.1:4310" } });
+    assert.equal(solutionHistory.status, 200);
+    assert.equal((await solutionHistory.json() as Array<{ revision: number }>)[0]?.revision, 1);
     const solutionDecision = await fetch(`${endpoint}/solution-decision`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "solution-decision-001" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: lifecycle.revision, artifactDigest: solutionArtifact.digest, decision: "approved", feedback: null }) });
     assert.equal(solutionDecision.status, 200);
     assert.equal(solutionCalls.length, 2);
@@ -421,7 +425,7 @@ test("native picker endpoints expose only validated local selections", async () 
 test("integration discovery is local, read-only by default, and explicit when probing", async () => {
   let probes = 0;
   let jiraConnections = 0;
-  const collection = { schemaVersion: 1 as const, provenance: "local_observation" as const, observedAt, connections: [{ schemaVersion: 1 as const, provider: "github" as const, state: "ready" as const, accountLabel: "owner", authMethod: "github_cli_oauth" as const, observedAt, resources: [], nextAction: "Choose repositories inside a project." }] };
+  const collection = { schemaVersion: 1 as const, provenance: "local_observation" as const, observedAt, connections: [{ schemaVersion: 1 as const, provider: "github" as const, state: "ready" as const, accountLabel: "owner", authMethod: "github_device_oauth" as const, observedAt, resources: [], nextAction: "Choose repositories inside a project." }] };
   const controlPlane = createControlPlaneServer({ host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot, integrationConnections: { list: () => collection, probeGitHub: () => { probes += 1; return collection; }, connectJira: () => { jiraConnections += 1; return collection; }, disconnectJira: () => collection } });
   const port = await controlPlane.listen();
   const base = `http://127.0.0.1:${port}`;

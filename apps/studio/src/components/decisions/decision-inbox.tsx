@@ -24,7 +24,7 @@ import type {
   DecisionSnapshot,
 } from "../../../../../packages/runtime/src/decisions.js";
 import { createDecisionExport, fetchDecisions } from "../../decision-client.js";
-import { decideProjectSolution, getProjectLifecycle, getProjectSolution } from "../../local-project-client.js";
+import { decideProjectSolution, getProjectLifecycle, getProjectSolution, getProjectSolutionHistory } from "../../local-project-client.js";
 import type { SolutionDocument } from "../../../../../packages/orchestration/src/solution-design.js";
 import { cn } from "../../lib/utils.js";
 import { Badge } from "../ui/badge.js";
@@ -52,6 +52,8 @@ export function DecisionInbox({ endpoint }: { endpoint: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState("Connecting to canonical local decisions…");
   const [solution, setSolution] = useState<SolutionDocument | null>(null);
+  const [solutionHistory, setSolutionHistory] = useState<readonly SolutionDocument[]>([]);
+  const [viewedSolutionDigest, setViewedSolutionDigest] = useState<string | null>(null);
   const [solutionFeedback, setSolutionFeedback] = useState("");
   const [solutionWorking, setSolutionWorking] = useState(false);
 
@@ -91,13 +93,14 @@ export function DecisionInbox({ endpoint }: { endpoint: string }) {
 
   const selected = snapshot?.items.find((item) => item.id === selectedId) ?? snapshot?.items[0] ?? null;
   useEffect(() => {
-    if (selected?.source !== "project_solution" || !selected.projectId) { setSolution(null); return; }
+    if (selected?.source !== "project_solution" || !selected.projectId) { setSolution(null); setSolutionHistory([]); setViewedSolutionDigest(null); return; }
     let active = true;
-    void getProjectSolution({ endpoint, projectId: selected.projectId }).then((document) => { if (active) setSolution(document); }, () => { if (active) { setSolution(null); setNotice("The approved solution artifact could not be verified."); } });
+    void Promise.all([getProjectSolution({ endpoint, projectId: selected.projectId }), getProjectSolutionHistory({ endpoint, projectId: selected.projectId })]).then(([document, history]) => { if (active) { setSolution(document); setSolutionHistory(history); setViewedSolutionDigest(document.digest); } }, () => { if (active) { setSolution(null); setSolutionHistory([]); setViewedSolutionDigest(null); setNotice("The solution or its revision history could not be verified."); } });
     return () => { active = false; };
   }, [endpoint, selected?.id, selected?.projectId, selected?.source]);
   const filtersActive = activeCategories.length + activePriorities.length + activeOwners.length + activeAges.length + (search ? 1 : 0);
   const lanes = useMemo(() => priorities.map((priority) => [priority, snapshot?.items.filter((item) => item.priority === priority) ?? []] as const), [snapshot]);
+  const viewedSolution = solutionHistory.find((item) => item.digest === viewedSolutionDigest) ?? solution;
 
   function toggle<T>(value: T, setter: React.Dispatch<React.SetStateAction<T[]>>) {
     setter((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
@@ -129,7 +132,7 @@ export function DecisionInbox({ endpoint }: { endpoint: string }) {
   }
 
   if (!snapshot && connection === "loading") return <State title="Building your decision queue…" detail="Reading bounded request, project, provider, autonomy, validation, and recovery evidence." />;
-  if (!snapshot) return <State title="Decision Inbox is offline" detail="Start Pipeline Studio locally. No sample decisions or inferred blockers are shown." action={<Button onClick={() => void refresh()}><ArrowClockwise />Retry</Button>} />;
+  if (!snapshot) return <State title="Decision Inbox is offline" detail="Start Codkesh locally. No sample decisions or inferred blockers are shown." action={<Button onClick={() => void refresh()}><ArrowClockwise />Retry</Button>} />;
 
   return (
     <section className="space-y-4" aria-labelledby="decision-inbox-title">
@@ -197,7 +200,7 @@ export function DecisionInbox({ endpoint }: { endpoint: string }) {
           <Card className="h-fit 2xl:sticky 2xl:top-24">
             <CardHeader>{selected ? <><div className="flex flex-wrap gap-2"><Badge tone={priorityTone(selected.priority)}>{readable(selected.priority)}</Badge><Badge>{readable(selected.category)}</Badge><Badge>{readable(selected.owner)} owns next step</Badge></div><CardTitle className="mt-4">{selected.title}</CardTitle><CardDescription>{selected.reason}</CardDescription></> : null}</CardHeader>
             <CardContent className="mt-4">
-              {selected && <><div className="rounded-3xl bg-muted/50 p-4"><Fact label="Next action" value={selected.nextAction} /><Fact label="Authority boundary" value={readable(selected.authorityBoundary)} /><Fact label="Effect" value={readable(selected.effect)} /><Fact label="Maximum automatic cost" value="$0" /><Fact label="Reversible" value={selected.reversible ? "Yes" : "No"} /><Fact label="Observed" value={formatDateTime(selected.observedAt)} />{selected.retryAt && <Fact label="Retry after" value={formatDateTime(selected.retryAt)} />}<Fact label="Source" value={readable(selected.source)} /></div>{selected.source === "project_solution" && solution && <div className="mt-4 space-y-3"><div className="max-h-80 overflow-auto rounded-3xl bg-muted/45 p-4"><pre className="whitespace-pre-wrap font-sans text-xs leading-6">{solution.markdown}</pre></div><textarea aria-label="Requested solution changes" value={solutionFeedback} onChange={(event) => setSolutionFeedback(event.target.value)} rows={3} maxLength={10_000} placeholder="Changes you need…" className="w-full resize-y rounded-3xl bg-muted/60 px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" /><div className="grid gap-2 sm:grid-cols-3"><Button onClick={() => void decideSolution("approved")} disabled={solutionWorking}><CheckCircle />Approve</Button><Button variant="secondary" onClick={() => void decideSolution("revision_requested")} disabled={solutionWorking || solutionFeedback.trim().length < 3}>Request changes</Button><Button variant="ghost" onClick={() => void decideSolution("declined")} disabled={solutionWorking}>Decline</Button></div></div>}<div className="mt-4 rounded-3xl bg-primary/[.07] p-4"><strong className="text-xs">Canonical evidence</strong><ul className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">{selected.evidence.map((entry) => <li key={entry}>• {entry}</li>)}</ul></div><div className="mt-4 rounded-3xl bg-muted/45 p-4"><strong className="text-xs">Privacy boundary</strong><p className="mt-1 text-xs leading-5 text-muted-foreground">Credentials, personal paths, prompts, source content, and provider bodies are excluded.</p></div>{selected.source !== "project_solution" && <a href={selected.reference.path} className="mt-4 flex h-10 items-center justify-center gap-2 rounded-full bg-primary px-4 text-xs font-semibold text-primary-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30">{selected.reference.label}<ArrowSquareOut /></a>}</>}
+              {selected && <><div className="rounded-3xl bg-muted/50 p-4"><Fact label="Next action" value={selected.nextAction} /><Fact label="Authority boundary" value={readable(selected.authorityBoundary)} /><Fact label="Effect" value={readable(selected.effect)} /><Fact label="Maximum automatic cost" value="$0" /><Fact label="Reversible" value={selected.reversible ? "Yes" : "No"} /><Fact label="Observed" value={formatDateTime(selected.observedAt)} />{selected.retryAt && <Fact label="Retry after" value={formatDateTime(selected.retryAt)} />}<Fact label="Source" value={readable(selected.source)} /></div>{selected.source === "project_solution" && solution && viewedSolution && <div className="mt-4 space-y-3">{solutionHistory.length > 1 && <select aria-label="Solution revision" value={viewedSolution.digest} onChange={(event) => setViewedSolutionDigest(event.target.value)} className="h-10 w-full rounded-full bg-muted/60 px-4 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30">{solutionHistory.map((item) => <option key={item.digest} value={item.digest}>Revision {item.revision}{item.digest === solution.digest ? " · current" : ""}</option>)}</select>}<div className="max-h-80 overflow-auto rounded-3xl bg-muted/45 p-4"><pre className="whitespace-pre-wrap font-sans text-xs leading-6">{viewedSolution.markdown}</pre></div>{viewedSolution.digest !== solution.digest && <p className="text-xs text-muted-foreground">Historical revision · read only</p>}<textarea aria-label="Requested solution changes" value={solutionFeedback} onChange={(event) => setSolutionFeedback(event.target.value)} rows={3} maxLength={10_000} placeholder="Changes you need…" disabled={viewedSolution.digest !== solution.digest} className="w-full resize-y rounded-3xl bg-muted/60 px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30 disabled:opacity-50" /><div className="grid gap-2 sm:grid-cols-3"><Button onClick={() => void decideSolution("approved")} disabled={solutionWorking || viewedSolution.digest !== solution.digest}><CheckCircle />Approve</Button><Button variant="secondary" onClick={() => void decideSolution("revision_requested")} disabled={solutionWorking || solutionFeedback.trim().length < 3 || viewedSolution.digest !== solution.digest}>Request changes</Button><Button variant="ghost" onClick={() => void decideSolution("declined")} disabled={solutionWorking || viewedSolution.digest !== solution.digest}>Decline</Button></div></div>}<div className="mt-4 rounded-3xl bg-primary/[.07] p-4"><strong className="text-xs">Canonical evidence</strong><ul className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">{selected.evidence.map((entry) => <li key={entry}>• {entry}</li>)}</ul></div><div className="mt-4 rounded-3xl bg-muted/45 p-4"><strong className="text-xs">Privacy boundary</strong><p className="mt-1 text-xs leading-5 text-muted-foreground">Credentials, personal paths, prompts, source content, and provider bodies are excluded.</p></div>{selected.source !== "project_solution" && <a href={selected.reference.path} className="mt-4 flex h-10 items-center justify-center gap-2 rounded-full bg-primary px-4 text-xs font-semibold text-primary-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30">{selected.reference.label}<ArrowSquareOut /></a>}</>}
             </CardContent>
           </Card>
         </div>

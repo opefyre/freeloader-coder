@@ -11,7 +11,7 @@ import {
 } from "../../../packages/runtime/src/local-projects.js";
 import { projectLifecycleRecordSchema, type OwnerAnswer, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
-import { solutionDocumentSchema, projectEgressPermitSchema, solutionRunSchema, type SolutionDocument, type ProjectEgressPermit, type SolutionRun } from "../../../packages/orchestration/src/solution-design.js";
+import { solutionDocumentSchema, solutionHistorySchema, projectEgressPermitSchema, solutionRunSchema, type SolutionDocument, type ProjectEgressPermit, type SolutionRun } from "../../../packages/orchestration/src/solution-design.js";
 import { deliveryPlanDocumentSchema, deliveryPlanRunSchema, type DeliveryPlanDocument, type DeliveryPlanRun } from "../../../packages/orchestration/src/delivery-plan.js";
 import { projectExecutionRecordSchema, type ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
 import { z } from "zod";
@@ -178,6 +178,11 @@ export async function getProjectEligibility(input: { endpoint: string; projectId
 export async function getProjectSolution(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<SolutionDocument> {
   assertProjectId(input.projectId);
   return solutionDocumentSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/solution`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function getProjectSolutionHistory(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<readonly SolutionDocument[]> {
+  assertProjectId(input.projectId);
+  return solutionHistorySchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/solution-history`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
 }
 
 export async function decideProjectSolution(input: { endpoint: string; projectId: string; expectedRevision: number; artifactDigest: string; decision: "approved" | "declined" | "revision_requested"; feedback: string | null; idempotencyKey: string; fetcher?: typeof fetch }): Promise<ProjectLifecycleRecord> {

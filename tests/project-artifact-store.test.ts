@@ -109,6 +109,10 @@ test("uses expected digests to prevent silent concurrent overwrites and preserve
     );
     const history = await readFile(join(root, ".codkesh", "artifacts", "MEMORY.md", `000001-${initial.metadata.bodyDigest}.md`), "utf8");
     assert.match(history, /No durable knowledge has been accepted/);
+    const inspectable = await store.history(root, "memory");
+    assert.deepEqual(inspectable.map((item) => item.metadata.revision), [2, 1]);
+    assert.equal(inspectable[0]?.metadata.bodyDigest, first.metadata.bodyDigest);
+    assert.equal(inspectable[1]?.metadata.bodyDigest, initial.metadata.bodyDigest);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -170,6 +170,23 @@ export class ProjectArtifactStore {
     }));
   }
 
+  async history(root: string, kind: ProjectArtifactKind): Promise<readonly ProjectArtifact[]> {
+    await assertSafeRoot(root);
+    const fileName = ARTIFACT_FILES[kind];
+    const directory = join(root, ".codkesh", "artifacts", fileName);
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
+    const artifacts: ProjectArtifact[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || entry.isSymbolicLink() || !/^\d{6}-[a-f0-9]{64}\.md$/.test(entry.name)) continue;
+      const parsed = parseArtifact(await readSafeFile(join(directory, entry.name)), kind);
+      assertDigest(parsed.body, parsed.metadata.bodyDigest);
+      artifacts.push({ fileName, ...parsed });
+    }
+    return artifacts.sort((left, right) => right.metadata.revision - left.metadata.revision || right.metadata.updatedAt.localeCompare(left.metadata.updatedAt)).slice(0, 100);
+  }
+
   async read(root: string, kind: ProjectArtifactKind): Promise<ProjectArtifact> {
     await assertSafeRoot(root);
     const fileName = ARTIFACT_FILES[kind];
