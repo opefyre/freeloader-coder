@@ -121,13 +121,20 @@ export function selectExecutionAssignment(input: { task: ExecutionTask; candidat
     modelId: selected.modelId,
     deviceId: selected.deviceId,
     selectedAt: input.now,
-    reasons: ["Required capabilities and privacy class are supported.", "Free quota, device memory, load, and concurrency are currently available."],
+    reasons: [
+      `${selected.providerId}/${selected.modelId} was selected for the required role on ${selected.deviceId}.`,
+      `Required capabilities and ${input.task.privacyClass.replaceAll("_", " ")} privacy handling are supported.`,
+      "Verified free quota, device memory, load, and concurrency are currently available; paid routing is disabled.",
+    ],
   });
 }
 
 export function eligibleExecutionTasks(record: ProjectExecutionRecord, now: number) {
   const completed = new Set(record.tasks.filter((task) => task.status === "completed").map((task) => task.id));
-  return record.tasks.filter((task) => task.status === "queued" && task.dependsOn.every((dependency) => completed.has(dependency)) && (!task.lease || task.lease.expiresAt <= now));
+  const occupiedFiles = new Set(record.tasks.filter((task) =>
+    ["running", "validating", "reviewing", "healing", "integrating"].includes(task.status) && task.lease !== null && task.lease.expiresAt > now
+  ).flatMap((task) => task.allowedFiles));
+  return record.tasks.filter((task) => task.status === "queued" && task.dependsOn.every((dependency) => completed.has(dependency)) && (!task.lease || task.lease.expiresAt <= now) && task.allowedFiles.every((file) => !occupiedFiles.has(file)));
 }
 
 export function completionEvidence(task: ExecutionTask) {

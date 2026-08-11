@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
@@ -179,4 +179,4 @@ function replaceTask(record: ProjectExecutionRecord, task: ExecutionTask): Proje
 function projectState(record: ProjectExecutionRecord, now: number): ProjectExecutionRecord { const state = record.tasks.every((task) => task.status === "completed") ? "completed" : record.tasks.some((task) => task.status === "quarantined") ? "quarantined" : record.tasks.some((task) => task.status === "needs_user") ? "needs_user" : "running"; return { ...record, state, updatedAt: now }; }
 function hasValidation(task: ExecutionTask, tier: "fast" | "full") { return task.validations.some((validation) => validation.tier === tier && validation.passed); }
 function reviewDigest(review: QualityReview) { return createHash("sha256").update(JSON.stringify(review)).digest("hex"); }
-async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }
+async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }
