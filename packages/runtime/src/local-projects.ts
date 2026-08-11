@@ -146,6 +146,13 @@ export const localProjectFileImportResponseSchema = z.strictObject({
     label: z.string().trim().min(1).max(255),
     projectRelativePath: z.string().regex(/^\.pipeline\/inputs\/[a-zA-Z0-9._-]+$/),
     bytes: z.number().int().nonnegative().max(10_000_000),
+    evidence: z.strictObject({
+      status: z.enum(["extracted", "unsupported", "encrypted", "corrupt", "limit_exceeded"]),
+      mediaType: z.string().trim().min(1).max(200),
+      sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+      unitCount: z.number().int().nonnegative().max(10_000),
+      warning: z.string().trim().min(1).max(300).nullable(),
+    }),
   })).min(1).max(20),
 });
 

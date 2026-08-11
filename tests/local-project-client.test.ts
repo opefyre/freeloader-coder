@@ -213,7 +213,12 @@ test("browser client imports picker-selected files into a project", async () => 
     idempotencyKey: "files:0123456789",
     fetcher: async (_url, init) => {
       observedBody = String(init?.body ?? "");
-      return Response.json({ schemaVersion: 1, outcome: "imported", files: [{ label: "brief.pdf", projectRelativePath: ".pipeline/inputs/brief-01234567.pdf", bytes: 42 }] });
+      return Response.json({ schemaVersion: 1, outcome: "imported", files: [{
+        label: "brief.pdf",
+        projectRelativePath: ".pipeline/inputs/brief-01234567.pdf",
+        bytes: 42,
+        evidence: { status: "extracted", mediaType: "application/pdf", sourceDigest: "e".repeat(64), unitCount: 1, warning: null },
+      }] });
     },
   });
   assert.equal(result.files[0]?.label, "brief.pdf");

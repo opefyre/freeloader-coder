@@ -106,7 +106,11 @@ test("registry safely copies picker-selected attachments into the private projec
     const result = await registry.addFiles(project.id, { schemaVersion: 1, paths: [source] });
     assert.equal(result.files.length, 1);
     assert.equal(result.files[0]?.label, "product-brief.md");
+    assert.equal(result.files[0]?.evidence.status, "extracted");
+    assert.equal(result.files[0]?.evidence.mediaType, "text/markdown");
+    assert.equal(result.files[0]?.evidence.unitCount, 1);
     assert.equal(await readFile(join(fixture.repository, result.files[0]!.projectRelativePath), "utf8"), "# Product brief\n");
+    assert.match(await readFile(join(fixture.repository, `${result.files[0]!.projectRelativePath}.evidence.json`), "utf8"), /untrusted_evidence/);
     assert.equal(JSON.stringify(result).includes(fixture.root), false);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });

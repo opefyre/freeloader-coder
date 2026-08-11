@@ -40,6 +40,7 @@ import {
   type LocalTopology,
 } from "../../../packages/runtime/src/local-requests.js";
 import { PROJECT_ARTIFACT_CONTRACTS, ProjectArtifactStore, type ProjectArtifactKind } from "./project-artifact-store.js";
+import { extractProjectInput } from "./project-input-extractor.js";
 
 const MAX_ENTRIES = 4_000;
 const MAX_MANIFEST_BYTES = 256_000;
@@ -362,7 +363,7 @@ export class LocalProjectRegistry {
     await mkdir(destination, { recursive: true, mode: 0o700 });
     await chmod(resolve(projectRoot, ".pipeline"), 0o700);
     await chmod(destination, 0o700);
-    const imported: Array<{ label: string; projectRelativePath: string; bytes: number }> = [];
+    const imported: Array<{ label: string; projectRelativePath: string; bytes: number; evidence: { status: "extracted" | "unsupported" | "encrypted" | "corrupt" | "limit_exceeded"; mediaType: string; sourceDigest: string; unitCount: number; warning: string | null } }> = [];
     let totalBytes = 0;
     for (const requestedPath of request.paths) {
       if (!isAbsolute(requestedPath) || requestedPath.includes("\0")) {
@@ -384,7 +385,10 @@ export class LocalProjectRegistry {
       await copyFile(source, resolve(destination, storedName), fileConstants.COPYFILE_EXCL).catch(async (error) => {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       });
-      imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size });
+      const storedPath = resolve(destination, storedName);
+      const extraction = await extractProjectInput(storedPath);
+      await writeFile(`${storedPath}.evidence.json`, `${JSON.stringify(extraction)}\n`, { encoding: "utf8", mode: 0o600 });
+      imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size, evidence: { status: extraction.status, mediaType: extraction.mediaType, sourceDigest: extraction.sourceDigest, unitCount: extraction.units.length, warning: extraction.warning } });
     }
     return localProjectFileImportResponseSchema.parse({ schemaVersion: 1, outcome: "imported", files: imported });
   }

@@ -293,7 +293,22 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       },
       addFiles: (projectId, input) => {
         calls.push(`files:${projectId}:${JSON.stringify(input)}`);
-        return { schemaVersion: 1, outcome: "imported", files: [{ label: "brief.pdf", projectRelativePath: ".pipeline/inputs/brief-01234567.pdf", bytes: 42 }] };
+        return {
+          schemaVersion: 1,
+          outcome: "imported",
+          files: [{
+            label: "brief.pdf",
+            projectRelativePath: ".pipeline/inputs/brief-01234567.pdf",
+            bytes: 42,
+            evidence: {
+              status: "extracted",
+              mediaType: "application/pdf",
+              sourceDigest: "e".repeat(64),
+              unitCount: 1,
+              warning: null,
+            },
+          }],
+        };
       },
       generateContext: (projectId, input) => {
         calls.push(`context:${projectId}:${JSON.stringify(input)}`);
