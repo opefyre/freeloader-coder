@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ProjectSolutionCoordinator } from "../apps/core/src/project-solution-coordinator.js";
+import { FreeProviderSolutionUnavailableError } from "../apps/core/src/free-provider-solution-model.js";
 import { ProjectEgressDeniedError } from "../apps/core/src/project-egress-policy-service.js";
 
 const projectId = "project_abcdef0123456789";
@@ -36,6 +37,37 @@ test("solution coordinator projects owner-safe consent failures without retry lo
     assert.equal(run?.safeMessage, "Approve this project first.");
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal((await coordinator.get(projectId))?.attempts, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("solution coordinator defers a free-provider outage and recovers without duplicate work", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-coordinator-provider-recovery-"));
+  let now = 100;
+  let calls = 0;
+  try {
+    const coordinator = new ProjectSolutionCoordinator(root, {
+      run: async () => {
+        calls += 1;
+        if (calls === 1) throw new FreeProviderSolutionUnavailableError(150, "Free providers are temporarily unavailable.");
+        return {} as any;
+      },
+    } as any, () => now);
+
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "deferred");
+    const deferred = await coordinator.get(projectId);
+    assert.equal(deferred?.attempts, 1);
+    assert.equal(deferred?.retryAt, 150);
+    assert.equal(deferred?.safeMessage, "Free providers are temporarily unavailable.");
+
+    assert.equal((await coordinator.schedule(projectId)).state, "deferred");
+    assert.equal(calls, 1);
+
+    now = 151;
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    assert.equal((await coordinator.get(projectId))?.attempts, 2);
+    assert.equal(calls, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

@@ -101,9 +101,16 @@ test("different projects reconcile concurrently without sharing a lease", async 
   const directory = await temporaryDirectory();
   const active = new Set<string>();
   let simultaneous = false;
+  let releaseBoth!: () => void;
+  const bothStarted = new Promise<void>((resolve) => { releaseBoth = resolve; });
   const workers = workerSet(async (projectId) => {
-    active.add(projectId); simultaneous ||= active.size === 2;
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    active.add(projectId);
+    if (active.size === 2) releaseBoth();
+    await Promise.race([
+      bothStarted,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Projects did not reconcile concurrently.")), 250)),
+    ]);
+    simultaneous ||= active.size === 2;
     active.delete(projectId);
   });
   const coordinator = new ProjectLifecycleCoordinator(directory, sourceOf([atSolution(projectA, 10), atSolution(projectB, 10)]), workers, "parallel", () => 20);
