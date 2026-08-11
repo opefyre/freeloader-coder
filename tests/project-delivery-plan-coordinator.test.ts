@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { ProjectDeliveryPlanCoordinator } from "../apps/core/src/project-delivery-plan-coordinator.js";
+import { FreeProviderSolutionUnavailableError } from "../apps/core/src/free-provider-solution-model.js";
 import { ProjectEgressDeniedError } from "../apps/core/src/project-egress-policy-service.js";
 
 const projectId = "project_abcdef0123456789";
@@ -66,6 +67,27 @@ test("delivery plan completion includes the resumable Jira synchronization gate"
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("delivery plan coordinator defers provider capacity and resumes without duplicate planning", async () => {
+  const root = await mkdtemp(join(tmpdir(), "delivery-plan-coordinator-provider-"));
+  let now = 100;
+  let calls = 0;
+  try {
+    const coordinator = new ProjectDeliveryPlanCoordinator(root, { run: async () => { calls += 1; if (calls === 1) throw new FreeProviderSolutionUnavailableError(150, "Free planning capacity is temporarily unavailable."); return {} as never; } } as never, () => now);
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "deferred");
+    assert.equal(calls, 1);
+    assert.equal((await coordinator.get(projectId))?.retryAt, 150);
+    assert.equal((await coordinator.schedule(projectId)).state, "deferred");
+    assert.equal(calls, 1);
+    now = 151;
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    assert.equal(calls, 2);
+    assert.equal((await coordinator.get(projectId))?.attempts, 2);
+    await coordinator.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 async function waitFor(predicate: () => Promise<boolean>) {
