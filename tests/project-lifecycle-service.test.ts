@@ -96,3 +96,20 @@ test("delivery completion is durable and idempotent", async () => {
   assert.equal((await new ProjectLifecycleService(root).get(projectId))?.stage, "complete");
   assert.equal(eligible.decision.eligible, true);
 });
+
+test("terminal projects reopen only through an explicit revision-bound request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pipeline-explicit-reopen-"));
+  const service = new ProjectLifecycleService(root);
+  const projectId = "project_0123456789abcdef";
+  const begun = await service.begin({ projectId, mission: "Build a complete product.", now: 1 });
+  const cancelled = await service.assess(projectId, { schemaVersion: 1, expectedRevision: begun.revision, requestId: "request_0123456789abcdef0123", projectKind: "existing_product", affectedDomains: [], deliveryStages: ["frontend"], estimatedDeveloperHours: 1, requiresArchitectureDecision: false, evidence: ["A small isolated change."], confidence: 1 }, "cancel-small-001");
+  assert.equal(cancelled.lifecycle.stage, "cancelled");
+  await assert.rejects(() => service.reopen(projectId, { schemaVersion: 1, expectedRevision: begun.revision, mission: "Build a larger product capability.", reason: "Owner expanded the outcome." }, "reopen-stale-001"), /project changed/i);
+  const request = { schemaVersion: 1 as const, expectedRevision: cancelled.lifecycle.revision, mission: "Build a larger product capability.", reason: "Owner explicitly expanded the outcome." };
+  const reopened = await service.reopen(projectId, request, "reopen-valid-001");
+  const replay = await service.reopen(projectId, request, "reopen-valid-001");
+  assert.equal(reopened.stage, "context_review");
+  assert.equal(reopened.assessment, null);
+  assert.deepEqual(replay, reopened);
+  await assert.rejects(() => service.reopen(projectId, { ...request, expectedRevision: reopened.revision }, "reopen-again-001"), /terminal project/);
+});

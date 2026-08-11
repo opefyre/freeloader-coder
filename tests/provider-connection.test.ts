@@ -24,18 +24,18 @@ const emptyUsage = {
 function readyConnection(overrides: Record<string, unknown> = {}) {
   return providerConnectionSchema.parse({
     schemaVersion: 1,
-    id: "connection-cerebras",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
-    apiBaseUrl: "https://api.cerebras.ai/v1",
-    credentialReference: "vault:providers/cerebras/primary",
+    id: "connection-groq",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
+    apiBaseUrl: "https://api.groq.com/openai/v1",
+    credentialReference: "vault:providers/groq/primary",
     credentialFingerprint: "012345abcdef",
     credentialState: "active",
     state: "ready",
     privacyClass: "training_eligible",
     capabilityRoles: ["planner", "implementer", "reviewer"],
-    contextWindowTokens: 131_000,
-    maxOutputTokens: 40_000,
+    contextWindowTokens: 131_072,
+    maxOutputTokens: 65_536,
     cost: {
       access: "account_limited_free",
       plan: "Free",
@@ -61,7 +61,7 @@ function readyConnection(overrides: Record<string, unknown> = {}) {
       status: "passed",
       observedAt: now - 1_000,
       expiresAt: now + 86_400_000,
-      modelId: "gpt-oss-120b",
+      modelId: "openai/gpt-oss-120b",
       capabilities: ["chat", "structured_output"],
       inputTokens: 12,
       outputTokens: 4,
@@ -73,7 +73,7 @@ function readyConnection(overrides: Record<string, unknown> = {}) {
 }
 
 test("provider connection schema accepts references but rejects embedded credentials", () => {
-  assert.equal(readyConnection().credentialReference, "vault:providers/cerebras/primary");
+  assert.equal(readyConnection().credentialReference, "vault:providers/groq/primary");
   assert.throws(
     () => readyConnection({ credentialReference: "embedded-credential-value" }),
     /Invalid string/
@@ -138,21 +138,21 @@ test("an admitted candidate uses account limits and provider remaining capacity"
     usage: emptyUsage
   });
   assert.equal(candidate.configured, true);
-  assert.equal(candidate.providerConnectionId, "connection-cerebras");
+  assert.equal(candidate.providerConnectionId, "connection-groq");
   assert.equal(candidate.capacity.requestsPerDay, 2_400);
   assert.equal(candidate.usage.providerRemainingRequests, 2_399);
   assert.equal(candidate.reservation?.requestsPerDay, 240);
 });
 
 test("promotional credit and billing-enabled connections cannot enter permanent free routing", () => {
-  const deepseek = providerConnectionSchema.parse({
+  const cohere = providerConnectionSchema.parse({
     ...readyConnection(),
-    id: "connection-deepseek",
-    providerId: "deepseek",
-    modelId: "deepseek-v4-flash",
-    apiBaseUrl: "https://api.deepseek.com",
-    contextWindowTokens: 1_000_000,
-    maxOutputTokens: 384_000,
+    id: "connection-cohere",
+    providerId: "cohere",
+    modelId: "command-a-03-2025",
+    apiBaseUrl: "https://api.cohere.ai/compatibility/v1",
+    contextWindowTokens: 256_000,
+    maxOutputTokens: 8_192,
     cost: {
       ...readyConnection().cost,
       access: "promotional_credit",
@@ -161,11 +161,11 @@ test("promotional credit and billing-enabled connections cannot enter permanent 
     },
     canary: {
       ...readyConnection().canary,
-      modelId: "deepseek-v4-flash"
+      modelId: "command-a-03-2025"
     }
   });
   assert.equal(
-    evaluateProviderAdmission({ connection: deepseek, now }).reason,
+    evaluateProviderAdmission({ connection: cohere, now }).reason,
     "not-permanent-free"
   );
 
@@ -185,8 +185,8 @@ test("OpenAI-compatible canary sends a bounded request and returns sanitized evi
   let observedAuthorization = "";
   let observedBody = "";
   const evidence = await runOpenAiCompatibleChatCanary({
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     apiKey: "provider-test-value",
     now,
     transport: async (_url, init) => {
@@ -196,7 +196,7 @@ test("OpenAI-compatible canary sends a bounded request and returns sanitized evi
         ok: true,
         status: 200,
         json: async () => ({
-          model: "gpt-oss-120b",
+          model: "openai/gpt-oss-120b",
           choices: [{ message: { content: "PIPELINE_STUDIO_CANARY" } }],
           usage: { prompt_tokens: 12, completion_tokens: 4 }
         })
@@ -213,8 +213,8 @@ test("OpenAI-compatible canary sends a bounded request and returns sanitized evi
 test("canary errors expose only safe classifications", async () => {
   await assert.rejects(
     runOpenAiCompatibleChatCanary({
-      providerId: "cerebras",
-      modelId: "gpt-oss-120b",
+      providerId: "groq",
+      modelId: "openai/gpt-oss-120b",
       apiKey: "provider-test-value",
       now,
       transport: async () => ({
@@ -233,8 +233,8 @@ test("canary errors expose only safe classifications", async () => {
 test("capability canary proves chat, structured output, and tool calling independently", async () => {
   const requestedBodies: unknown[] = [];
   const evidence = await runOpenAiCompatibleCapabilityCanary({
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     apiKey: "provider-test-value",
     now,
     capabilities: ["chat", "structured_output", "tool_calling"],
@@ -248,7 +248,7 @@ test("capability canary proves chat, structured output, and tool calling indepen
         ok: true,
         status: 200,
         json: async () => ({
-          model: "gpt-oss-120b",
+          model: "openai/gpt-oss-120b",
           choices: [{
             message: tools
               ? {
@@ -279,8 +279,8 @@ test("capability canary proves chat, structured output, and tool calling indepen
 test("capability canary cancellation becomes a safe timeout", async () => {
   await assert.rejects(
     runOpenAiCompatibleCapabilityCanary({
-      providerId: "cerebras",
-      modelId: "gpt-oss-120b",
+      providerId: "groq",
+      modelId: "openai/gpt-oss-120b",
       apiKey: "provider-test-value",
       now,
       timeoutMs: 5,
@@ -314,16 +314,16 @@ test("account response headers override documentation and expire quickly", () =>
   assert.equal(evidence.resetAt, now + 60_000);
 });
 
-test("catalog cost evidence never promotes temporary credit into permanent free routing", () => {
+test("catalog cost evidence follows the verified access class and never ignores billing", () => {
   assert.deepEqual(costEvidenceFromAccount({
-    providerId: "deepseek",
+    providerId: "cohere",
     plan: "Granted balance",
     billingEnabled: false,
     now,
     source: "account_api"
-  }).access, "promotional_credit");
+  }).access, "account_limited_free");
   assert.equal(costEvidenceFromAccount({
-    providerId: "cerebras",
+    providerId: "groq",
     plan: "Free",
     billingEnabled: true,
     now,

@@ -179,6 +179,7 @@ export type ControlPlaneServerOptions = {
     publishSolution: (projectId: string, input: unknown) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     getSolution: (projectId: string) => SolutionDocument | Promise<SolutionDocument>;
     decideSolution: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
+    reopen?: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     solutionRun?: (projectId: string) => SolutionRun | null | Promise<SolutionRun | null>;
     generateSolution?: (projectId: string) => SolutionRun | Promise<SolutionRun>;
     getBacklog?: (projectId: string) => DeliveryPlanDocument | Promise<DeliveryPlanDocument>;
@@ -200,6 +201,12 @@ export type ControlPlaneServerOptions = {
     disconnectJira: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     connectTelegram?: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     disconnectTelegram?: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    configureOAuth?: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    beginOAuth?: (provider: "github" | "jira", redirectUri: string) => unknown | Promise<unknown>;
+    completeJiraOAuth?: (input: { code: string; state: string }) => void | Promise<void>;
+    completeBrokerOAuth?: (provider: "github" | "jira" | "google" | "slack" | "discord" | "vercel", ticket: string) => void | Promise<void>;
+    connectToken?: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    disconnectService?: (provider: "google" | "slack" | "discord" | "cloudflare" | "aws" | "vercel") => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
   };
   requests?: {
     list: () => LocalRequestCollection | Promise<LocalRequestCollection>;
@@ -310,6 +317,35 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.list()));
         return;
       }
+      if (url.pathname === "/api/v1/integration-connections/oauth/configure" && options.integrationConnections?.configureOAuth) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: "Method is not allowed." }); return; }
+        requireIdempotencyKey(request);
+        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.configureOAuth(await readJsonBody(request))));
+        return;
+      }
+      if (url.pathname === "/api/v1/integration-connections/oauth/start" && options.integrationConnections?.beginOAuth) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: "Method is not allowed." }); return; }
+        requireIdempotencyKey(request);
+        const body = await readJsonBody(request) as { provider?: unknown };
+        if (body.provider !== "github" && body.provider !== "jira") { sendJson(response, 400, { error: "OAuth provider is invalid." }); return; }
+        const redirectUri = `http://${options.host}:${options.port}/oauth/jira/callback`;
+        sendJson(response, 200, await options.integrationConnections.beginOAuth(body.provider, redirectUri));
+        return;
+      }
+      if (url.pathname === "/oauth/jira/callback" && options.integrationConnections?.completeJiraOAuth) {
+        const code = url.searchParams.get("code"); const state = url.searchParams.get("state");
+        if (!code || !state) { response.statusCode = 400; response.end("Jira authorization was not completed."); return; }
+        await options.integrationConnections.completeJiraOAuth({ code, state });
+        response.statusCode = 200; response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end("<!doctype html><title>Jira connected</title><body style='font-family:system-ui;background:#111;color:#fff;display:grid;place-items:center;height:100vh'><main><h1>Jira connected</h1><p>You can close this tab and return to Pipeline Studio.</p></main></body>");
+        return;
+      }
+      if (url.pathname === "/oauth/broker/callback" && options.integrationConnections?.completeBrokerOAuth) {
+        const ticket = url.searchParams.get("ticket"); const provider = url.searchParams.get("provider");
+        if (!ticket || !["github", "jira", "google", "slack", "discord", "vercel"].includes(String(provider))) { response.statusCode = 400; response.end("Connection was not completed."); return; }
+        await options.integrationConnections.completeBrokerOAuth(provider as "github" | "jira" | "google" | "slack" | "discord" | "vercel", ticket);
+        response.statusCode = 302; response.setHeader("Location", `http://127.0.0.1:4310/settings?connected=${provider}`); response.end();
+        return;
+      }
       if (url.pathname === "/api/v1/integration-connections/github/probe" && options.integrationConnections) {
         if (request.method !== "POST") {
           sendJson(response, 405, { error: "Method is not allowed." });
@@ -355,6 +391,18 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           return;
         }
         sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (url.pathname === "/api/v1/integration-connections/token" && options.integrationConnections?.connectToken) {
+        if (request.method !== "POST") { sendJson(response, 405, { error: "Method is not allowed." }); return; }
+        requireIdempotencyKey(request);
+        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.connectToken(await readJsonBody(request))));
+        return;
+      }
+      const serviceDisconnect = url.pathname.match(/^\/api\/v1\/integration-connections\/(google|slack|discord|cloudflare|aws|vercel)$/);
+      if (serviceDisconnect && request.method === "DELETE" && options.integrationConnections?.disconnectService) {
+        requireIdempotencyKey(request);
+        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.disconnectService(serviceDisconnect[1] as "google" | "slack" | "discord" | "cloudflare" | "aws" | "vercel")));
         return;
       }
       if (
@@ -1161,7 +1209,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context)$/
       );
       const projectLifecycleRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|clarifications|eligibility|solution|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|solution|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "lifecycle" && options.projectLifecycles) {
         if (requestBodyDeclared(request)) {
@@ -1169,6 +1217,10 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           return;
         }
         sendJson(response, 200, projectLifecycleRecordSchema.parse(await options.projectLifecycles.get(projectLifecycleRoute[1] ?? "")));
+        return;
+      }
+      if (request.method === "POST" && projectLifecycleRoute?.[2] === "lifecycle-reopen" && options.projectLifecycles?.reopen) {
+        sendJson(response, 200, projectLifecycleRecordSchema.parse(await options.projectLifecycles.reopen(projectLifecycleRoute[1] ?? "", await readJsonBody(request), requireIdempotencyKey(request))));
         return;
       }
       if (request.method === "POST" && projectLifecycleRoute?.[2] === "clarifications" && options.projectLifecycles) {

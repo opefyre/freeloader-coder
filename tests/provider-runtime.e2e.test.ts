@@ -77,18 +77,18 @@ const digest = (character: string): string => `sha256:${character.repeat(64)}`;
 function connection(overrides: Partial<ProviderConnection> = {}): ProviderConnection {
   return {
     schemaVersion: 1,
-    id: "connection-cerebras",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
-    apiBaseUrl: "https://api.cerebras.ai/v1",
-    credentialReference: "vault:providers/cerebras/primary",
+    id: "connection-groq",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
+    apiBaseUrl: "https://api.groq.com/openai/v1",
+    credentialReference: "vault:providers/groq/primary",
     credentialFingerprint: "012345abcdef",
     credentialState: "active",
     state: "ready",
     privacyClass: "training_eligible",
     capabilityRoles: ["implementer"],
-    contextWindowTokens: 131_000,
-    maxOutputTokens: 40_000,
+    contextWindowTokens: 131_072,
+    maxOutputTokens: 65_536,
     cost: {
       access: "account_limited_free",
       plan: "Free",
@@ -114,7 +114,7 @@ function connection(overrides: Partial<ProviderConnection> = {}): ProviderConnec
       status: "passed",
       observedAt: now - 1_000,
       expiresAt: now + 60_000,
-      modelId: "gpt-oss-120b",
+      modelId: "openai/gpt-oss-120b",
       capabilities: ["chat"],
       inputTokens: 8,
       outputTokens: 2,
@@ -137,8 +137,8 @@ test("core holds queued work before a stale connection reaches the execution jou
         expiresAt: now
       }
     })],
-    priorityByConnectionId: { "connection-cerebras": 1 },
-    usageByConnectionId: { "connection-cerebras": usage },
+    priorityByConnectionId: { "connection-groq": 1 },
+    usageByConnectionId: { "connection-groq": usage },
     requiredCapabilities: ["chat"],
     routeRequest: {
       ...routeRequest,

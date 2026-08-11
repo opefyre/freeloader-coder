@@ -120,7 +120,7 @@ test("all adapters pass the same versioned compatibility suite", async () => {
 });
 
 test("the four verified free OpenAI-compatible endpoints share one conformance contract", async () => {
-  for (const providerId of ["cerebras", "mistral", "zhipu", "sambanova"]) {
+  for (const providerId of ["groq", "mistral", "zhipu", "sambanova"]) {
     const provider = catalogProvider(providerId);
     const model = provider.models[0]!;
     const base = fixture();

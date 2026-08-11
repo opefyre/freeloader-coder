@@ -86,7 +86,7 @@ test("proposal generator falls back once, keeps credentials out of evidence, and
         return current;
       },
     } as unknown as LocalRequestStore;
-    const connections = [connection("cerebras", "gpt-oss-120b"), connection("mistral", "mistral-small-latest")];
+    const connections = [connection("groq", "openai/gpt-oss-120b"), connection("mistral", "mistral-small-latest")];
     const calls: string[] = [];
     const secretReads: string[] = [];
     const response = JSON.stringify({
@@ -117,7 +117,7 @@ test("proposal generator falls back once, keeps credentials out of evidence, and
             manifest: { providerId },
             chat: async (_credential: unknown, request: any) => {
               calls.push(providerId);
-              if (providerId === "cerebras") {
+              if (providerId === "groq") {
                 throw new ProviderAdapterFailure({
                   schemaVersion: 1,
                   code: "provider_unavailable",
@@ -152,21 +152,21 @@ test("proposal generator falls back once, keeps credentials out of evidence, and
       () => now
     );
     await generator.generate(current.id);
-    assert.deepEqual(calls, ["cerebras", "mistral"]);
+    assert.deepEqual(calls, ["groq", "mistral"]);
     assert.equal(imported.length, 1);
     assert.equal(secretReads.length, 2);
     assert.doesNotMatch(JSON.stringify(current.execution.proposal.generation), /secret-for/);
     await generator.generate(current.id);
-    assert.deepEqual(calls, ["cerebras", "mistral"]);
+    assert.deepEqual(calls, ["groq", "mistral"]);
     assert.equal(imported.length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
 
-function connection(providerId: "cerebras" | "mistral", modelId: string): ProviderConnection {
-  const limits = providerId === "cerebras"
-    ? { context: 131_000, output: 40_000, url: "https://api.cerebras.ai/v1" }
+function connection(providerId: "groq" | "mistral", modelId: string): ProviderConnection {
+  const limits = providerId === "groq"
+    ? { context: 131_072, output: 65_536, url: "https://api.groq.com/openai/v1" }
     : { context: 256_000, output: 32_000, url: "https://api.mistral.ai/v1" };
   return {
     schemaVersion: 1,

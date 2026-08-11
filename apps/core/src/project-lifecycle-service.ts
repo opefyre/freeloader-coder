@@ -26,6 +26,12 @@ const solutionDecisionRequestSchema = z.strictObject({
   decision: z.enum(["approved", "declined", "revision_requested"]),
   feedback: z.string().trim().min(3).max(10_000).nullable(),
 });
+const reopenRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedRevision: z.number().int().nonnegative(),
+  mission: z.string().trim().min(3).max(20_000),
+  reason: z.string().trim().min(3).max(2_000),
+});
 const stateSchema = z.strictObject({
   schemaVersion: z.literal(1),
   records: z.array(projectLifecycleRecordSchema).max(1_000),
@@ -196,6 +202,20 @@ export class ProjectLifecycleService {
         : request.decision === "declined" ? { type: "design_declined" as const, artifactDigest: request.artifactDigest }
           : { type: "design_revision_requested" as const, artifactDigest: request.artifactDigest, feedback: request.feedback ?? "" };
       const record = advanceProjectLifecycle(current, event, Date.now());
+      return { state: { ...replaceRecord(state, record), receipts: { ...state.receipts, [receiptKey]: record } }, result: record };
+    });
+  }
+
+  async reopen(projectId: string, raw: unknown, idempotencyKey: string): Promise<ProjectLifecycleRecord> {
+    assertProjectId(projectId); assertIdempotencyKey(idempotencyKey);
+    const request = reopenRequestSchema.parse(raw);
+    return this.#mutate(async (state) => {
+      const receiptKey = `${projectId}:reopen:${idempotencyKey}`;
+      const replay = state.receipts[receiptKey];
+      if (replay) return { state, result: replay };
+      const current = requireRecord(state.records, projectId);
+      if (current.revision !== request.expectedRevision) throw new ProjectLifecycleServiceError("stale_revision", "The project changed. Review the latest terminal state before reopening it.");
+      const record = advanceProjectLifecycle(current, { type: "reopen", mission: request.mission, reason: request.reason }, Date.now());
       return { state: { ...replaceRecord(state, record), receipts: { ...state.receipts, [receiptKey]: record } }, result: record };
     });
   }

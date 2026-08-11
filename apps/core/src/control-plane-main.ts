@@ -25,6 +25,7 @@ import { ProjectTaskWorkspaceService } from "./project-task-workspace.js";
 import { FreeProviderExecutionModel } from "./free-provider-execution-model.js";
 import { ProjectEgressPolicyService } from "./project-egress-policy-service.js";
 import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
+import { ProjectLifecycleCoordinator } from "./project-lifecycle-coordinator.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
 import { LocalSensitiveCommandRunner } from "./sensitive-command-runner.js";
@@ -157,6 +158,16 @@ const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
     await executionCoordinator.schedule(projectId);
   }
 );
+const lifecycleCoordinator = new ProjectLifecycleCoordinator(
+  stateDirectory,
+  projectLifecycles,
+  {
+    solution: (projectId) => solutionCoordinator.schedule(projectId),
+    deliveryPlan: (projectId) => deliveryPlanCoordinator.schedule(projectId),
+    execution: async (projectId) => executionCoordinator.schedule(projectId),
+  },
+  `control-plane-${instanceId}`
+);
 const telegramOwnerChannel = new TelegramOwnerChannelService(stateDirectory, localProjects, {
   list: () => projectLifecycles.list(),
   get: (projectId) => projectLifecycles.get(projectId),
@@ -169,6 +180,7 @@ const telegramOwnerChannel = new TelegramOwnerChannelService(stateDirectory, loc
   },
   decideSolution: async (projectId, input, idempotencyKey) => {
     const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey);
+    await projectSolutions.recordDecision(projectId, input, idempotencyKey);
     if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
     return lifecycle;
   },
@@ -390,7 +402,15 @@ const controlPlane = createControlPlaneServer({
     getSolution: (projectId) => projectSolutions.read(projectId),
     decideSolution: async (projectId, input, idempotencyKey) => {
       const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey);
+      await projectSolutions.recordDecision(projectId, input, idempotencyKey);
       if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
+      return lifecycle;
+    },
+    reopen: async (projectId, input, idempotencyKey) => {
+      const before = await projectLifecycles.get(projectId);
+      if (!before || (before.stage !== "complete" && before.stage !== "cancelled")) throw new Error("Only a terminal project can be reopened.");
+      const lifecycle = await projectLifecycles.reopen(projectId, input, idempotencyKey);
+      await lifecycleCoordinator.acknowledgeReopen(projectId, before.stage, lifecycle.revision);
       return lifecycle;
     },
     solutionRun: (projectId) => solutionCoordinator.get(projectId),
@@ -414,6 +434,12 @@ const controlPlane = createControlPlaneServer({
     disconnectJira: () => integrationConnections.disconnectJira(),
     connectTelegram: (input) => integrationConnections.connectTelegram(input),
     disconnectTelegram: () => integrationConnections.disconnectTelegram(),
+    configureOAuth: (input) => integrationConnections.configureOAuth(input),
+    beginOAuth: (provider, redirectUri) => integrationConnections.beginOAuth(provider, redirectUri),
+    completeJiraOAuth: (input) => integrationConnections.completeJiraOAuth(input),
+    completeBrokerOAuth: (provider, ticket) => integrationConnections.completeBrokerOAuth(provider, ticket),
+    connectToken: (input) => integrationConnections.connectToken(input),
+    disconnectService: (provider) => integrationConnections.disconnectService(provider),
   },
   requests: {
     list: () => localRequests.list(),
@@ -476,6 +502,7 @@ await proposalGenerator.resumePending();
 await solutionCoordinator.resumePending();
 await deliveryPlanCoordinator.resumePending();
 await executionCoordinator.resumePending();
+lifecycleCoordinator.start();
 autonomy.start();
 const executionJiraTimer = setInterval(() => {
   void localProjects.list().then(async ({ projects }) => {
@@ -495,6 +522,7 @@ async function close(signal: string) {
   if (closing) return;
   closing = true;
   autonomy.stop();
+  lifecycleCoordinator.stop();
   executionCoordinator.stop();
   clearInterval(executionJiraTimer);
   console.log(`Stopping local control plane (${signal}).`);

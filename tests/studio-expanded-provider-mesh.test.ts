@@ -13,12 +13,13 @@ test("expanded mesh exposes interactive evidence, sources, and honest access cla
     "apps/studio/src/components/providers/expanded-provider-mesh.tsx",
     "utf8"
   );
-  for (const provider of ["Cerebras", "Mistral", "Zhipu GLM", "SambaNova", "DeepSeek"]) {
+  for (const provider of ["NVIDIA NIM", "Mistral", "Zhipu GLM", "SambaNova", "Hugging Face"]) {
     assert.match(component, new RegExp(provider));
   }
+  assert.doesNotMatch(component, /Cerebras/);
   assert.match(component, /Interactive demo/);
-  assert.match(component, /Promotional credit only/);
-  assert.match(component, /Never enters the permanent-free pool/);
+  assert.match(component, /Developer Program/);
+  assert.match(component, /Explicit free model/);
   assert.match(component, /Scheduled, not retried/);
   assert.match(component, /aria-label="Provider simulation"/);
   assert.match(component, /Dashboard <ArrowSquareOut/);

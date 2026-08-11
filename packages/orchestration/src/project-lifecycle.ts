@@ -93,7 +93,8 @@ export type ProjectLifecycleEvent =
   | { type: "backlog_qa_passed"; artifactDigest: string; jiraEpicId: string }
   | { type: "delivery_completed" }
   | { type: "owner_input_required"; reason: string }
-  | { type: "resume" };
+  | { type: "resume" }
+  | { type: "reopen"; mission: string; reason: string };
 
 export function createProjectLifecycle(input: {
   projectId: string;
@@ -212,6 +213,11 @@ export function advanceProjectLifecycle(
     case "resume":
       requireStage(record, "blocked");
       patch = { stage: inferResumeStage(record), blockedReason: null };
+      break;
+    case "reopen":
+      if (!(["complete", "cancelled"] as const).includes(record.stage as "complete" | "cancelled")) throw new Error("Only a terminal project can be reopened.");
+      if (event.mission.trim().length < 3 || event.reason.trim().length < 3) throw new Error("Reopening requires a mission and a reason.");
+      patch = { stage: "context_review", mission: event.mission.trim(), assessment: null, questions: [], answers: [], designApproval: null, designFeedback: [], jiraEpicId: null, blockedReason: null };
       break;
   }
   return projectLifecycleRecordSchema.parse({
