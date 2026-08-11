@@ -90,5 +90,12 @@ test("time-controlled 12-hour soak survives hourly restarts without spins or dup
 
 function executionRecord(state: "running" | "completed"): ProjectExecutionRecord { return { schemaVersion: 1, projectId, planDigest: "d".repeat(64), state, revision: 0, tasks: [{ id: "plan_0000000000000001", jiraIssueKey: "PIPE-1", title: "Bounded task", dependsOn: [], allowedFiles: ["src/app.ts"], validationProfiles: ["typecheck"], uiChanged: false, requiredCapabilities: ["chat"], privacyClass: "source_code", status: state === "completed" ? "completed" : "queued", revision: 0, attempt: 0, assignment: state === "completed" ? { providerId: "groq", modelId: "model", deviceId: "provider:one", selectedAt: 1, reasons: ["Eligible provider."] } : null, lease: null, implementationEvidence: state === "completed" ? ["a".repeat(64)] : [], validations: state === "completed" ? [{ tier: "fast", commandLabel: "fast", passed: true, exitCode: 0, evidenceDigest: "b".repeat(64), observedAt: 1 }, { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: "c".repeat(64), observedAt: 1 }, { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: "d".repeat(64), observedAt: 1 }] : [], reviews: state === "completed" ? [{ reviewerId: "reviewer-one", providerId: "gemini", role: "functional", verdict: "pass", evidenceDigest: "e".repeat(64), findings: [], observedAt: 1 }, { reviewerId: "reviewer-two", providerId: "cloudflare", role: "security", verdict: "pass", evidenceDigest: "f".repeat(64), findings: [], observedAt: 1 }] : [], commitDigest: state === "completed" ? "1".repeat(40) : null, integrationDigest: state === "completed" ? "2".repeat(64) : null, failureClass: null, safeMessage: "State", updatedAt: 1 }], updatedAt: 1 }; }
 function executionRecordFor(id: string, state: "running" | "completed") { return { ...executionRecord(state), projectId: id, tasks: executionRecord(state).tasks.map((task) => ({ ...task })) } as ProjectExecutionRecord; }
-async function waitFor(predicate: () => Promise<boolean>) { for (let index = 0; index < 100; index += 1) { if (await predicate()) return; await delay(10); } throw new Error("Timed out waiting for coordinator state."); }
+async function waitFor(predicate: () => Promise<boolean>) {
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    if (await predicate()) return;
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for coordinator state.");
+    await delay(10);
+  }
+}
 function delay(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
