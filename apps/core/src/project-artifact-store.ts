@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { watch as watchDirectory, type FSWatcher } from "node:fs";
 import { chmod, lstat, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export const PROJECT_ARTIFACT_KINDS = [
   "context",
@@ -30,6 +30,15 @@ export interface ProjectArtifactMetadata {
   readonly supersedesDigest: string | null;
   readonly confidence: "unknown" | "mixed" | "verified";
   readonly approvalState: "not_required" | "pending" | "approved";
+  readonly citations: readonly ProjectArtifactCitation[];
+}
+
+export interface ProjectArtifactCitation {
+  readonly reference: string;
+  readonly kind: "local" | "url" | "jira";
+  readonly state: "verified" | "unverified" | "invalid";
+  readonly observedAt: string;
+  readonly digest: string | null;
 }
 
 export interface ProjectArtifact {
@@ -54,6 +63,18 @@ export interface ProjectArtifactChange {
   readonly kind: ProjectArtifactKind;
   readonly fileName: string;
   readonly state: "verified" | "conflict" | "missing";
+}
+
+export interface ProjectArtifactInspection {
+  readonly fileName: string;
+  readonly kind: ProjectArtifactKind;
+  readonly revision: number;
+  readonly updatedAt: string;
+  readonly producer: string;
+  readonly bodyDigest: string;
+  readonly confidence: ProjectArtifactMetadata["confidence"];
+  readonly approvalState: ProjectArtifactMetadata["approvalState"];
+  readonly citations: Readonly<Record<ProjectArtifactCitation["state"], number>>;
 }
 
 export interface ProjectArtifactStoreOptions {
@@ -136,6 +157,25 @@ export class ProjectArtifactStore {
     return Promise.all(PROJECT_ARTIFACT_KINDS.map((kind) => this.read(root, kind)));
   }
 
+  async inspect(root: string): Promise<readonly ProjectArtifactInspection[]> {
+    const artifacts = await this.list(root);
+    return artifacts.map(({ fileName, metadata }) => ({
+      fileName,
+      kind: metadata.kind,
+      revision: metadata.revision,
+      updatedAt: metadata.updatedAt,
+      producer: metadata.producer,
+      bodyDigest: metadata.bodyDigest,
+      confidence: metadata.confidence,
+      approvalState: metadata.approvalState,
+      citations: {
+        verified: metadata.citations.filter(({ state }) => state === "verified").length,
+        unverified: metadata.citations.filter(({ state }) => state === "unverified").length,
+        invalid: metadata.citations.filter(({ state }) => state === "invalid").length,
+      },
+    }));
+  }
+
   async read(root: string, kind: ProjectArtifactKind): Promise<ProjectArtifact> {
     await assertSafeRoot(root);
     const fileName = ARTIFACT_FILES[kind];
@@ -153,6 +193,7 @@ export class ProjectArtifactStore {
     readonly expectedDigest: string;
     readonly approvedDigest?: string | null;
     readonly confidence?: ProjectArtifactMetadata["confidence"];
+    readonly citations?: readonly string[];
   }): Promise<ProjectArtifact> {
     return withProjectLock(root, this.#options, async () => {
       await assertSafeRoot(root);
@@ -165,6 +206,7 @@ export class ProjectArtifactStore {
       validateArtifactReferences(input.kind, body);
       validateArtifactStructure(input.kind, body);
       const bodyDigest = digest(body);
+      const citations = input.citations === undefined ? current.metadata.citations : await validateCitations(root, input.citations);
       const metadata: ProjectArtifactMetadata = {
         schemaVersion: 1,
         kind: input.kind,
@@ -176,6 +218,7 @@ export class ProjectArtifactStore {
         supersedesDigest: current.metadata.bodyDigest,
         confidence: input.confidence ?? current.metadata.confidence,
         approvalState: approvalState(input.kind, input.approvedDigest === undefined ? current.metadata.approvedDigest : input.approvedDigest, bodyDigest),
+        citations,
       };
       if (metadata.approvedDigest !== null && metadata.approvedDigest !== bodyDigest) {
         throw new ProjectArtifactError("artifact-unsafe", "Approval must identify the exact content being saved.");
@@ -237,6 +280,7 @@ export class ProjectArtifactStore {
         supersedesDigest: current.metadata.bodyDigest,
         confidence: "unknown",
         approvalState: PROJECT_ARTIFACT_CONTRACTS[kind].approval === "none" ? "not_required" : "pending",
+        citations: current.metadata.citations,
       };
       await atomicWrite(join(root, fileName), serializeArtifact(metadata, current.body), this.#options);
       const reconciled = { fileName, body: current.body, metadata };
@@ -291,6 +335,7 @@ function initialMetadata(kind: ProjectArtifactKind, producer: string, body: stri
     supersedesDigest: null,
     confidence: "unknown",
     approvalState: PROJECT_ARTIFACT_CONTRACTS[kind].approval === "none" ? "not_required" : "pending",
+    citations: [],
   };
 }
 
@@ -317,19 +362,31 @@ function parseArtifact(content: string, expectedKind: ProjectArtifactKind): { me
 function validateMetadata(candidate: unknown, expectedKind: ProjectArtifactKind): ProjectArtifactMetadata {
   if (!candidate || typeof candidate !== "object") throw new ProjectArtifactError("artifact-corrupt", "Artifact metadata is invalid.");
   const value = candidate as Record<string, unknown>;
-  const allowed = new Set(["schemaVersion", "kind", "revision", "updatedAt", "producer", "bodyDigest", "approvedDigest", "supersedesDigest", "confidence", "approvalState"]);
+  const allowed = new Set(["schemaVersion", "kind", "revision", "updatedAt", "producer", "bodyDigest", "approvedDigest", "supersedesDigest", "confidence", "approvalState", "citations"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) throw new ProjectArtifactError("artifact-corrupt", "Artifact metadata contains an unknown field.");
   const confidence = value.confidence ?? "unknown";
   const approval = value.approvalState ?? approvalState(expectedKind, value.approvedDigest as string | null, String(value.bodyDigest));
+  const citations = value.citations ?? [];
   if (
     value.schemaVersion !== 1 || value.kind !== expectedKind || !Number.isInteger(value.revision) || Number(value.revision) < 1 ||
     typeof value.updatedAt !== "string" || !Number.isFinite(Date.parse(value.updatedAt)) || typeof value.producer !== "string" ||
     typeof value.bodyDigest !== "string" || !/^[a-f0-9]{64}$/.test(value.bodyDigest) ||
     !nullableDigest(value.approvedDigest) || !nullableDigest(value.supersedesDigest) ||
     !["unknown", "mixed", "verified"].includes(String(confidence)) ||
-    !["not_required", "pending", "approved"].includes(String(approval))
+    !["not_required", "pending", "approved"].includes(String(approval)) || !validCitationArray(citations)
   ) throw new ProjectArtifactError("artifact-corrupt", "Artifact metadata failed schema validation.");
-  return { ...value, confidence, approvalState: approval } as unknown as ProjectArtifactMetadata;
+  return { ...value, confidence, approvalState: approval, citations } as unknown as ProjectArtifactMetadata;
+}
+
+function validCitationArray(value: unknown): value is ProjectArtifactCitation[] {
+  return Array.isArray(value) && value.length <= 200 && value.every((item) => {
+    if (!item || typeof item !== "object") return false;
+    const citation = item as Record<string, unknown>;
+    return Object.keys(citation).every((key) => ["reference", "kind", "state", "observedAt", "digest"].includes(key)) &&
+      typeof citation.reference === "string" && citation.reference.length <= 500 &&
+      ["local", "url", "jira"].includes(String(citation.kind)) && ["verified", "unverified", "invalid"].includes(String(citation.state)) &&
+      typeof citation.observedAt === "string" && Number.isFinite(Date.parse(citation.observedAt)) && nullableDigest(citation.digest);
+  });
 }
 
 function approvalState(kind: ProjectArtifactKind, approvedDigest: string | null, bodyDigest: string): ProjectArtifactMetadata["approvalState"] {
@@ -358,12 +415,46 @@ function validateProducer(value: string) {
 function rejectSensitiveContent(body: string) {
   const patterns = [
     /\b(?:sk|gsk|hf|ghp|github_pat)_[a-z0-9_-]{16,}\b/i,
+    /\bAKIA[0-9A-Z]{16}\b/,
+    /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/,
+    /\bBearer\s+[a-z0-9._~+\/-]{16,}\b/i,
     /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
     /\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[a-z0-9_./+\-=]{12,}/i,
+    /(?:^|[\s`"'(])(?:\/Users\/[^/\s]+|\/home\/[^/\s]+|[A-Z]:\\Users\\[^\\\s]+)/i,
   ];
   if (patterns.some((pattern) => pattern.test(body))) {
     throw new ProjectArtifactError("sensitive-content", "Potential credential material was detected. Remove it before saving the artifact.");
   }
+}
+
+async function validateCitations(root: string, raw: readonly string[]): Promise<readonly ProjectArtifactCitation[]> {
+  if (raw.length > 200) throw new ProjectArtifactError("artifact-unsafe", "Artifact citations exceed the safe limit.");
+  const observedAt = new Date().toISOString();
+  const unique = [...new Set(raw.map((entry) => entry.trim()).filter(Boolean))];
+  const rootPath = resolve(root);
+  return Promise.all(unique.map(async (reference): Promise<ProjectArtifactCitation> => {
+    if (/^[A-Z][A-Z0-9]+-\d{1,10}$/.test(reference)) return { reference, kind: "jira", state: "unverified", observedAt, digest: null };
+    if (/^https?:\/\//i.test(reference)) {
+      try {
+        const url = new URL(reference);
+        const safe = url.protocol === "https:" && !url.username && !url.password && !["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+        return { reference: safe ? url.toString() : "invalid-url", kind: "url", state: safe ? "unverified" : "invalid", observedAt, digest: null };
+      } catch { return { reference: "invalid-url", kind: "url", state: "invalid", observedAt, digest: null }; }
+    }
+    const requested = reference.startsWith("local://") ? reference.slice(8) : reference;
+    if (isAbsolute(requested) || requested.includes("\0")) return { reference: "local://[private-path]", kind: "local", state: "invalid", observedAt, digest: null };
+    const target = resolve(rootPath, requested);
+    const scoped = target === rootPath || target.startsWith(`${rootPath}${sep}`);
+    if (!scoped || relative(rootPath, target).split(sep).some((part) => [".env", "secrets", ".git"].includes(part))) {
+      return { reference: "local://[excluded]", kind: "local", state: "invalid", observedAt, digest: null };
+    }
+    try {
+      const info = await lstat(target);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_ARTIFACT_BYTES) return { reference: `local://${relative(rootPath, target)}`, kind: "local", state: "invalid", observedAt, digest: null };
+      const content = await readFile(target);
+      return { reference: `local://${relative(rootPath, target)}`, kind: "local", state: "verified", observedAt, digest: createHash("sha256").update(content).digest("hex") };
+    } catch { return { reference: `local://${requested.replaceAll("\\", "/")}`, kind: "local", state: "invalid", observedAt, digest: null }; }
+  }));
 }
 
 async function assertSafeRoot(root: string) {

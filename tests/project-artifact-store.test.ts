@@ -136,6 +136,107 @@ test("detects manual changes and rejects credential-like content", async () => {
   }
 });
 
+test("blocks a representative secret and personal-path corpus without echoing sensitive values", async () => {
+  const root = join(process.cwd(), `.test-artifacts-${crypto.randomUUID()}`);
+  await mkdir(root, { recursive: true });
+  const corpus = [
+    "api_key=secret-value-123456789",
+    "ghp_abcdefghijklmnopqrstuvwxyz123456",
+    "AKIAABCDEFGHIJKLMNOP",
+    "Bearer abcdefghijklmnopqrstuvwxyz.123456",
+    "eyJabcdefghijk.abcdefghijklmnop.abcdefghijklmnop",
+    "-----BEGIN PRIVATE KEY-----",
+    "password: dangerous-password-value",
+    "/Users/private-owner/Projects/confidential",
+    "/home/private-owner/confidential",
+    "C:\\Users\\private-owner\\confidential",
+  ];
+  try {
+    const store = new ProjectArtifactStore();
+    await store.initialize(root);
+    for (const secret of corpus) {
+      const current = await store.read(root, "security");
+      await assert.rejects(
+        () => store.write(root, {
+          kind: "security",
+          body: `${current.body}\n\n${secret}`,
+          producer: "codkesh:redaction-test",
+          expectedDigest: current.metadata.bodyDigest,
+        }),
+        (error: unknown) => error instanceof ProjectArtifactError &&
+          error.code === "sensitive-content" &&
+          !error.message.includes(secret) &&
+          !error.message.includes("private-owner"),
+      );
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("normalizes citations, records provenance, and keeps browser inspection free of private paths", async () => {
+  const root = join(process.cwd(), `.test-artifacts-${crypto.randomUUID()}`);
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, "source.txt"), "verified source\n", "utf8");
+  try {
+    const store = new ProjectArtifactStore();
+    await store.initialize(root);
+    const research = await store.read(root, "research");
+    const written = await store.write(root, {
+      kind: "research",
+      body: research.body.replace("_Research has not started._", "- Validate cited evidence."),
+      producer: "codkesh:research",
+      expectedDigest: research.metadata.bodyDigest,
+      confidence: "mixed",
+      citations: [
+        "source.txt", "source.txt", "https://example.com/evidence", "PIPE-604",
+        "missing.txt", "/Users/private-owner/secret.txt", "../outside.txt", ".env", "http://localhost/private",
+      ],
+    });
+    assert.equal(written.metadata.citations.length, 8);
+    assert.deepEqual(
+      written.metadata.citations.map(({ kind, state }) => `${kind}:${state}`),
+      ["local:verified", "url:unverified", "jira:unverified", "local:invalid", "local:invalid", "local:invalid", "local:invalid", "url:invalid"],
+    );
+    assert.match(written.metadata.citations[0]?.digest ?? "", /^[a-f0-9]{64}$/);
+    const serialized = JSON.stringify(await store.inspect(root));
+    assert.doesNotMatch(serialized, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(serialized, /private-owner|source\.txt|example\.com/);
+    const summary = (await store.inspect(root)).find(({ kind }) => kind === "research");
+    assert.deepEqual(summary?.citations, { verified: 1, unverified: 2, invalid: 5 });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("approved meaning cannot change silently and explicit revision withdrawal remains auditable", async () => {
+  const root = join(process.cwd(), `.test-artifacts-${crypto.randomUUID()}`);
+  await mkdir(root, { recursive: true });
+  try {
+    const store = new ProjectArtifactStore();
+    await store.initialize(root);
+    const initial = await store.read(root, "design");
+    const approved = await store.write(root, {
+      kind: "design", body: initial.body, producer: "owner:approval", expectedDigest: initial.metadata.bodyDigest,
+      approvedDigest: initial.metadata.bodyDigest,
+    });
+    const changedBody = approved.body.replace("_Not yet designed._", "- A reviewed experience change.");
+    await assert.rejects(
+      () => store.write(root, { kind: "design", body: changedBody, producer: "codkesh:revision", expectedDigest: approved.metadata.bodyDigest }),
+      (error: unknown) => error instanceof ProjectArtifactError && error.code === "artifact-unsafe",
+    );
+    const revised = await store.write(root, {
+      kind: "design", body: changedBody, producer: "codkesh:revision", expectedDigest: approved.metadata.bodyDigest,
+      approvedDigest: null,
+    });
+    assert.equal(revised.metadata.approvalState, "pending");
+    assert.equal(revised.metadata.approvedDigest, null);
+    assert.equal(revised.metadata.supersedesDigest, approved.metadata.bodyDigest);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("reconciles manual changes explicitly and preserves both recorded and manual evidence", async () => {
   const root = join(process.cwd(), `.test-artifacts-${crypto.randomUUID()}`);
   await mkdir(root, { recursive: true });
