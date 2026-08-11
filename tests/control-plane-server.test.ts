@@ -431,11 +431,17 @@ test("integration discovery is local, read-only by default, and explicit when pr
   const port = await controlPlane.listen();
   const base = `http://127.0.0.1:${port}`;
   try {
-    assert.equal((await fetch(`${base}/api/v1/integration-connections`)).status, 200);
+    const cachedResponse = await fetch(`${base}/api/v1/integration-connections`);
+    assert.equal(cachedResponse.status, 200);
+    const cached = await cachedResponse.json() as { connections: Array<{ discovery?: { source: string } }> };
+    assert.equal(cached.connections[0]?.discovery?.source, "cached_metadata");
     assert.equal(probes, 0);
     assert.equal((await fetch(`${base}/api/v1/integration-connections/github/probe`, { method: "POST" })).status, 400);
     const response = await fetch(`${base}/api/v1/integration-connections/github/probe`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "github-probe:123456789" } });
     assert.equal(response.status, 200);
+    const live = await response.json() as { connections: Array<{ discovery?: { source: string; result: string } }> };
+    assert.equal(live.connections[0]?.discovery?.source, "live_probe");
+    assert.equal(live.connections[0]?.discovery?.result, "empty");
     assert.equal(probes, 1);
     assert.equal((await fetch(`${base}/api/v1/integration-connections/jira`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json" }, body: "{}" })).status, 400);
     assert.equal((await fetch(`${base}/api/v1/integration-connections/jira`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "jira-connect:123456789" }, body: "{}" })).status, 200);

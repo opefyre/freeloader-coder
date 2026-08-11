@@ -121,7 +121,7 @@ import {
   type NativePickerResponse,
 } from "../../../packages/runtime/src/native-picker.js";
 import {
-  publicIntegrationConnectionCollectionSchema,
+  withDiscoveryEvidence,
   type PublicIntegrationConnectionCollection,
 } from "../../../packages/runtime/src/integration-connections.js";
 
@@ -317,13 +317,13 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           sendJson(response, 413, { error: "Request body is not accepted." });
           return;
         }
-        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.list()));
+        sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.list(), "cached_metadata"));
         return;
       }
       if (url.pathname === "/api/v1/integration-connections/oauth/configure" && options.integrationConnections?.configureOAuth) {
         if (request.method !== "POST") { sendJson(response, 405, { error: "Method is not allowed." }); return; }
         requireIdempotencyKey(request);
-        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.configureOAuth(await readJsonBody(request))));
+        sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.configureOAuth(await readJsonBody(request)), "live_probe"));
         return;
       }
       if (url.pathname === "/api/v1/integration-connections/oauth/start" && options.integrationConnections?.beginOAuth) {
@@ -359,14 +359,14 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           sendJson(response, 413, { error: "Request body is not accepted." });
           return;
         }
-        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.probeGitHub()));
+        sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.probeGitHub(), "live_probe"));
         return;
       }
       if (url.pathname === "/api/v1/integration-connections/jira" && options.integrationConnections) {
         if (request.method === "POST") {
           requireIdempotencyKey(request);
           const body = await readJsonBody(request);
-          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.connectJira(body)));
+          sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.connectJira(body), "live_probe"));
           return;
         }
         if (request.method === "DELETE") {
@@ -375,7 +375,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             sendJson(response, 413, { error: "Request body is not accepted." });
             return;
           }
-          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.disconnectJira()));
+          sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.disconnectJira(), "live_probe"));
           return;
         }
         sendJson(response, 405, { error: "Method is not allowed." });
@@ -385,12 +385,12 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         requireIdempotencyKey(request);
         if (request.method === "POST") {
           const body = await readJsonBody(request);
-          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.connectTelegram(body)));
+          sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.connectTelegram(body), "live_probe"));
           return;
         }
         if (request.method === "DELETE") {
           if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
-          sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.disconnectTelegram()));
+          sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.disconnectTelegram(), "live_probe"));
           return;
         }
         sendJson(response, 405, { error: "Method is not allowed." });
@@ -399,13 +399,13 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       if (url.pathname === "/api/v1/integration-connections/token" && options.integrationConnections?.connectToken) {
         if (request.method !== "POST") { sendJson(response, 405, { error: "Method is not allowed." }); return; }
         requireIdempotencyKey(request);
-        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.connectToken(await readJsonBody(request))));
+        sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.connectToken(await readJsonBody(request)), "live_probe"));
         return;
       }
       const serviceDisconnect = url.pathname.match(/^\/api\/v1\/integration-connections\/(google|slack|discord|cloudflare|aws|vercel)$/);
       if (serviceDisconnect && request.method === "DELETE" && options.integrationConnections?.disconnectService) {
         requireIdempotencyKey(request);
-        sendJson(response, 200, publicIntegrationConnectionCollectionSchema.parse(await options.integrationConnections.disconnectService(serviceDisconnect[1] as "google" | "slack" | "discord" | "cloudflare" | "aws" | "vercel")));
+        sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.disconnectService(serviceDisconnect[1] as "google" | "slack" | "discord" | "cloudflare" | "aws" | "vercel"), "live_probe"));
         return;
       }
       if (

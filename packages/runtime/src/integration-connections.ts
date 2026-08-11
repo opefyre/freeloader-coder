@@ -4,8 +4,19 @@ export const integrationResourceSchema = z.strictObject({
   id: z.string().trim().min(1).max(500),
   kind: z.enum(["github_repository", "jira_project", "telegram_chat"]),
   label: z.string().trim().min(1).max(200),
-  url: z.string().url().max(2_048),
+  url: z.string().url().max(2_048).refine((value) => new URL(value).protocol === "https:", "Resource links must use HTTPS."),
   detail: z.string().trim().min(1).max(300),
+});
+
+export const discoveryEvidenceSchema = z.strictObject({
+  source: z.enum(["live_probe", "cached_metadata"]),
+  freshness: z.enum(["current", "stale"]),
+  freshUntil: z.number().int().nonnegative(),
+  result: z.enum(["available", "empty", "permission_required", "unavailable"]),
+  recovery: z.strictObject({
+    action: z.enum(["none", "manage_access", "reconnect", "retry"]),
+    label: z.string().trim().min(1).max(100),
+  }),
 });
 
 const githubConnectionSchema = z.strictObject({
@@ -17,6 +28,7 @@ const githubConnectionSchema = z.strictObject({
   observedAt: z.number().int().nonnegative(),
   resources: z.array(integrationResourceSchema).max(100),
   nextAction: z.string().trim().min(1).max(300),
+  discovery: discoveryEvidenceSchema.optional(),
 });
 
 const jiraConnectionSchema = z.strictObject({
@@ -28,6 +40,7 @@ const jiraConnectionSchema = z.strictObject({
   observedAt: z.number().int().nonnegative(),
   resources: z.array(integrationResourceSchema).max(100),
   nextAction: z.string().trim().min(1).max(300),
+  discovery: discoveryEvidenceSchema.optional(),
 });
 
 const telegramConnectionSchema = z.strictObject({
@@ -39,6 +52,7 @@ const telegramConnectionSchema = z.strictObject({
   observedAt: z.number().int().nonnegative(),
   resources: z.array(integrationResourceSchema).max(20),
   nextAction: z.string().trim().min(1).max(300),
+  discovery: discoveryEvidenceSchema.optional(),
 });
 
 export const publicIntegrationConnectionSchema = z.discriminatedUnion("provider", [
@@ -73,3 +87,29 @@ export const publicIntegrationConnectionCollectionSchema = z.strictObject({
 export type PublicIntegrationConnectionCollection = z.infer<
   typeof publicIntegrationConnectionCollectionSchema
 >;
+
+export function withDiscoveryEvidence(
+  input: unknown,
+  source: "live_probe" | "cached_metadata",
+  now = Date.now(),
+): PublicIntegrationConnectionCollection {
+  const collection = publicIntegrationConnectionCollectionSchema.parse(input);
+  return publicIntegrationConnectionCollectionSchema.parse({
+    ...collection,
+    connections: collection.connections.map((connection) => {
+      const freshUntil = connection.observedAt + 5 * 60_000;
+      const permissionRequired = /grant\b|permission\b|scope\b|access\s+(?:required|needed|denied|missing|to)\b/i.test(connection.nextAction);
+      const result = connection.state === "ready"
+        ? connection.resources.length > 0 ? "available" : "empty"
+        : permissionRequired ? "permission_required" : "unavailable";
+      const recovery = result === "available"
+        ? { action: "none" as const, label: "Ready" }
+        : result === "permission_required"
+          ? { action: "manage_access" as const, label: "Review access" }
+          : connection.state === "not_connected" || connection.state === "setup_required"
+            ? { action: "reconnect" as const, label: "Connect" }
+            : { action: "retry" as const, label: "Try again" };
+      return { ...connection, discovery: { source, freshness: now <= freshUntil ? "current" : "stale", freshUntil, result, recovery } };
+    }),
+  });
+}
