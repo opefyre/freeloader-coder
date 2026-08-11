@@ -73,10 +73,14 @@ export class JiraDeliveryService {
       const marker = `pipeline_plan_${item.id.slice(5)}`;
       const observed = await client.findByMarker(selected.projectKey, marker);
       let issue = observed;
+      if (observed && observed.summary !== null && observed.summary !== item.title) {
+        throw new JiraDeliveryNeedsUserError(`${observed.key} was edited in Jira after Codkesh planned it. Review the conflict before synchronization continues.`);
+      }
       if (!issue) {
         const parent = item.parentId ? receipt.issues[item.parentId] : undefined;
         issue = await client.createIssue({
           projectId: selected.projectId,
+          plan: draft,
           item,
           marker,
           issueTypeId: catalog.issueTypeIds[item.type],
@@ -173,18 +177,18 @@ class JiraClient {
 
   async findByMarker(projectKey: string, marker: string) {
     const query = `project = "${escapeJql(projectKey)}" AND labels = "${marker}"`;
-    const result = await this.json(`/rest/api/3/search/jql?jql=${encodeURIComponent(query)}&maxResults=2&fields=key`, { method: "GET" });
+    const result = await this.json(`/rest/api/3/search/jql?jql=${encodeURIComponent(query)}&maxResults=2&fields=key,summary`, { method: "GET" });
     const issues = Array.isArray(result.issues) ? result.issues : [];
     if (issues.length > 1) throw new JiraDeliveryNeedsUserError(`Jira contains duplicate pipeline markers for ${marker}.`);
     return issues.length === 1 ? parseIssue(issues[0]) : null;
   }
 
-  async createIssue(input: { projectId: string; item: DeliveryPlanDraft["items"][number]; marker: string; issueTypeId: string; accountId: string; parentKey: string | null; fieldCatalog: JiraCreateFields }) {
+  async createIssue(input: { projectId: string; plan: DeliveryPlanDraft; item: DeliveryPlanDraft["items"][number]; marker: string; issueTypeId: string; accountId: string; parentKey: string | null; fieldCatalog: JiraCreateFields }) {
     const fields: Record<string, unknown> = {
       project: { id: input.projectId },
       issuetype: { id: input.issueTypeId },
       summary: input.item.title,
-      description: adf(input.item),
+      description: adf(input.item, input.plan),
       labels: [input.marker],
       assignee: { accountId: input.accountId },
     };
@@ -225,7 +229,7 @@ function parseSelectedProject(urlValue: string, projectId: string, siteUrl: stri
   return { projectId, projectKey: decodeURIComponent(match[1]) };
 }
 function orderedItems(plan: DeliveryPlanDraft) { const rank = { epic: 0, story: 1, task: 2, subtask: 3 }; return [...plan.items].sort((a, b) => rank[a.type] - rank[b.type]); }
-function parseIssue(value: unknown) { if (!value || typeof value !== "object") throw new Error("Jira issue response is invalid."); const issue = value as Record<string, unknown>; if (typeof issue.id !== "string" || typeof issue.key !== "string") throw new Error("Jira issue response is incomplete."); return { id: issue.id, key: issue.key }; }
+function parseIssue(value: unknown) { if (!value || typeof value !== "object") throw new Error("Jira issue response is invalid."); const issue = value as Record<string, unknown>; if (typeof issue.id !== "string" || typeof issue.key !== "string") throw new Error("Jira issue response is incomplete."); const fields = issue.fields && typeof issue.fields === "object" ? issue.fields as Record<string, unknown> : null; return { id: issue.id, key: issue.key, summary: typeof fields?.summary === "string" ? fields.summary : null }; }
 function escapeJql(value: string) { return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"'); }
 type JiraCreateFields = { assignee: boolean; parent: boolean; storyPoints: string | null; epicName: string | null; priority: readonly { id: string; name: string }[] | null };
 function parseCreateFields(fields: Record<string, unknown>): JiraCreateFields {
@@ -250,5 +254,5 @@ function priorityId(fields: JiraCreateFields, requested: DeliveryPlanDraft["item
   if (!exact && !fallback) throw new JiraDeliveryNeedsUserError(`Jira does not provide a usable ${requested} priority.`);
   return (exact ?? fallback)!.id;
 }
-function adf(item: DeliveryPlanDraft["items"][number]) { const paragraphs = [item.description, `Plan ID: ${item.id}`, `Parent: ${item.parentId ?? "None"}`, `Estimate: ${item.estimatedMinutes} minutes${item.storyPoints ? ` / ${item.storyPoints} points` : ""}`, "Acceptance criteria", ...item.acceptanceCriteria.map((entry) => `• ${entry}`), "Definition of Done", ...item.definitionOfDone.map((entry) => `• ${entry}`), "Implementation notes", ...item.implementationNotes.map((entry) => `• ${entry}`), "Sources", ...item.citations.map((entry) => `• ${entry}`)]; return { type: "doc", version: 1, content: paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) }; }
+function adf(item: DeliveryPlanDraft["items"][number], plan: DeliveryPlanDraft) { const coverage = plan.coverage.filter((entry) => entry.itemIds.includes(item.id)); const gates = plan.gates.filter((gate) => gate.beforeItemIds.includes(item.id)); const paragraphs = [item.description, `Plan ID: ${item.id}`, `Parent: ${item.parentId ?? "None"}`, `Estimate: ${item.estimatedMinutes} minutes${item.storyPoints ? ` / ${item.storyPoints} points` : ""}`, `Capabilities: ${item.roleCapabilities.join(", ")}`, `Allowed files: ${item.allowedFiles.join(", ") || "None"}`, `Validation: ${item.validationProfiles.join(", ") || "None"}`, "Requirement coverage", ...(coverage.length ? coverage.map((entry) => `• ${entry.requirement}: ${entry.validationProfiles.join(", ")}`) : ["• Inherited through child work."]), "Approval and infrastructure gates", ...(gates.length ? gates.map((gate) => `• ${gate.kind} — ${gate.title}: ${gate.rationale}`) : ["• None for this item."]), "Acceptance criteria", ...item.acceptanceCriteria.map((entry) => `• ${entry}`), "Definition of Done", ...item.definitionOfDone.map((entry) => `• ${entry}`), "Implementation notes", ...item.implementationNotes.map((entry) => `• ${entry}`), "Rollback requirements", ...item.rollbackRequirements.map((entry) => `• ${entry}`), "Sources", ...item.citations.map((entry) => `• ${entry}`)]; return { type: "doc", version: 1, content: paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) }; }
 async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }

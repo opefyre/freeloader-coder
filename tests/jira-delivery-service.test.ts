@@ -26,6 +26,7 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
     let created = 0;
     let failOnce = true;
     const links: unknown[] = [];
+    const issueBodies: unknown[] = [];
     const activations: unknown[] = [];
     const fetcher: typeof fetch = async (url, init) => {
       const pathname = new URL(String(url)).pathname;
@@ -44,6 +45,7 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
       if (pathname.endsWith("/issue") && init?.method === "POST") {
         createAttempts += 1;
         if (createAttempts === 3 && failOnce) { failOnce = false; return json({ error: "temporary" }, 503); }
+        issueBodies.push(JSON.parse(String(init.body)));
         created += 1;
         return json({ id: String(created), key: `PIPE-${created}` }, 201);
       }
@@ -69,6 +71,11 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
     assert.equal(created, 4);
     assert.equal(createAttempts, 5);
     assert.equal(links.length, 1);
+    const createdDescriptions = JSON.stringify(issueBodies);
+    assert.match(createdDescriptions, /Capabilities: typescript implementation, independent validation/);
+    assert.match(createdDescriptions, /Requirement coverage/);
+    assert.match(createdDescriptions, /Approval and infrastructure gates/);
+    assert.match(createdDescriptions, /Rollback requirements/);
     assert.deepEqual(activations, [[projectId, digest, "PIPE-1"]]);
     const replay = await service.synchronize(projectId);
     assert.equal(replay.completed, true);
@@ -78,6 +85,33 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("Jira delivery detects an externally edited marker issue and creates nothing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "jira-delivery-conflict-"));
+  try {
+    let creates = 0;
+    const fetcher: typeof fetch = async (url, init) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname.endsWith("/myself")) return json({ accountId: "account-1" });
+      if (parsed.pathname.endsWith("/issuetype/project")) return json([{ id: "100", name: "Epic" }, { id: "101", name: "Story" }, { id: "102", name: "Task" }, { id: "103", name: "Sub-task" }]);
+      if (parsed.pathname.includes("/issue/createmeta/")) return json({ fields: { assignee: {}, parent: {}, priority: { allowedValues: [{ id: "3", name: "Medium" }] }, customfield_10016: { name: "Story point estimate" }, customfield_10011: { name: "Epic Name" } } });
+      if (parsed.pathname.endsWith("/search/jql")) return json({ issues: [{ id: "1", key: "PIPE-1", fields: { summary: "Human changed this summary" } }] });
+      if (parsed.pathname.endsWith("/issue") && init?.method === "POST") { creates += 1; return json({ id: "2", key: "PIPE-2" }, 201); }
+      throw new Error(`Unexpected Jira request: ${parsed.pathname}`);
+    };
+    const service = new JiraDeliveryService(
+      root,
+      { list: async () => ({ schemaVersion: 1, provenance: "local_observation", observedAt: 1, projects: [{ schemaVersion: 1, id: projectId, displayName: "Product", state: "ready", observedAt: 1, validForMs: 60_000, facts: [], inferences: [], decisions: [], warnings: [], resources: [{ id: "binding_abcdef0123456789", kind: "jira_project", connectionId: "jira:account", resourceId: "20000", label: "PIPE", url: "https://example.atlassian.net/jira/software/projects/PIPE", role: "primary", selectedAt: 1 }] }] }) },
+      { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) },
+      { activateDelivery: async () => ({} as never) },
+      { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret-token" }) },
+      fetcher,
+      () => 100
+    );
+    await assert.rejects(() => service.synchronize(projectId), /edited in Jira/);
+    assert.equal(creates, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 function json(value: unknown, status = 200) {
