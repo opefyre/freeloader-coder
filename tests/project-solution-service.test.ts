@@ -15,7 +15,12 @@ const draft = {
   integrations: ["Jira and GitHub are selected per project from app-level connections."], security: ["Credentials remain in the operating-system vault."],
   privacy: ["Personal paths and secrets never enter browser responses."], reliability: ["Idempotent transitions and atomic writes preserve recoverability."],
   rollout: ["Ship behind an owner-only local MVP gate before wider use."], metrics: ["Measure verified completion, recovery, and owner interruption rates."],
-  citations: ["local://CONTEXT.md", "https://example.com/primary-source"],
+  alternatives: [
+    { option: "Use the restart-safe local control plane.", disposition: "selected" as const, rationale: "It preserves project isolation and owner control." },
+    { option: "Use an ungoverned hosted-only worker.", disposition: "rejected" as const, rationale: "It breaks local ownership and evidence boundaries." },
+  ],
+  unresolvedBlockers: [{ blocker: "Confirm the first production deployment target.", impact: "Deployment automation remains disabled.", owner: "Owner", resolution: "Select an approved free-tier target during delivery planning." }],
+  citations: ["local://CONTEXT.md", "local://RESEARCH.md", "https://example.com/product"],
   reviews: [{ reviewerId: "product-reviewer", discipline: "product" as const, verdict: "pass" as const, findings: ["Product scope is coherent."] }, { reviewerId: "technical-reviewer", discipline: "technical" as const, verdict: "pass" as const, findings: ["Architecture boundaries are implementable."] }],
 };
 
@@ -65,6 +70,11 @@ test("solution publication is complete, cited, independently reviewed, atomic, a
     const product = await readFile(join(workspace, "PRODUCT.md"), "utf8");
     assert.match(product, /## Product behavior/);
     assert.match(product, /## Success metrics/);
+    assert.match(product, /## Alternatives and decisions/);
+    assert.match(product, /## Unresolved blockers/);
+    assert.match(product, new RegExp(research.metadata.bodyDigest));
+    assert.match(content, /Use an ungoverned hosted-only worker/);
+    assert.match(content, /Confirm the first production deployment target/);
     const compatibility = await readFile(join(workspace, ".pipeline", "SOLUTION.md"), "utf8");
     assert.match(compatibility, new RegExp(`canonical-design-digest:${first.digest}`));
     assert.deepEqual(first.reviewerIds, ["product-reviewer", "technical-reviewer"]);
@@ -157,6 +167,7 @@ test("revision and decline decisions are durable, idempotent, and do not approve
       const registry = new LocalProjectRegistry(join(root, "state"));
       const project = await registry.register({ schemaVersion: 1, path: workspace });
       const service = new ProjectSolutionService(registry);
+      await seedResearch(workspace);
       const solution = await service.publish(project.id, draft, 10);
       const request = {
         schemaVersion: 1 as const,
@@ -176,3 +187,15 @@ test("revision and decline decisions are durable, idempotent, and do not approve
     }
   }
 });
+
+async function seedResearch(workspace: string) {
+  const store = new ProjectArtifactStore();
+  await store.initialize(workspace);
+  const current = await store.read(workspace, "research");
+  await store.write(workspace, {
+    kind: "research",
+    body: "# Research\n\n## Questions\n\n- What evidence constrains the solution?\n\n## Evidence\n\n- Verified source: https://example.com/product\n\n## Findings\n\n- Evidence is available for solution synthesis.\n\n## Contradictions and gaps\n\n- No unresolved contradiction was observed.",
+    producer: "test:research",
+    expectedDigest: current.metadata.bodyDigest,
+  });
+}

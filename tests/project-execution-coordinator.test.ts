@@ -80,7 +80,7 @@ test("time-controlled 12-hour soak survives hourly restarts without spins or dup
     await coordinator.schedule(projectId);
     for (let hour = 0; hour < 12; hour += 1) {
       const priorAttempts = (await coordinator.get(projectId))?.attempts ?? 0;
-      if (hour > 0) { coordinator.stop(); now = hour * 60 * 60_000; coordinator = new ProjectExecutionCoordinator(root, service, worker, () => now, 60 * 60_000, async () => { completions += 1; }); await coordinator.resumePending(); }
+      if (hour > 0) { await coordinator.shutdown(); now = hour * 60 * 60_000; coordinator = new ProjectExecutionCoordinator(root, service, worker, () => now, 60 * 60_000, async () => { completions += 1; }); await coordinator.resumePending(); }
       await waitFor(async () => ((await coordinator.get(projectId))?.attempts ?? 0) > priorAttempts);
     }
     await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");

@@ -51,13 +51,29 @@ export const researchEvidenceGraphSchema = z.strictObject({
   for (const contradiction of graph.contradictions) for (const claimId of contradiction.claimIds) if (!claimIds.has(claimId)) context.addIssue({ code: "custom", message: "Contradictions must reference known claims." });
 });
 const reviewSchema = z.strictObject({ reviewerId: z.string().trim().min(3).max(160), discipline: z.enum(["product", "technical"]), verdict: z.literal("pass"), findings: z.array(z.string().trim().min(3).max(1_000)).max(50) });
+const alternativeSchema = z.strictObject({
+  option: z.string().trim().min(3).max(2_000),
+  disposition: z.enum(["selected", "rejected", "deferred"]),
+  rationale: z.string().trim().min(3).max(4_000),
+});
+const blockerSchema = z.strictObject({
+  blocker: z.string().trim().min(3).max(2_000),
+  impact: z.string().trim().min(3).max(2_000),
+  owner: z.string().trim().min(2).max(200),
+  resolution: z.string().trim().min(3).max(2_000),
+});
 export const solutionContentSchema = z.strictObject({
   schemaVersion: z.literal(1), title: z.string().trim().min(3).max(200), summary: z.string().trim().min(20).max(10_000),
   behavior: section, architecture: section, userExperience: section, data: section, integrations: section,
   security: section, privacy: section, reliability: section, rollout: section, metrics: section,
+  alternatives: z.array(alternativeSchema).min(2).max(50),
+  unresolvedBlockers: z.array(blockerSchema).max(50),
   citations: z.array(z.string().trim().min(1).max(2_048)).min(1).max(500),
+}).superRefine((solution, context) => {
+  if (!solution.alternatives.some((item) => item.disposition === "selected")) context.addIssue({ code: "custom", message: "Solution alternatives must identify the selected option." });
+  if (!solution.alternatives.some((item) => item.disposition === "rejected")) context.addIssue({ code: "custom", message: "Solution alternatives must record at least one rejected option." });
 });
-export const solutionSectionSchema = z.enum(["title", "summary", "behavior", "architecture", "userExperience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics"]);
+export const solutionSectionSchema = z.enum(["title", "summary", "behavior", "architecture", "userExperience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics", "alternatives", "unresolvedBlockers"]);
 export const solutionRevisionScopeSchema = z.strictObject({
   schemaVersion: z.literal(1),
   sections: z.array(solutionSectionSchema).min(1).max(12),
@@ -77,7 +93,11 @@ export const solutionRunSchema = z.strictObject({ schemaVersion: z.literal(1), p
 export const solutionDraftSchema = z.strictObject({
   schemaVersion: z.literal(1), revision: z.number().int().positive(), title: z.string().trim().min(3).max(200), summary: z.string().trim().min(20).max(10_000),
   behavior: section, architecture: section, userExperience: section, data: section, integrations: section, security: section, privacy: section, reliability: section, rollout: section, metrics: section,
+  alternatives: z.array(alternativeSchema).min(2).max(50), unresolvedBlockers: z.array(blockerSchema).max(50),
   citations: z.array(z.string().trim().min(1).max(2_048)).min(1).max(500), reviews: z.array(reviewSchema).length(2),
+}).superRefine((solution, context) => {
+  if (!solution.alternatives.some((item) => item.disposition === "selected")) context.addIssue({ code: "custom", message: "Solution alternatives must identify the selected option." });
+  if (!solution.alternatives.some((item) => item.disposition === "rejected")) context.addIssue({ code: "custom", message: "Solution alternatives must record at least one rejected option." });
 });
 export const solutionDocumentSchema = z.strictObject({ schemaVersion: z.literal(1), projectId: z.string().regex(/^project_[a-f0-9]{16}$/), projectRelativePath: z.literal(".pipeline/SOLUTION.md"), revision: z.number().int().positive(), digest: z.string().regex(/^[a-f0-9]{64}$/), markdown: z.string().min(1).max(1_000_000) });
 export type SolutionDocument = z.infer<typeof solutionDocumentSchema>;

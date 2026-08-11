@@ -57,6 +57,12 @@ export class ProjectExecutionCoordinator {
 
   stop() { this.#stopped = true; for (const timer of this.#timers.values()) clearTimeout(timer); this.#timers.clear(); this.#readyQueue.length = 0; this.#queued.clear(); }
 
+  async shutdown() {
+    this.stop();
+    while (this.#activeProjects > 0 || this.#inFlight.size > 0) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await this.#mutation;
+  }
+
   #arm(projectId: string, at: number) {
     if (this.#stopped || this.#inFlight.has(projectId)) return;
     const current = this.#timers.get(projectId); if (current) clearTimeout(current);

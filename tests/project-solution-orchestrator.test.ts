@@ -23,7 +23,12 @@ const content = {
   reliability: ["Every state transition is digest-bound and idempotent."],
   rollout: ["The owner-only MVP is validated before public release."],
   metrics: ["Track verified completion, recovery, and owner interruption rates."],
-  citations: ["local://CONTEXT.md"],
+  alternatives: [
+    { option: "Use the restart-safe local control plane.", disposition: "selected" as const, rationale: "It preserves evidence and owner control." },
+    { option: "Use an ungoverned hosted-only worker.", disposition: "rejected" as const, rationale: "It violates the local ownership boundary." },
+  ],
+  unresolvedBlockers: [],
+  citations: ["local://CONTEXT.md", "local://RESEARCH.md", "https://example.com/product", "https://example.com/technical"],
 };
 const permit = { schemaVersion: 1 as const, projectId: "project_abcdef0123456789", contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["test"], approvedAt: 1, expiresAt: 9_999_999_999_999 };
 

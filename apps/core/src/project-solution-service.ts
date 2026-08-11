@@ -122,6 +122,9 @@ export class ProjectSolutionService {
     await this.artifacts.initialize(root);
     const currentDesign = await this.artifacts.read(root, "design");
     const currentProduct = await this.artifacts.read(root, "product");
+    const currentContext = await this.artifacts.read(root, "context");
+    const currentResearch = await this.artifacts.read(root, "research");
+    assertResearchBaseline(draft.citations, currentResearch.body);
     const currentRevision = readSolutionRevision(currentDesign.body);
     if (draft.revision !== currentRevision + 1) throw new Error(`Solution revision must be ${currentRevision + 1}.`);
     const citations = [...new Set(draft.citations)];
@@ -130,18 +133,24 @@ export class ProjectSolutionService {
       architecture: draft.architecture, userExperience: draft.userExperience, data: draft.data,
       integrations: draft.integrations, security: draft.security, privacy: draft.privacy,
       reliability: draft.reliability, rollout: draft.rollout, metrics: draft.metrics, citations,
+      alternatives: draft.alternatives, unresolvedBlockers: draft.unresolvedBlockers,
     });
+    const evidenceBaseline = [`- CONTEXT.md: \`${currentContext.metadata.bodyDigest}\``, `- RESEARCH.md: \`${currentResearch.metadata.bodyDigest}\``];
     const productBody = [
       `# Product — ${draft.title}`, "", draft.summary, "",
+      "## Evidence baseline", "", ...evidenceBaseline, "",
       ...renderSection("Product behavior", draft.behavior),
       ...renderSection("User experience", draft.userExperience),
       ...renderSection("Rollout", draft.rollout),
       ...renderSection("Success metrics", draft.metrics),
+      ...renderAlternatives(draft.alternatives),
+      ...renderBlockers(draft.unresolvedBlockers),
       "## Sources", "", ...citations.map((citation, index) => `${index + 1}. ${citation}`), "",
       `<!-- solution-revision:${draft.revision} -->`,
     ].join("\n");
     const designBody = [
       `# ${draft.title}`, "", draft.summary, "",
+      "## Evidence baseline", "", ...evidenceBaseline, "",
       ...renderSection("Product behavior", draft.behavior),
       ...renderSection("Architecture", draft.architecture),
       ...renderSection("User experience", draft.userExperience),
@@ -152,6 +161,8 @@ export class ProjectSolutionService {
       ...renderSection("Reliability", draft.reliability),
       ...renderSection("Rollout", draft.rollout),
       ...renderSection("Success metrics", draft.metrics),
+      ...renderAlternatives(draft.alternatives),
+      ...renderBlockers(draft.unresolvedBlockers),
       "## Sources", "", ...citations.map((citation, index) => `${index + 1}. ${citation}`), "",
       "## Independent review", "",
       `- Product — ${product.reviewerId}: passed${product.findings.length ? `; ${product.findings.join("; ")}` : ""}`,
@@ -159,6 +170,7 @@ export class ProjectSolutionService {
       "", `<!-- solution-content:${Buffer.from(JSON.stringify(contentPayload)).toString("base64")} -->`,
       `<!-- solution-revision:${draft.revision} -->`,
     ].join("\n");
+    assertSolutionConsistency(productBody, designBody, contentPayload, currentContext.metadata.bodyDigest, currentResearch.metadata.bodyDigest);
     await this.artifacts.write(root, {
       kind: "product", body: productBody, producer: "codkesh:solution-design",
       expectedDigest: currentProduct.metadata.bodyDigest,
@@ -192,6 +204,27 @@ export class ProjectSolutionService {
 
 function renderSection(title: string, entries: readonly string[]) {
   return [`## ${title}`, "", ...entries.map((entry) => `- ${entry}`), ""];
+}
+
+function renderAlternatives(alternatives: readonly { option: string; disposition: "selected" | "rejected" | "deferred"; rationale: string }[]) {
+  return ["## Alternatives and decisions", "", ...alternatives.map((item) => `- **${item.disposition}** — ${item.option} — ${item.rationale}`), ""];
+}
+
+function renderBlockers(blockers: readonly { blocker: string; impact: string; owner: string; resolution: string }[]) {
+  return ["## Unresolved blockers", "", ...(blockers.length ? blockers.map((item) => `- **${item.blocker}** — Impact: ${item.impact} Owner: ${item.owner}. Resolution: ${item.resolution}`) : ["_No unresolved blockers._"]), ""];
+}
+
+function assertResearchBaseline(citations: readonly string[], research: string) {
+  if (!citations.includes("local://CONTEXT.md") || !citations.includes("local://RESEARCH.md")) throw new Error("Solution citations must include the canonical CONTEXT.md and RESEARCH.md baselines.");
+  if (research.includes("Research has not started")) throw new Error("Verified research must exist before solution synthesis.");
+  for (const citation of citations.filter((item) => /^https?:\/\//i.test(item))) if (!research.includes(citation)) throw new Error("Solution contains an external citation that is not present in verified RESEARCH.md.");
+}
+
+function assertSolutionConsistency(product: string, design: string, content: SolutionContent, contextDigest: string, researchDigest: string) {
+  for (const digest of [contextDigest, researchDigest]) if (!product.includes(digest) || !design.includes(digest)) throw new Error("Solution artifacts do not share the same evidence baseline.");
+  for (const entry of [...content.behavior, ...content.userExperience, ...content.rollout, ...content.metrics]) if (!product.includes(entry) || !design.includes(entry)) throw new Error("PRODUCT.md and DESIGN.md are inconsistent.");
+  for (const alternative of content.alternatives) if (!product.includes(alternative.option) || !design.includes(alternative.option)) throw new Error("Solution alternatives are not recorded consistently.");
+  for (const blocker of content.unresolvedBlockers) if (!product.includes(blocker.blocker) || !design.includes(blocker.blocker)) throw new Error("Solution blockers are not recorded consistently.");
 }
 
 function renderResearch(title: string, evidence: { providerId: string; modelId: string; response: unknown }, graph: ResearchEvidenceGraph) {
