@@ -43,6 +43,7 @@ import {
 } from "../../local-project-client.js";
 import { listIntegrationConnections } from "../../integration-connection-client.js";
 import type { PublicIntegrationConnectionCollection } from "../../../../../packages/runtime/src/integration-connections.js";
+import type { ProjectIntake } from "../../../../../packages/runtime/src/project-intakes.js";
 import { openNativePicker } from "../../native-picker-client.js";
 import {
   archiveLocalRequest,
@@ -147,16 +148,41 @@ export function LocalRequestPanel(props: {
     type: "create" | "replace" | "delete"; path: string; content: string;
   }>>>({});
   const disposed = useRef(false);
+  const draftIntakeRef = useRef<ProjectIntake | null>(null);
+  const draftSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const restoredDraft = useRef(false);
+
+  function rememberDraft(value: ProjectIntake | null) {
+    draftIntakeRef.current = value;
+  }
 
   const refresh = useCallback(async () => {
     try {
-      const [projectCollection, requestCollection] = await Promise.all([
+      const { decodeProjectIntakeReference, listProjectIntakes } = await import("../../project-intake-client.js");
+      const [projectCollection, requestCollection, intakeCollection] = await Promise.all([
         listLocalProjects({ endpoint }),
         listLocalRequests({ endpoint }),
+        listProjectIntakes(endpoint),
       ]);
       if (disposed.current) return;
       setProjects(projectCollection.projects);
       setRequests(requestCollection.requests);
+      if (!restoredDraft.current && props.mode === "compose") {
+        const resumable = intakeCollection.intakes.find((intake) => ["draft", "resource_selection"].includes(intake.state));
+        restoredDraft.current = true;
+        if (resumable) {
+          rememberDraft(resumable);
+          setOutcome(resumable.idea);
+          if (resumable.projectMode === "new_product") {
+            setProjectId("__new__");
+            setWorkspacePath(resumable.workspaceReference?.startsWith("selection_") ? resumable.workspaceReference : "");
+            setWorkspaceLabel(resumable.workspaceLabel ?? "Choose folder again");
+          } else {
+            setProjectId(decodeProjectIntakeReference(resumable.workspaceReference, "project") ?? "__new__");
+          }
+          setNotice("Draft restored. No work started.");
+        }
+      }
       setProjectId((current) =>
         props.initialProjectId && projectCollection.projects.some((project) => project.id === props.initialProjectId)
           ? props.initialProjectId
@@ -174,6 +200,30 @@ export function LocalRequestPanel(props: {
       setNotice("Local runtime is offline. Last observed queue state is preserved.");
     }
   }, [props.initialProjectId]);
+
+  useEffect(() => {
+    if (props.mode !== "compose" || status !== "ready" || restoredDraft.current === false) return;
+    const hasDraft = outcome.length > 0 || workspacePath || attachments.length > 0 || browserAttachments.length > 0;
+    if (!hasDraft || !projectId) return;
+    const timer = window.setTimeout(() => {
+      draftSaveQueue.current = draftSaveQueue.current.then(async () => {
+        const client = await import("../../project-intake-client.js");
+        const mode = projectId === "__new__" ? "new_product" : "existing_product";
+        const saved = await client.saveResumableProjectIntakeDraft(endpoint, draftIntakeRef.current, {
+          mode, idea: outcome,
+          workspaceReference: projectId === "__new__" ? workspacePath || null : client.encodeProjectIntakeReference("project", projectId),
+          workspaceLabel: projectId === "__new__" ? workspaceLabel || null : projects.find((project) => project.id === projectId)?.displayName ?? "Existing project",
+          attachments: [
+            ...attachments.map((attachment) => ({ kind: "attachment", value: attachment.path })),
+            ...browserAttachments.map((file) => ({ kind: "upload", value: `${file.name}:${file.size}:${file.lastModified}` })),
+          ],
+          idempotencyKey: `intake:draft:${crypto.randomUUID()}`,
+        });
+        rememberDraft(saved);
+      }).catch(() => { setNotice("Draft save paused. Text is safe."); });
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [attachments, browserAttachments, outcome, projectId, projects, props.mode, status, workspaceLabel, workspacePath]);
 
   useEffect(() => {
     disposed.current = false;
@@ -228,28 +278,31 @@ export function LocalRequestPanel(props: {
       const voiceEvidence = voice ? prepareVoiceEvidence({ transcript: voice.transcript, mediaType: voice.mediaType, audioBytes: voice.bytes, durationSeconds: voice.durationSeconds, adapterId: "manual-local", corrected: voice.corrected }) : null;
       const writtenIdea = outcome.trim() || (hasAttachments ? "Review the attached evidence and design the product described by it." : "");
       const submittedIdea = voiceEvidence ? `${writtenIdea}\n\n${voiceEvidence.markdown}` : writtenIdea;
-      const { createProjectIntake, saveProjectIntakeDraft, selectProjectIntakeResources, submitProjectIntake } = await import("../../project-intake-client.js");
-      const intake = await createProjectIntake(endpoint, projectId === "__new__" ? "new_product" : "existing_product", `intake:create:${crypto.randomUUID()}`);
+      const { createProjectIntake, encodeProjectIntakeReference, saveProjectIntakeDraft, selectProjectIntakeResources, submitProjectIntake } = await import("../../project-intake-client.js");
+      await draftSaveQueue.current;
+      const intake = draftIntakeRef.current ?? await createProjectIntake(endpoint, projectId === "__new__" ? "new_product" : "existing_product", `intake:create:${crypto.randomUUID()}`);
       const savedIntake = await saveProjectIntakeDraft(endpoint, intake.id, {
         schemaVersion: 1,
         expectedRevision: intake.revision,
         idea: submittedIdea,
-        workspaceReference: projectId === "__new__" ? opaqueReference("workspace", workspacePath) : opaqueReference("project", projectId),
+        workspaceReference: projectId === "__new__" ? workspacePath : encodeProjectIntakeReference("project", projectId),
+        workspaceLabel: projectId === "__new__" ? workspaceLabel : projects.find((project) => project.id === projectId)?.displayName ?? "Existing project",
         attachmentReferences: [
-          ...attachments.map((attachment) => opaqueReference("attachment", attachment.path)),
-          ...browserAttachments.map((file) => opaqueReference("upload", `${file.name}:${file.size}:${file.lastModified}`)),
+          ...attachments.map((attachment) => encodeProjectIntakeReference("attachment", attachment.path)),
+          ...browserAttachments.map((file) => encodeProjectIntakeReference("upload", `${file.name}:${file.size}:${file.lastModified}`)),
         ],
       });
       const resourceIntake = await selectProjectIntakeResources(endpoint, intake.id, {
         schemaVersion: 1,
         expectedRevision: savedIntake.revision,
         selectedResources: [
-          ...selectedRepositoryIds.map((id) => opaqueReference("github", id)),
-          ...(selectedJiraProjectId ? [opaqueReference("jira", selectedJiraProjectId)] : []),
-          ...selectedTelegramChatIds.map((id) => opaqueReference("telegram", id)),
+          ...selectedRepositoryIds.map((id) => encodeProjectIntakeReference("github", id)),
+          ...(selectedJiraProjectId ? [encodeProjectIntakeReference("jira", selectedJiraProjectId)] : []),
+          ...selectedTelegramChatIds.map((id) => encodeProjectIntakeReference("telegram", id)),
         ],
       });
       await submitProjectIntake(endpoint, intake.id, resourceIntake.revision, `intake:submit:${crypto.randomUUID()}`);
+      rememberDraft(null);
       let targetProjectId = projectId;
       let targetProjectName =
         projects.find((project) => project.id === projectId)?.displayName ?? "New project";
@@ -1898,11 +1951,6 @@ export function LocalRequestPanel(props: {
       )}
     </section>
   );
-}
-
-function opaqueReference(kind: string, value: string): string {
-  const encoded = btoa(unescape(encodeURIComponent(value))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-  return `${kind}:${encoded.slice(0, 160)}`;
 }
 
 function DecisionFact({ label, value }: { label: string; value: string }) {

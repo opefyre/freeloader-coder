@@ -677,7 +677,7 @@ test("request endpoints expose only durable queue metadata with guarded mutation
 });
 
 test("project intake endpoints are origin-bound, revision-aware, idempotent, and path-opaque", async () => {
-  const intake = { schemaVersion: 1 as const, id: "intake_0123456789abcdef0123", projectMode: "new_product" as const, state: "draft" as const, idea: "", workspaceReference: null, attachmentReferences: [], selectedResources: [], revision: 1, createdAt: observedAt, updatedAt: observedAt, submittedAt: null, cancellationReason: null };
+  const intake = { schemaVersion: 1 as const, id: "intake_0123456789abcdef0123", projectMode: "new_product" as const, state: "draft" as const, idea: "", workspaceReference: null, workspaceLabel: null, attachmentReferences: [], selectedResources: [], revision: 1, createdAt: observedAt, updatedAt: observedAt, submittedAt: null, cancellationReason: null };
   const calls: string[] = [];
   const controlPlane = createControlPlaneServer({ host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot,
     projectIntakes: {

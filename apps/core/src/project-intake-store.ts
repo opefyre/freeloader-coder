@@ -27,7 +27,7 @@ export class ProjectIntakeStore {
       const now = this.now();
       const intake = projectIntakeSchema.parse({
         schemaVersion: 1, id: `intake_${createHash("sha256").update(randomUUID()).digest("hex").slice(0, 20)}`,
-        projectMode: input.projectMode, state: "draft", idea: "", workspaceReference: null,
+        projectMode: input.projectMode, state: "draft", idea: "", workspaceReference: null, workspaceLabel: null,
         attachmentReferences: [], selectedResources: [], revision: 1, createdAt: now, updatedAt: now,
         submittedAt: null, cancellationReason: null,
       });
@@ -39,6 +39,7 @@ export class ProjectIntakeStore {
     const input = projectIntakeDraftSchema.parse(raw);
     return this.update(id, input.expectedRevision, ["draft", "resource_selection"], (current) => ({
       ...current, idea: input.idea, workspaceReference: input.workspaceReference,
+      workspaceLabel: input.workspaceLabel,
       attachmentReferences: [...new Set(input.attachmentReferences)], state: "resource_selection",
     }));
   }

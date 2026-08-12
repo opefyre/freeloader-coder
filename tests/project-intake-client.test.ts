@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createProjectIntake, listProjectIntakes, saveProjectIntakeDraft, submitProjectIntake } from "../apps/studio/src/project-intake-client.js";
+import { createProjectIntake, decodeProjectIntakeReference, encodeProjectIntakeReference, listProjectIntakes, saveProjectIntakeDraft, saveResumableProjectIntakeDraft, submitProjectIntake } from "../apps/studio/src/project-intake-client.js";
 
-const intake = { schemaVersion: 1 as const, id: "intake_0123456789abcdef0123", projectMode: "new_product" as const, state: "draft" as const, idea: "", workspaceReference: null, attachmentReferences: [], selectedResources: [], revision: 1, createdAt: 1, updatedAt: 1, submittedAt: null, cancellationReason: null };
+const intake = { schemaVersion: 1 as const, id: "intake_0123456789abcdef0123", projectMode: "new_product" as const, state: "draft" as const, idea: "", workspaceReference: null, workspaceLabel: null, attachmentReferences: [], selectedResources: [], revision: 1, createdAt: 1, updatedAt: 1, submittedAt: null, cancellationReason: null };
 
 test("project intake client uses only loopback, opaque contracts, and idempotent submit", async () => {
   assert.equal((await listProjectIntakes("http://127.0.0.1:4312", async () => Response.json({ schemaVersion: 1, intakes: [intake] }))).intakes.length, 1);
@@ -15,4 +15,23 @@ test("project intake client uses only loopback, opaque contracts, and idempotent
   assert.equal(key, "intake:submit:01234567");
   await assert.rejects(() => listProjectIntakes("https://remote.example", async () => Response.json({ schemaVersion: 1, intakes: [] })), /loopback/);
   await assert.rejects(() => listProjectIntakes("http://127.0.0.1:4312", async () => Response.json({ schemaVersion: 1, intakes: [{ ...intake, workspaceReference: "file:///Users/private" }] })), /Invalid|expected|format/i);
+});
+
+test("project intake references round-trip without exposing their source value", () => {
+  const source = "/Users/example/private product";
+  const reference = encodeProjectIntakeReference("workspace", source);
+  assert.equal(reference.includes(source), false);
+  assert.equal(decodeProjectIntakeReference(reference, "workspace"), source);
+  assert.equal(decodeProjectIntakeReference(reference, "project"), null);
+});
+
+test("resumable intake autosave skips an unchanged durable draft", async () => {
+  let requests = 0;
+  const current = { ...intake, state: "resource_selection" as const, idea: "Keep this draft", workspaceReference: "project:cHJvamVjdF8xMjM0NTY3OA", workspaceLabel: "Project", revision: 4 };
+  const saved = await saveResumableProjectIntakeDraft("http://127.0.0.1:4312", current, {
+    mode: "new_product", idea: "Keep this draft", workspaceReference: current.workspaceReference,
+    workspaceLabel: "Project", attachments: [], idempotencyKey: "intake:draft:stable",
+  }, async () => { requests += 1; return Response.json(current); });
+  assert.equal(requests, 0);
+  assert.equal(saved.revision, 4);
 });
