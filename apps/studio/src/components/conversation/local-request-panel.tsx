@@ -23,7 +23,7 @@ import { X } from "@phosphor-icons/react/X";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { prepareVoiceEvidence } from "../../../../../packages/conversation/src/voice.js";
-import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
+import type { LocalProjectFileImportResponse, LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
 import type { ProjectLifecycleRecord } from "../../../../../packages/orchestration/src/project-lifecycle.js";
 import type { EligibilityDecision } from "../../../../../packages/orchestration/src/eligibility-gate.js";
 import type {
@@ -120,6 +120,7 @@ export function LocalRequestPanel(props: {
     idea: string;
     project: string;
     created: boolean;
+    imports: LocalProjectFileImportResponse["files"];
   }>();
   const [status, setStatus] = useState<"loading" | "ready" | "working" | "offline">(
     "loading"
@@ -228,13 +229,15 @@ export function LocalRequestPanel(props: {
         targetProjectId = created.project.id;
         targetProjectName = created.project.displayName;
       }
+      let importedFiles: LocalProjectFileImportResponse["files"] = [];
       if (attachments.length > 0) {
-        await addLocalProjectFiles({
+        const imported = await addLocalProjectFiles({
           endpoint,
           projectId: targetProjectId,
           paths: attachments.map((attachment) => attachment.path),
           idempotencyKey: `files:${crypto.randomUUID()}`,
         });
+        importedFiles = imported.files;
       }
       const request = await createLocalRequest({
         endpoint,
@@ -260,6 +263,7 @@ export function LocalRequestPanel(props: {
         idea: submittedIdea,
         project: targetProjectName,
         created: projectId === "__new__",
+        imports: importedFiles,
       });
       await refresh();
       setNotice(
@@ -990,6 +994,14 @@ export function LocalRequestPanel(props: {
                 ? "I created a private local workspace and saved this as its first discovery request."
                 : "I saved this request inside the selected project."}
             </p>
+            {lastSubmission.imports.length > 0 && <div className="mt-4 space-y-2" aria-label="Imported evidence summary">
+              {lastSubmission.imports.map((file) => <div key={file.projectRelativePath} className="flex flex-wrap items-center gap-2 rounded-2xl bg-background/70 px-3 py-2 text-xs">
+                <strong className="min-w-0 flex-1 truncate">{file.label}</strong>
+                <Badge tone={file.evidence.status === "extracted" ? "positive" : "caution"}>{file.evidence.status}</Badge>
+                <span className="text-muted-foreground">{file.evidence.unitCount} evidence unit{file.evidence.unitCount === 1 ? "" : "s"}</span>
+                {file.evidence.warning && <span className="w-full text-muted-foreground">{file.evidence.warning}</span>}
+              </div>)}
+            </div>}
             <div className="mt-4 flex flex-wrap gap-2">
               <Button size="sm" onClick={() => props.navigate?.("activity")}>
                 Follow progress

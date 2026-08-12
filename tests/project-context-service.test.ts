@@ -11,6 +11,9 @@ test("context generation is cited, atomic, digest-bound, and preserves accepted 
   try {
     const projects = new LocalProjectRegistry(state);
     const project = await projects.register({ schemaVersion: 1, path: workspace });
+    const attachment = join(root, "brief.txt");
+    await writeFile(attachment, "Family planning brief. api_key=secret-value\n", "utf8");
+    await projects.addFiles(project.id, { schemaVersion: 1, paths: [attachment] });
     await projects.setResources(project.id, { schemaVersion: 1, resources: [{ kind: "github_repository", connectionId: "github-cli:test", resourceId: "R_1", label: "owner/sample-product", url: "https://github.com/owner/sample-product", role: "primary" }] });
     const service = new ProjectContextService(projects);
     const first = await service.generate(project.id, { schemaVersion: 1, outcome: "Design and build the complete product MVP" });
@@ -24,6 +27,9 @@ test("context generation is cited, atomic, digest-bound, and preserves accepted 
     assert.match(firstContent, /## Conflicts/);
     assert.match(firstContent, /Validation and automation scripts: test/);
     assert.match(firstContent, /owner\/sample-product/);
+    assert.match(firstContent, /## Owner-provided evidence/);
+    assert.match(firstContent, /Family planning brief/);
+    assert.match(firstContent, /\[redacted credential\]/);
     assert.match(firstContent, new RegExp(`context-digest:${first.digest}`));
     const edited = firstContent.replace("- None recorded yet.", "- Keep the product local-first.");
     await writeFile(join(workspace, "CONTEXT.md"), edited, { encoding: "utf8", mode: 0o600 });

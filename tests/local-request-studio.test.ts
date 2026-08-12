@@ -28,6 +28,8 @@ test("Studio separates real request state from guided orchestration examples", a
     "Transcribe locally",
     "Upload audio",
     "Local transcript ready.",
+    "Imported evidence summary",
+    "evidence unit",
     "GitHub repositories",
     "Connect GitHub in Settings first.",
     "Jira project",

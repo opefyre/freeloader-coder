@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, lstat, open, readFile, rename } from "node:fs/promises";
+import { chmod, lstat, open, readFile, readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { LocalProjectRegistry } from "./local-project-registry.js";
@@ -28,6 +28,7 @@ export class ProjectContextService {
       Promise.resolve(analyzeTopology(planning.topology.entries)),
       Promise.resolve(analyzeResources(project.resources ?? [])),
     ]);
+    const inputEvidence = await readInputEvidence(root);
     const conflicts = reconcileConflicts([
       ...project.facts.map((fact) => ({ key: normalizeKey(fact.label), value: fact.value, source: fact.evidence })),
       ...manifestAnalysis.claims,
@@ -83,6 +84,13 @@ export class ProjectContextService {
       "",
       ...documentationAnalysis.items,
       "",
+      "## Owner-provided evidence",
+      "",
+      ...(inputEvidence.length ? inputEvidence.flatMap((item) => [
+        `- \`${item.path}\` — ${item.mediaType}; SHA-256 \`${item.digest}\`; treated as untrusted evidence.`,
+        ...item.units.map((unit) => `  - ${unit.locator} (${unit.confidence}): ${redactInput(unit.content)}`),
+      ]) : ["- No owner-provided attachments were imported."]),
+      "",
       "## Conflicts",
       "",
       ...(conflicts.length > 0 ? conflicts : ["- None detected among bounded sources."]),
@@ -107,7 +115,7 @@ export class ProjectContextService {
     const normalizedBody = body.replace(/\n+$/, "");
     const digest = createHash("sha256").update(normalizedBody).digest("hex");
     await atomicWrite(target, `${normalizedBody}\n\n<!-- context-digest:${digest} -->\n`);
-    return { schemaVersion: 1 as const, projectId, path: CONTEXT_FILE, digest, groundingDigest: planning.grounding.digest, topologyDigest: planning.topology.digest, observedAt: Date.now(), citations: citations.map(({ path, digest: sourceDigest }) => ({ path, digest: sourceDigest })) };
+    return { schemaVersion: 1 as const, projectId, path: CONTEXT_FILE, digest, groundingDigest: planning.grounding.digest, topologyDigest: planning.topology.digest, observedAt: Date.now(), citations: [...citations.map(({ path, digest: sourceDigest }) => ({ path, digest: sourceDigest })), ...inputEvidence.map((item) => ({ path: item.path, digest: item.digest }))] };
   }
 
   async applyClarifications(projectId: string, questions: readonly OwnerQuestion[], answers: readonly OwnerAnswer[]) {
@@ -149,6 +157,23 @@ export class ProjectContextService {
     return { digest, markdown };
   }
 }
+
+async function readInputEvidence(root: string) {
+  const directory = join(root, ".pipeline", "inputs");
+  let names: string[]; try { names = await readdir(directory); } catch { return []; }
+  return (await Promise.all(names.filter((name) => /^[a-f0-9]{64}\.[a-z0-9]+\.evidence\.json$/.test(name)).slice(0, 20).map(async (name) => {
+    try {
+      const parsed = JSON.parse(await readFile(join(directory, name), "utf8")) as Record<string, unknown>;
+      const units = Array.isArray(parsed.units) ? parsed.units.slice(0, 100).flatMap((value) => {
+        if (!value || typeof value !== "object") return []; const unit = value as Record<string, unknown>;
+        return typeof unit.locator === "string" && typeof unit.content === "string" && ["high", "medium", "low"].includes(String(unit.confidence)) ? [{ locator: unit.locator.slice(0, 200), content: unit.content.slice(0, 20_000), confidence: String(unit.confidence) }] : [];
+      }) : [];
+      return typeof parsed.sourceDigest === "string" && /^[a-f0-9]{64}$/.test(parsed.sourceDigest) && typeof parsed.mediaType === "string" ? { path: `.pipeline/inputs/${name.replace(/\.evidence\.json$/, "")}`, digest: parsed.sourceDigest, mediaType: parsed.mediaType.slice(0, 200), units } : null;
+    } catch { return null; }
+  }))).filter((value): value is NonNullable<typeof value> => value !== null);
+}
+
+function redactInput(value: string) { return value.replace(/\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, "[redacted credential]").replace(/\b(?:sk|gsk|ghp|github_pat)_[A-Za-z0-9_-]{8,}\b/g, "[redacted credential]").replace(/\s+/g, " ").trim().slice(0, 2_000); }
 
 function parseOutcome(input: unknown) {
   if (!input || typeof input !== "object") throw new Error("Context request is invalid.");
