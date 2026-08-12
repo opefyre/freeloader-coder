@@ -675,3 +675,27 @@ test("request endpoints expose only durable queue metadata with guarded mutation
     await controlPlane.close();
   }
 });
+
+test("project intake endpoints are origin-bound, revision-aware, idempotent, and path-opaque", async () => {
+  const intake = { schemaVersion: 1 as const, id: "intake_0123456789abcdef0123", projectMode: "new_product" as const, state: "draft" as const, idea: "", workspaceReference: null, attachmentReferences: [], selectedResources: [], revision: 1, createdAt: observedAt, updatedAt: observedAt, submittedAt: null, cancellationReason: null };
+  const calls: string[] = [];
+  const controlPlane = createControlPlaneServer({ host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot,
+    projectIntakes: {
+      list: () => [intake], create: (input) => { calls.push(`create:${JSON.stringify(input)}`); return intake; },
+      saveDraft: (id, input) => { calls.push(`draft:${id}:${JSON.stringify(input)}`); return { ...intake, state: "resource_selection", idea: "Build a product", workspaceReference: "workspace:opaque_12345678", revision: 2 } as const; },
+      selectResources: (id, input) => { calls.push(`resources:${id}:${JSON.stringify(input)}`); return { ...intake, state: "resource_selection", idea: "Build a product", workspaceReference: "workspace:opaque_12345678", selectedResources: ["jira:project_12345678"], revision: 3 } as const; },
+      submit: (id, input, key) => { calls.push(`submit:${id}:${key}:${JSON.stringify(input)}`); return { ...intake, state: "submitted", idea: "Build a product", workspaceReference: "workspace:opaque_12345678", revision: 4, submittedAt: observedAt } as const; },
+      cancel: (id, revision, reason) => { calls.push(`cancel:${id}:${revision}:${reason}`); return { ...intake, state: "cancelled", revision: revision + 1, cancellationReason: reason } as const; },
+    } });
+  const port = await controlPlane.listen(); const base = `http://127.0.0.1:${port}`; const origin = "http://127.0.0.1:4310";
+  try {
+    const listed = await fetch(`${base}/api/v1/project-intakes`, { headers: { Origin: origin } }); assert.equal(listed.status, 200); assert.equal((await listed.text()).includes("/Users/"), false);
+    assert.equal((await fetch(`${base}/api/v1/project-intakes`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "intake:create:01234567" }, body: JSON.stringify({ schemaVersion: 1, projectMode: "new_product" }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/v1/project-intakes/${intake.id}/draft`, { method: "PUT", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: 1, idea: "Build a product", workspaceReference: "workspace:opaque_12345678", attachmentReferences: [] }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/v1/project-intakes/${intake.id}/resources`, { method: "PUT", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: 2, selectedResources: ["jira:project_12345678"] }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/v1/project-intakes/${intake.id}/submit`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "intake:submit:01234567" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: 3 }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/v1/project-intakes`, { headers: { Origin: "https://foreign.example" } })).status, 403);
+    assert.equal((await fetch(`${base}/api/v1/project-intakes/${intake.id}/draft`, { method: "PUT", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ schemaVersion: 1, expectedRevision: 1, idea: "Bad", workspaceReference: "file:///Users/private", attachmentReferences: [] }) })).status, 400);
+    assert.equal(calls.length, 4);
+  } finally { await controlPlane.close(); }
+});

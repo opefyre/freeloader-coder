@@ -228,6 +228,28 @@ export function LocalRequestPanel(props: {
       const voiceEvidence = voice ? prepareVoiceEvidence({ transcript: voice.transcript, mediaType: voice.mediaType, audioBytes: voice.bytes, durationSeconds: voice.durationSeconds, adapterId: "manual-local", corrected: voice.corrected }) : null;
       const writtenIdea = outcome.trim() || (hasAttachments ? "Review the attached evidence and design the product described by it." : "");
       const submittedIdea = voiceEvidence ? `${writtenIdea}\n\n${voiceEvidence.markdown}` : writtenIdea;
+      const { createProjectIntake, saveProjectIntakeDraft, selectProjectIntakeResources, submitProjectIntake } = await import("../../project-intake-client.js");
+      const intake = await createProjectIntake(endpoint, projectId === "__new__" ? "new_product" : "existing_product", `intake:create:${crypto.randomUUID()}`);
+      const savedIntake = await saveProjectIntakeDraft(endpoint, intake.id, {
+        schemaVersion: 1,
+        expectedRevision: intake.revision,
+        idea: submittedIdea,
+        workspaceReference: projectId === "__new__" ? opaqueReference("workspace", workspacePath) : opaqueReference("project", projectId),
+        attachmentReferences: [
+          ...attachments.map((attachment) => opaqueReference("attachment", attachment.path)),
+          ...browserAttachments.map((file) => opaqueReference("upload", `${file.name}:${file.size}:${file.lastModified}`)),
+        ],
+      });
+      const resourceIntake = await selectProjectIntakeResources(endpoint, intake.id, {
+        schemaVersion: 1,
+        expectedRevision: savedIntake.revision,
+        selectedResources: [
+          ...selectedRepositoryIds.map((id) => opaqueReference("github", id)),
+          ...(selectedJiraProjectId ? [opaqueReference("jira", selectedJiraProjectId)] : []),
+          ...selectedTelegramChatIds.map((id) => opaqueReference("telegram", id)),
+        ],
+      });
+      await submitProjectIntake(endpoint, intake.id, resourceIntake.revision, `intake:submit:${crypto.randomUUID()}`);
       let targetProjectId = projectId;
       let targetProjectName =
         projects.find((project) => project.id === projectId)?.displayName ?? "New project";
@@ -1876,6 +1898,11 @@ export function LocalRequestPanel(props: {
       )}
     </section>
   );
+}
+
+function opaqueReference(kind: string, value: string): string {
+  const encoded = btoa(unescape(encodeURIComponent(value))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+  return `${kind}:${encoded.slice(0, 160)}`;
 }
 
 function DecisionFact({ label, value }: { label: string; value: string }) {

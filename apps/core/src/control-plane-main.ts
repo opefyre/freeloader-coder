@@ -8,6 +8,7 @@ import { NativePicker } from "./native-picker.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { ProjectContextService } from "./project-context-service.js";
 import { ProjectIntakeCoordinator } from "./project-intake-coordinator.js";
+import { ProjectIntakeStore } from "./project-intake-store.js";
 import { FreeProviderProjectKindAssistant } from "./free-provider-project-kind-assistant.js";
 import { AgentCanvasModelGateway } from "./agent-canvas-model-gateway.js";
 import { ProviderCapacityStore } from "./provider-capacity-store.js";
@@ -67,6 +68,7 @@ const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
 const projectDeliveryPlans = new ProjectDeliveryPlanService(localProjects);
 const projectLifecycles = new ProjectLifecycleService(stateDirectory);
+const projectIntakes = new ProjectIntakeStore(stateDirectory);
 const nativePicker = new NativePicker();
 const localRequests = new LocalRequestStore(
   stateDirectory,
@@ -458,6 +460,11 @@ const controlPlane = createControlPlaneServer({
   nativePicker: {
     folder: () => nativePicker.folder(),
     files: () => nativePicker.files(),
+  },
+  projectIntakes: {
+    list: () => projectIntakes.list(), create: (input) => projectIntakes.create(input),
+    saveDraft: (id, input) => projectIntakes.saveDraft(id, input), selectResources: (id, input) => projectIntakes.selectResources(id, input),
+    submit: (id, input, key) => projectIntakes.submit(id, input, key), cancel: (id, revision, reason) => projectIntakes.cancel(id, revision, reason),
   },
   integrationConnections: {
     list: () => integrationConnections.list(),

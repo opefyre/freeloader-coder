@@ -112,6 +112,8 @@ import { AttentionError } from "./attention-center.js";
 import { projectLifecycleRecordSchema, type ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 import { eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 import { ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
+import { ProjectIntakeStoreError } from "./project-intake-store.js";
+import { projectIntakeCancelSchema, projectIntakeCollectionSchema, projectIntakeCreateSchema, projectIntakeDraftSchema, projectIntakeResourcesSchema, projectIntakeRevisionSchema, projectIntakeSchema, type ProjectIntake } from "../../../packages/runtime/src/project-intakes.js";
 import { solutionDocumentSchema, solutionHistorySchema, type SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
 import { projectEgressPermitSchema, type ProjectEgressPermit } from "./project-egress-policy-service.js";
 import { solutionRunSchema, type SolutionRun } from "./project-solution-coordinator.js";
@@ -174,6 +176,14 @@ export type ControlPlaneServerOptions = {
     artifacts?: (projectId: string) => unknown | Promise<unknown>;
     openArtifact?: (projectId: string, kind: "context" | "memory" | "research" | "product" | "design" | "delivery_plan" | "ops_rules" | "infra" | "security" | "decisions" | "status") => unknown | Promise<unknown>;
     forget: (projectId: string) => void | Promise<void>;
+  };
+  projectIntakes?: {
+    list: () => readonly ProjectIntake[] | Promise<readonly ProjectIntake[]>;
+    create: (input: unknown) => ProjectIntake | Promise<ProjectIntake>;
+    saveDraft: (intakeId: string, input: unknown) => ProjectIntake | Promise<ProjectIntake>;
+    selectResources: (intakeId: string, input: unknown) => ProjectIntake | Promise<ProjectIntake>;
+    submit: (intakeId: string, input: unknown, idempotencyKey: string) => ProjectIntake | Promise<ProjectIntake>;
+    cancel: (intakeId: string, expectedRevision: number, reason: string) => ProjectIntake | Promise<ProjectIntake>;
   };
   projectLifecycles?: {
     get: (projectId: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
@@ -1172,6 +1182,26 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         );
         return;
       }
+      if (url.pathname === "/api/v1/project-intakes" && options.projectIntakes) {
+        if (request.method === "GET") {
+          if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+          sendJson(response, 200, projectIntakeCollectionSchema.parse({ schemaVersion: 1, intakes: await options.projectIntakes.list() })); return;
+        }
+        if (request.method === "POST") {
+          requireIdempotencyKey(request);
+          sendJson(response, 200, projectIntakeSchema.parse(await options.projectIntakes.create(projectIntakeCreateSchema.parse(await readJsonBody(request))))); return;
+        }
+        sendJson(response, 405, { error: "Method is not allowed." }); return;
+      }
+      const intakeRoute = url.pathname.match(/^\/api\/v1\/project-intakes\/(intake_[a-f0-9]{20})\/(draft|resources|submit|cancel)$/);
+      if (intakeRoute && options.projectIntakes) {
+        const intakeId = intakeRoute[1] ?? ""; const action = intakeRoute[2];
+        if (action === "draft" && request.method === "PUT") { sendJson(response, 200, projectIntakeSchema.parse(await options.projectIntakes.saveDraft(intakeId, projectIntakeDraftSchema.parse(await readJsonBody(request))))); return; }
+        if (action === "resources" && request.method === "PUT") { sendJson(response, 200, projectIntakeSchema.parse(await options.projectIntakes.selectResources(intakeId, projectIntakeResourcesSchema.parse(await readJsonBody(request))))); return; }
+        if (action === "submit" && request.method === "POST") { sendJson(response, 200, projectIntakeSchema.parse(await options.projectIntakes.submit(intakeId, projectIntakeRevisionSchema.parse(await readJsonBody(request)), requireIdempotencyKey(request)))); return; }
+        if (action === "cancel" && request.method === "POST") { const body = projectIntakeCancelSchema.parse(await readJsonBody(request)); sendJson(response, 200, projectIntakeSchema.parse(await options.projectIntakes.cancel(intakeId, body.expectedRevision, body.reason))); return; }
+        sendJson(response, 405, { error: "Method is not allowed." }); return;
+      }
       if (
         request.method === "POST" &&
         url.pathname === "/api/v1/projects/new" &&
@@ -1470,6 +1500,8 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         sendJson(response, status, { error: error.message, code: error.code });
       } else if (error instanceof ProjectLifecycleServiceError) {
         sendJson(response, error.code === "not_found" ? 404 : error.code === "stale_revision" ? 409 : 500, { error: error.message, code: error.code });
+      } else if (error instanceof ProjectIntakeStoreError) {
+        sendJson(response, error.code === "not_found" ? 404 : ["stale_revision", "invalid_transition"].includes(error.code) ? 409 : 500, { error: error.message, code: error.code });
       } else if (
         error instanceof ProviderConnectionLifecycleError ||
         error instanceof ProviderConnectionServiceError

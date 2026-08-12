@@ -2,32 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
-
-const opaqueReference = z.string().regex(/^[a-z][a-z0-9_-]{2,31}:[A-Za-z0-9_-]{8,160}$/);
-const modeSchema = z.enum(["new_product", "existing_product"]);
-const stateSchema = z.enum(["draft", "resource_selection", "submitted", "analyzing", "needs_input", "cancelled"]);
-const intakeSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  id: z.string().regex(/^intake_[a-f0-9]{20}$/),
-  projectMode: modeSchema,
-  state: stateSchema,
-  idea: z.string().max(20_000),
-  workspaceReference: opaqueReference.nullable(),
-  attachmentReferences: z.array(opaqueReference).max(100),
-  selectedResources: z.array(opaqueReference).max(100),
-  revision: z.number().int().positive(),
-  createdAt: z.number().int().nonnegative(),
-  updatedAt: z.number().int().nonnegative(),
-  submittedAt: z.number().int().nonnegative().nullable(),
-  cancellationReason: z.string().trim().min(3).max(500).nullable(),
-});
+import { projectIntakeCancelSchema, projectIntakeCreateSchema, projectIntakeDraftSchema, projectIntakeResourcesSchema, projectIntakeSchema, type ProjectIntake } from "../../../packages/runtime/src/project-intakes.js";
 const documentSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  intakes: z.array(intakeSchema).max(1_000),
+  intakes: z.array(projectIntakeSchema).max(1_000),
   submitReceipts: z.record(z.string(), z.string().regex(/^intake_[a-f0-9]{20}$/)),
 });
-
-export type ProjectIntake = z.infer<typeof intakeSchema>;
 
 export class ProjectIntakeStore {
   private readonly path: string;
@@ -42,10 +22,10 @@ export class ProjectIntakeStore {
   }
 
   async create(raw: unknown): Promise<ProjectIntake> {
-    const input = z.strictObject({ schemaVersion: z.literal(1), projectMode: modeSchema }).parse(raw);
+    const input = projectIntakeCreateSchema.parse(raw);
     return this.mutate(async (document) => {
       const now = this.now();
-      const intake = intakeSchema.parse({
+      const intake = projectIntakeSchema.parse({
         schemaVersion: 1, id: `intake_${createHash("sha256").update(randomUUID()).digest("hex").slice(0, 20)}`,
         projectMode: input.projectMode, state: "draft", idea: "", workspaceReference: null,
         attachmentReferences: [], selectedResources: [], revision: 1, createdAt: now, updatedAt: now,
@@ -56,10 +36,7 @@ export class ProjectIntakeStore {
   }
 
   async saveDraft(id: string, raw: unknown): Promise<ProjectIntake> {
-    const input = z.strictObject({
-      schemaVersion: z.literal(1), expectedRevision: z.number().int().positive(), idea: z.string().max(20_000),
-      workspaceReference: opaqueReference.nullable(), attachmentReferences: z.array(opaqueReference).max(100),
-    }).parse(raw);
+    const input = projectIntakeDraftSchema.parse(raw);
     return this.update(id, input.expectedRevision, ["draft", "resource_selection"], (current) => ({
       ...current, idea: input.idea, workspaceReference: input.workspaceReference,
       attachmentReferences: [...new Set(input.attachmentReferences)], state: "resource_selection",
@@ -67,7 +44,7 @@ export class ProjectIntakeStore {
   }
 
   async selectResources(id: string, raw: unknown): Promise<ProjectIntake> {
-    const input = z.strictObject({ schemaVersion: z.literal(1), expectedRevision: z.number().int().positive(), selectedResources: z.array(opaqueReference).max(100) }).parse(raw);
+    const input = projectIntakeResourcesSchema.parse(raw);
     return this.update(id, input.expectedRevision, ["resource_selection"], (current) => ({ ...current, selectedResources: [...new Set(input.selectedResources)] }));
   }
 
@@ -84,7 +61,7 @@ export class ProjectIntakeStore {
         throw new ProjectIntakeStoreError("invalid_transition", "Complete the idea and choose a workspace before submitting.");
       }
       const now = this.now();
-      const next = intakeSchema.parse({ ...current, state: "submitted", revision: current.revision + 1, updatedAt: now, submittedAt: now });
+      const next = projectIntakeSchema.parse({ ...current, state: "submitted", revision: current.revision + 1, updatedAt: now, submittedAt: now });
       return { document: { ...replace(document, next), submitReceipts: { ...document.submitReceipts, [receiptKey]: id } }, result: next };
     });
   }
@@ -98,7 +75,7 @@ export class ProjectIntakeStore {
   }
 
   cancel(id: string, expectedRevision: number, reason: string): Promise<ProjectIntake> {
-    const cancellationReason = z.string().trim().min(3).max(500).parse(reason);
+    const cancellationReason = projectIntakeCancelSchema.shape.reason.parse(reason);
     return this.update(id, expectedRevision, ["draft", "resource_selection", "submitted", "analyzing", "needs_input"], (current) => ({ ...current, state: "cancelled", cancellationReason }));
   }
 
@@ -106,7 +83,7 @@ export class ProjectIntakeStore {
     return this.mutate(async (document) => {
       const current = requireIntake(document, id); assertRevision(current, expectedRevision);
       if (!allowed.includes(current.state)) throw new ProjectIntakeStoreError("invalid_transition", `Cannot continue intake from ${current.state}.`);
-      const next = intakeSchema.parse({ ...change(current), revision: current.revision + 1, updatedAt: this.now() });
+      const next = projectIntakeSchema.parse({ ...change(current), revision: current.revision + 1, updatedAt: this.now() });
       return { document: replace(document, next), result: next };
     });
   }
