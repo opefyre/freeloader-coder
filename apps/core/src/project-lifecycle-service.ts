@@ -111,7 +111,15 @@ export class ProjectLifecycleService {
     });
   }
 
-  async answer(projectId: string, raw: unknown, idempotencyKey: string): Promise<ProjectLifecycleRecord> {
+  async answer(
+    projectId: string,
+    raw: unknown,
+    idempotencyKey: string,
+    persist?: (
+      questions: readonly OwnerQuestion[],
+      answers: readonly z.infer<typeof ownerAnswerSchema>[],
+    ) => Promise<void>,
+  ): Promise<ProjectLifecycleRecord> {
     assertProjectId(projectId);
     assertIdempotencyKey(idempotencyKey);
     const request = answerRequestSchema.parse(raw);
@@ -143,6 +151,7 @@ export class ProjectLifecycleService {
           record = advanceProjectLifecycle(record, { type: "scope_assessed", assessment: resolvedEligibility.assessment }, Date.now());
         }
       }
+      await persist?.(current.questions, record.answers);
       return {
         state: { ...replaceRecord(state, record), eligibility: resolvedEligibility ? { ...state.eligibility, [projectId]: resolvedEligibility } : state.eligibility, receipts: { ...state.receipts, [receiptKey]: record } },
         result: record,

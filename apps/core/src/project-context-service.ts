@@ -1,10 +1,14 @@
 import type { LocalProjectRegistry } from "./local-project-registry.js";
-import { ProjectArtifactStore } from "./project-artifact-store.js";
+import {
+  ProjectArtifactStore,
+  type ProjectArtifactKind,
+} from "./project-artifact-store.js";
 import type {
   OwnerAnswer,
   OwnerQuestion,
 } from "../../../packages/orchestration/src/project-lifecycle.js";
 import { readdir, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { runProjectContextAnalyzers } from "./project-context-analyzers.js";
 import { reconcileProjectContext } from "./project-context-reconciler.js";
@@ -327,18 +331,17 @@ export class ProjectContextService {
     answers: readonly OwnerAnswer[],
   ) {
     const root = await this.projects.canonicalRoot(projectId);
-    const currentArtifact = await this.artifacts.read(root, "context");
-    let content = currentArtifact.body;
-    const start = content.indexOf(DECISION_START);
-    const end = content.indexOf(DECISION_END);
-    if (start < 0 || end <= start)
-      throw new Error("Project context decision section is missing.");
-    const current = content.slice(start + DECISION_START.length, end).trim();
-    const additions = answers.flatMap((answer) => {
-      if (current.includes(`clarification:${answer.questionId}`)) return [];
+    const currentDecisionArtifact = await this.artifacts.read(root, "decisions");
+    const resolved = answers.flatMap((answer) => {
       const question = questions.find(
         (candidate) => candidate.id === answer.questionId,
       );
+      if (
+        !question &&
+        currentDecisionArtifact.body.includes(
+          `clarification-decision:${answer.questionId}:`,
+        )
+      ) return [];
       if (!question)
         throw new Error("Accepted clarification question was not found.");
       const value =
@@ -346,12 +349,82 @@ export class ProjectContextService {
         question.options.find((option) => option.id === answer.optionId)?.label;
       if (!value)
         throw new Error("Accepted clarification answer was not found.");
-      return [
-        `- ${question.prompt} **${value}** <!-- clarification:${answer.questionId} -->`,
-      ];
+      return [{
+        answer,
+        question,
+        value,
+        fingerprint: createHash("sha256")
+          .update(`${answer.questionId}\0${answer.optionId ?? "custom"}\0${value}`)
+          .digest("hex")
+          .slice(0, 16),
+      }];
     });
+    if (resolved.length === 0) {
+      const currentContext = await this.artifacts.read(root, "context");
+      return { digest: currentContext.metadata.bodyDigest, path: CONTEXT_FILE };
+    }
+
+    const decisionAdditions = resolved.flatMap(
+      ({ answer, question, value, fingerprint }) => {
+        const marker = `clarification-decision:${answer.questionId}:${fingerprint}`;
+        if (currentDecisionArtifact.body.includes(marker)) return [];
+        const prior = [
+          ...currentDecisionArtifact.body.matchAll(
+            new RegExp(
+              `clarification-decision:${answer.questionId}:([a-f0-9]{16})`,
+              "g",
+            ),
+          ),
+        ].at(-1)?.[1];
+        return [
+          [
+            `### ${question.prompt}`,
+            "",
+            `- Answer: **${value}**`,
+            `- Recorded: ${new Date(answer.answeredAt).toISOString()}`,
+            `- Affects: ${(question.affectedArtifacts ?? ["CONTEXT.md"]).join(", ")}`,
+            `- Supersedes: ${prior ?? "none"}`,
+            `<!-- ${marker} -->`,
+          ].join("\n"),
+        ];
+      },
+    );
+    if (decisionAdditions.length > 0) {
+      const empty = "_No owner decisions have been recorded._";
+      await this.artifacts.write(root, {
+        kind: "decisions",
+        body: currentDecisionArtifact.body.replace(empty, "").trimEnd() +
+          `\n\n${decisionAdditions.join("\n\n")}`,
+        producer: "codkesh:clarification",
+        expectedDigest: currentDecisionArtifact.metadata.bodyDigest,
+        approvedDigest: null,
+        confidence: "verified",
+      });
+    }
+
+    const currentArtifact = await this.artifacts.read(root, "context");
+    let content = currentArtifact.body;
+    const start = content.indexOf(DECISION_START);
+    const end = content.indexOf(DECISION_END);
+    if (start < 0 || end <= start)
+      throw new Error("Project context decision section is missing.");
+    const current = content.slice(start + DECISION_START.length, end).trim();
+    let canonical = current;
+    const additions: string[] = [];
+    for (const { answer, question, value, fingerprint } of resolved) {
+      const line = `- ${question.prompt} **${value}** <!-- clarification:${answer.questionId}:${fingerprint} -->`;
+      const priorPattern = new RegExp(
+        `^.*<!-- clarification:${answer.questionId}(?::[a-f0-9]{16})? -->.*$`,
+        "m",
+      );
+      if (priorPattern.test(canonical)) {
+        canonical = canonical.replace(priorPattern, line);
+      } else {
+        additions.push(line);
+      }
+    }
     const decisions = [
-      current === "- None recorded yet." ? "" : current,
+      canonical === "- None recorded yet." ? "" : canonical,
       ...additions,
     ]
       .filter(Boolean)
@@ -363,6 +436,27 @@ export class ProjectContextService {
       producer: "codkesh:clarification",
       expectedDigest: currentArtifact.metadata.bodyDigest,
     });
+    const affectedKinds = new Set(
+      resolved.flatMap(({ question }) =>
+        (question.affectedArtifacts ?? []).flatMap(artifactKindForFile),
+      ),
+    );
+    for (const kind of affectedKinds) {
+      if (kind === "context" || kind === "decisions") continue;
+      const artifact = await this.artifacts.read(root, kind);
+      if (
+        artifact.metadata.approvedDigest === null &&
+        artifact.metadata.confidence === "unknown"
+      ) continue;
+      await this.artifacts.write(root, {
+        kind,
+        body: artifact.body,
+        producer: "codkesh:clarification",
+        expectedDigest: artifact.metadata.bodyDigest,
+        approvedDigest: null,
+        confidence: "unknown",
+      });
+    }
     return { digest: written.metadata.bodyDigest, path: CONTEXT_FILE };
   }
 
@@ -373,6 +467,24 @@ export class ProjectContextService {
     );
     return { digest: artifact.metadata.bodyDigest, markdown: artifact.body };
   }
+}
+
+function artifactKindForFile(value: string): ProjectArtifactKind[] {
+  const byFile: Readonly<Record<string, ProjectArtifactKind>> = {
+    "CONTEXT.MD": "context",
+    "MEMORY.MD": "memory",
+    "RESEARCH.MD": "research",
+    "PRODUCT.MD": "product",
+    "DESIGN.MD": "design",
+    "DELIVERY-PLAN.MD": "delivery_plan",
+    "OPS-RULES.MD": "ops_rules",
+    "INFRA.MD": "infra",
+    "SECURITY.MD": "security",
+    "DECISIONS.MD": "decisions",
+    "STATUS.MD": "status",
+  };
+  const kind = byFile[value.toUpperCase()];
+  return kind ? [kind] : [];
 }
 
 function contextClarificationFindings(

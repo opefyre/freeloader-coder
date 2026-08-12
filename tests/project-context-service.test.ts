@@ -146,6 +146,10 @@ test("context generation is cited, atomic, digest-bound, and preserves accepted 
       "utf8",
     );
     assert.match(clarifiedContent, /Who can sign up\? \*\*Invite only\*\*/);
+    const firstDecisions = await artifacts.read(workspace, "decisions");
+    assert.match(firstDecisions.body, /Who can sign up\?/);
+    assert.match(firstDecisions.body, /Answer: \*\*Invite only\*\*/);
+    assert.match(firstDecisions.body, /Supersedes: none/);
     assert.equal(
       (await artifacts.read(workspace, "context")).metadata.bodyDigest,
       clarified.digest,
@@ -171,12 +175,50 @@ test("context generation is cited, atomic, digest-bound, and preserves accepted 
       )?.length,
       1,
     );
+    assert.equal(
+      (await artifacts.read(workspace, "decisions")).body.match(
+        /clarification-decision:question_0123456789abcdef/g,
+      )?.length,
+      1,
+    );
+    const designBeforeAnswerChange = await artifacts.read(workspace, "design");
+    await artifacts.write(workspace, {
+      kind: "design",
+      body: designBeforeAnswerChange.body,
+      producer: "owner:test",
+      expectedDigest: designBeforeAnswerChange.metadata.bodyDigest,
+      approvedDigest: designBeforeAnswerChange.metadata.bodyDigest,
+      confidence: "verified",
+    });
+    await service.applyClarifications(
+      project.id,
+      [{
+        id: "question_0123456789abcdef",
+        prompt: "Who can sign up?",
+        whyItMatters: "Identity changes.",
+        options: [
+          { id: "invite", label: "Invite only", consequence: "Admins invite." },
+          { id: "public", label: "Public", consequence: "Anyone registers." },
+        ],
+        allowsCustomAnswer: false,
+        sourceFindingIds: ["identity"],
+        affectedArtifacts: ["CONTEXT.md", "DESIGN.md"],
+      }],
+      [{ questionId: "question_0123456789abcdef", optionId: "public", customAnswer: null, answeredAt: 21 }],
+    );
+    const revisedDecisions = await artifacts.read(workspace, "decisions");
+    assert.equal(revisedDecisions.body.match(/clarification-decision:question_0123456789abcdef/g)?.length, 2);
+    assert.match(revisedDecisions.body, /Supersedes: [a-f0-9]{16}/);
+    assert.match((await artifacts.read(workspace, "context")).body, /Who can sign up\? \*\*Public\*\*/);
+    const invalidatedDesign = await artifacts.read(workspace, "design");
+    assert.equal(invalidatedDesign.metadata.approvedDigest, null);
+    assert.equal(invalidatedDesign.metadata.confidence, "unknown");
     assert.equal(refreshed.citations.length > 0, true);
     assert.doesNotMatch(refreshedContent, /api[_-]?key|secret-value/i);
     const current = await readFile(join(workspace, "CONTEXT.md"), "utf8");
     await writeFile(
       join(workspace, "CONTEXT.md"),
-      current.replace("Invite only", "Public"),
+      current.replace("**Public**", "**Private**"),
       { encoding: "utf8", mode: 0o600 },
     );
     await assert.rejects(

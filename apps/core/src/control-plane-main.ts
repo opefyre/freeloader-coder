@@ -195,10 +195,12 @@ const telegramOwnerChannel = new TelegramOwnerChannelService(stateDirectory, loc
   list: () => projectLifecycles.list(),
   get: (projectId) => projectLifecycles.get(projectId),
   answer: async (projectId, input, idempotencyKey) => {
-    const before = await projectLifecycles.get(projectId);
-    if (!before) throw new ProjectLifecycleServiceError("not_found", "Project lifecycle was not found.");
-    const updated = await projectLifecycles.answer(projectId, input, idempotencyKey);
-    await projectContexts.applyClarifications(projectId, before.questions, updated.answers);
+    const updated = await projectLifecycles.answer(
+      projectId,
+      input,
+      idempotencyKey,
+      (questions, answers) => projectContexts.applyClarifications(projectId, questions, answers).then(() => undefined),
+    );
     return updated;
   },
   decideSolution: async (projectId, input, idempotencyKey) => {
@@ -417,10 +419,12 @@ const controlPlane = createControlPlaneServer({
       return record;
     },
     answer: async (projectId, input, idempotencyKey) => {
-      const before = await projectLifecycles.get(projectId);
-      if (!before) throw new ProjectLifecycleServiceError("not_found", "Project lifecycle was not found.");
-      const updated = await projectLifecycles.answer(projectId, input, idempotencyKey);
-      await projectContexts.applyClarifications(projectId, before.questions, updated.answers);
+      const updated = await projectLifecycles.answer(
+        projectId,
+        input,
+        idempotencyKey,
+        (questions, answers) => projectContexts.applyClarifications(projectId, questions, answers).then(() => undefined),
+      );
       return updated;
     },
     eligibility: async (projectId) => {

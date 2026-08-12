@@ -25,9 +25,22 @@ test("project clarification lifecycle persists, rejects stale answers, and repla
     }],
   });
   const request = { schemaVersion: 1 as const, expectedRevision: published.revision, answers: [{ questionId: "question_0123456789abcdef", optionId: "invite", customAnswer: null, answeredAt: 3 }] };
+  const otherProjectId = "project_fedcba9876543210";
+  const other = await service.begin({ projectId: otherProjectId, mission: "Build another product.", now: 3 });
+  await assert.rejects(
+    () => service.answer(otherProjectId, { ...request, expectedRevision: other.revision }, "answer-cross-project-1"),
+    /clarification|context_review/,
+  );
   await assert.rejects(() => service.answer(projectId, { ...request, expectedRevision: begun.revision }, "answer-stale-1"), /Questions changed/);
-  const answered = await service.answer(projectId, request, "answer-valid-1");
-  const replay = await service.answer(projectId, request, "answer-valid-1");
+  await assert.rejects(
+    () => service.answer(projectId, request, "answer-artifact-failure-1", async () => { throw new Error("injected decision persistence failure"); }),
+    /injected decision persistence failure/,
+  );
+  assert.equal((await service.get(projectId))?.stage, "clarification");
+  let persisted = 0;
+  const answered = await service.answer(projectId, request, "answer-valid-1", async () => { persisted += 1; });
+  const replay = await service.answer(projectId, request, "answer-valid-1", async () => { persisted += 1; });
+  assert.equal(persisted, 1);
   assert.deepEqual(replay, answered);
   assert.deepEqual((await new ProjectLifecycleService(root).get(projectId))?.answers, request.answers);
   assert.doesNotMatch(await readFile(join(root, "project-lifecycles.json"), "utf8"), /\/Users\//);
