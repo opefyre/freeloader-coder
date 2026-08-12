@@ -434,7 +434,7 @@ test("native picker endpoints expose only validated local selections", async () 
     allowedOrigins: ["http://127.0.0.1:4310"],
     health: () => health, snapshot: () => snapshot,
     nativePicker: {
-      folder: () => ({ schemaVersion: 1, outcome: "selected", selections: [{ path: "/Users/example/project", label: "project" }] }),
+      folder: () => ({ schemaVersion: 1, outcome: "selected", selections: [{ path: "selection_0123456789abcdef0123456789abcdef", label: "project" }] }),
       files: () => ({ schemaVersion: 1, outcome: "cancelled", selections: [] }),
     },
   });
@@ -442,7 +442,9 @@ test("native picker endpoints expose only validated local selections", async () 
   try {
     const response = await fetch(`http://127.0.0.1:${port}/api/v1/system/pick-folder`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310" } });
     assert.equal(response.status, 200);
-    assert.equal((await response.json() as { selections: unknown[] }).selections.length, 1);
+    const payload = await response.json() as { selections: Array<{ path: string }> };
+    assert.equal(payload.selections.length, 1);
+    assert.equal(JSON.stringify(payload).includes("/Users/"), false);
   } finally {
     await controlPlane.close();
   }

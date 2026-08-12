@@ -367,11 +367,20 @@ const controlPlane = createControlPlaneServer({
   },
   projects: {
     list: () => projectPortfolio.list(),
-    create: (input, idempotencyKey) => localProjects.create(input, idempotencyKey),
-    register: (input) => localProjects.register(input),
+    create: (input, idempotencyKey) => {
+      const request = input as Record<string, unknown>;
+      return localProjects.create({ ...request, workspacePath: nativePicker.resolveFolder(String(request.workspacePath)) }, idempotencyKey);
+    },
+    register: (input) => {
+      const request = input as Record<string, unknown>;
+      return localProjects.register({ ...request, path: nativePicker.resolveFolder(String(request.path)) });
+    },
     rescan: (projectId) => localProjects.rescan(projectId),
     setResources: (projectId, input) => localProjects.setResources(projectId, input),
-    addFiles: (projectId, input) => localProjects.addFiles(projectId, input),
+    addFiles: (projectId, input) => {
+      const request = input as Record<string, unknown>;
+      return localProjects.addFiles(projectId, { ...request, paths: nativePicker.resolveFiles(Array.isArray(request.paths) ? request.paths.map(String) : []) });
+    },
     addFileContent: (projectId, input) => localProjects.addFileContent(projectId, input),
     generateContext: (projectId, input) => projectIntake.generate(projectId, input),
     artifacts: (projectId) => localProjects.artifacts(projectId),
