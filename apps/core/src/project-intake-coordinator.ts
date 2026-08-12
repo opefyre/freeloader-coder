@@ -1,10 +1,13 @@
 import type { ProjectContextService } from "./project-context-service.js";
 import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
+import type { LocalProjectRegistry } from "./local-project-registry.js";
+import type { LocalProjectSnapshot } from "../../../packages/runtime/src/local-projects.js";
 
 export class ProjectIntakeCoordinator {
   constructor(
     private readonly contexts: ProjectContextService,
-    private readonly lifecycles: ProjectLifecycleService
+    private readonly lifecycles: ProjectLifecycleService,
+    private readonly projects?: LocalProjectRegistry
   ) {}
 
   async generate(projectId: string, input: unknown) {
@@ -31,12 +34,14 @@ export class ProjectIntakeCoordinator {
       });
     }
     if (lifecycle.stage === "context_review" && !lifecycle.assessment) {
+      const snapshot = this.projects ? (await this.projects.list()).projects.find((project) => project.id === projectId) : undefined;
+      const classification = classifyProjectKind(snapshot, intake.projectKind);
       await this.lifecycles.assess(projectId, {
         schemaVersion: 1,
         expectedRevision: lifecycle.revision,
         requestId: intake.requestId,
-        projectKind: intake.projectKind,
-        ...deriveScopeEvidence(intake.outcome, intake.projectKind),
+        projectKind: classification.kind,
+        ...deriveScopeEvidence(intake.outcome, classification.kind, classification.evidence, classification.confidence),
       }, `context-scope:${context.digest}`);
     }
     return context;
@@ -57,15 +62,36 @@ export function parseProjectIntake(input: unknown): {
   return { outcome, requestId: candidate.requestId, projectKind: candidate.projectKind };
 }
 
-export function deriveScopeEvidence(outcome: string, projectKind: "new_product" | "existing_product") {
+export function classifyProjectKind(snapshot: LocalProjectSnapshot | undefined, ownerSelection: "new_product" | "existing_product") {
+  if (!snapshot) return { kind: ownerSelection, confidence: 0.75, evidence: ["Workspace classification used the owner's explicit project selection because no current scan was available."] } as const;
+  const fact = (label: string) => snapshot.facts.find((item) => item.label === label)?.value ?? "";
+  const languages = fact("Languages");
+  const manifests = fact("Manifests");
+  const branch = fact("Branch");
+  const hasCode = Boolean(languages && languages !== "None observed") || Boolean(manifests && manifests !== "None observed");
+  const hasExternalHistory = (snapshot.resources ?? []).some((resource) => resource.kind === "jira_project" || resource.kind === "github_repository");
+  const meaningfulExistingEvidence = hasCode || hasExternalHistory || (branch !== "" && !["main", "master", "Detached or unavailable"].includes(branch));
+  const evidence = [
+    hasCode ? `Workspace scan found implementation evidence: languages=${languages || "none"}; manifests=${manifests || "none"}.` : "Workspace scan found no implementation language or manifest.",
+    hasExternalHistory ? "A Jira project or GitHub repository is already bound to this workspace." : "No Jira or GitHub project history is bound.",
+    `Owner selected ${ownerSelection === "new_product" ? "new product" : "existing product"}.`,
+  ];
+  if (meaningfulExistingEvidence && ownerSelection === "new_product") return { kind: "unknown" as const, confidence: 0.45, evidence: [...evidence, "Existing-project evidence conflicts with the owner's new-product selection."] };
+  if (meaningfulExistingEvidence) return { kind: "existing_product" as const, confidence: 0.96, evidence };
+  if (ownerSelection === "existing_product") return { kind: "unknown" as const, confidence: 0.5, evidence: [...evidence, "The selected existing project has no meaningful implementation or connected history yet."] };
+  return { kind: "new_product" as const, confidence: 0.96, evidence };
+}
+
+export function deriveScopeEvidence(outcome: string, projectKind: "new_product" | "existing_product" | "unknown", classificationEvidence: readonly string[] = [], classificationConfidence?: number) {
+  if (projectKind === "unknown") return { affectedDomains: [] as const, deliveryStages: [] as const, estimatedDeveloperHours: 0, requiresArchitectureDecision: false, evidence: [...classificationEvidence, "Project type is ambiguous; the owner must select an explicit option."], confidence: Math.min(classificationConfidence ?? 0.5, 0.6) };
   if (projectKind === "new_product") {
     return {
       affectedDomains: ["product", "frontend", "backend", "qa"],
       deliveryStages: ["research", "product", "design", "frontend", "backend", "qa"] as const,
       estimatedDeveloperHours: 80,
       requiresArchitectureDecision: true,
-      evidence: ["The owner selected a new project workspace and requested a complete product outcome."],
-      confidence: 0.9,
+      evidence: [...classificationEvidence, "The workspace preflight and owner intent support a new product lifecycle."],
+      confidence: classificationConfidence ?? 0.9,
     };
   }
   const normalized = outcome.toLowerCase();
@@ -84,7 +110,7 @@ export function deriveScopeEvidence(outcome: string, projectKind: "new_product" 
     deliveryStages: clear ? (["product", "design", "frontend", "backend", "qa"] as const) : ([] as const),
     estimatedDeveloperHours: clear ? 16 : 0,
     requiresArchitectureDecision: clear && /\b(architecture|system|workflow|integration|database|infra)\b/.test(normalized),
-    evidence: [clear ? "The requested outcome names a multi-stage feature or multiple implementation domains." : "The requested outcome does not yet establish major-feature scope."],
-    confidence: clear ? 0.85 : 0.5,
+    evidence: [...classificationEvidence, clear ? "The requested outcome names a multi-stage feature or multiple implementation domains." : "The requested outcome does not yet establish major-feature scope."],
+    confidence: Math.min(classificationConfidence ?? 1, clear ? 0.85 : 0.5),
   };
 }

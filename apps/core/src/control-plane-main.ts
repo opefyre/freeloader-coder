@@ -64,7 +64,7 @@ const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
 const projectDeliveryPlans = new ProjectDeliveryPlanService(localProjects);
 const projectLifecycles = new ProjectLifecycleService(stateDirectory);
-const projectIntake = new ProjectIntakeCoordinator(projectContexts, projectLifecycles);
+const projectIntake = new ProjectIntakeCoordinator(projectContexts, projectLifecycles, localProjects);
 const nativePicker = new NativePicker();
 const localRequests = new LocalRequestStore(
   stateDirectory,
