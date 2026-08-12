@@ -70,7 +70,7 @@ function collect(findings: readonly ProjectContextFinding[], classification: Exc
     claims.push({ key: normalizeKey(finding.key ?? finding.statement), value: finding.statement, classification, source: finding.source, sourceDigest: sourceDigests[finding.source] ?? null, authority: sourceRank(finding.source, classification), provenance: "analyzer" });
   }
 }
-function isSupported(source: string, declared: readonly string[]) { return declared.includes(source) || /^(owner|policy|topology|project|filesystem|attachments|documentation|manifest|resource|analyzer):/.test(source); }
+function isSupported(source: string, declared: readonly string[]) { return declared.includes(source) || declared.includes(source.split("#")[0] ?? source) || /^(owner|policy|topology|project|filesystem|attachments|documentation|manifest|resource|analyzer):/.test(source); }
 function sourceRank(source: string, classification: ContextClaimClass) { if (source.startsWith("owner:")) return 90; if (source === "package.json" || source.startsWith("manifest:")) return 80; if (source.startsWith("project:")) return 70; if (classification === "fact") return 60; if (classification === "inference") return 40; return 20; }
 function compareClaims(left: ContextClaim, right: ContextClaim) { return right.authority - left.authority || right.provenance.localeCompare(left.provenance) || left.value.localeCompare(right.value) || left.source.localeCompare(right.source); }
 function normalizeKey(value: string) { return value.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 160) || "claim"; }

@@ -69,6 +69,15 @@ export class ProjectContextService {
       "",
       outcome,
       "",
+      "## Project overview",
+      "",
+      `- ${project.displayName} is registered as a ${project.state} local project.`,
+      `- Requested outcome: ${outcome}`,
+      "",
+      "## Product behavior",
+      "",
+      ...documentationAnalysis.items,
+      "",
       "## Facts",
       "",
       ...project.facts.map((fact) => `- ${fact.label}: ${fact.value} — ${fact.evidence}`),
@@ -89,15 +98,26 @@ export class ProjectContextService {
       ...project.warnings.map((value) => `- ${value}`),
       ...(planning.topology.truncated ? ["- The bounded topology does not contain every project path."] : []),
       "",
-      "## Stack and infrastructure",
+      "## Architecture and stack",
       "",
       ...manifestAnalysis.items,
       ...topologyAnalysis.items,
+      "",
+      "## Services and data",
+      "",
+      ...analyzerSection(analyzerResults, ["source_architecture", "runtime_configuration"]),
+      "",
+      "## Integrations",
+      "",
       ...resourceAnalysis.items,
       "",
-      "## Features and workflows observed",
+      "## Infrastructure",
       "",
-      ...documentationAnalysis.items,
+      ...analyzerSection(analyzerResults, ["infrastructure"]),
+      "",
+      "## Workflows",
+      "",
+      ...analyzerSection(analyzerResults, ["features_and_workflows", "tests", "git_history", "jira_history"]),
       "",
       "## Owner-provided evidence",
       "",
@@ -129,6 +149,12 @@ export class ProjectContextService {
       ...canonical.claims.map((claim) => `- ${claim.classification}: ${claim.value} — ${claim.source}${claim.sourceDigest ? `; SHA-256 \`${claim.sourceDigest}\`` : ""}`),
       ...canonical.excluded.map((claim) => `- Excluded unsupported claim: ${claim.value} — ${claim.reason}`),
       "",
+      "## Constraints and unknowns",
+      "",
+      ...planning.grounding.limitations.map((value) => `- ${value}`),
+      ...planning.topology.limitations.map((value) => `- ${value}`),
+      ...canonical.invalidated.map((claim) => `- Invalidated ${claim.key}: ${claim.reason} Source: ${claim.source}`),
+      "",
       "## Accepted decisions",
       "",
       DECISION_START,
@@ -138,6 +164,15 @@ export class ProjectContextService {
       "## Evidence",
       "",
       ...citations.map((citation) => `${citation.number}. \`${citation.path}\` — ${citation.classification}; SHA-256 \`${citation.digest}\``),
+      ...(project.resources ?? []).map((resource) => resource.url ? `- [${resource.label}](${resource.url}) — connected ${resource.kind}.` : `- ${resource.label} — connected ${resource.kind}; URL unavailable.`),
+      "",
+      "## Refresh metadata",
+      "",
+      `- Refreshed at: ${generatedAt}`,
+      `- Previous artifact digest: \`${current.metadata.bodyDigest}\``,
+      `- Grounding digest: \`${planning.grounding.digest}\``,
+      `- Topology digest: \`${planning.topology.digest}\``,
+      `- Canonical evidence digest: \`${canonical.digest}\``,
       "",
       "## Boundaries",
       "",
@@ -151,6 +186,12 @@ export class ProjectContextService {
       body,
       producer: "codkesh:context-discovery",
       expectedDigest: current.metadata.bodyDigest,
+      confidence: canonical.conflicts.some((conflict) => conflict.resolution === "unresolved_tie") ? "mixed" : "verified",
+      citations: [
+        ...planning.grounding.sources.map((source) => source.path),
+        ...inputEvidence.map((item) => item.path),
+        ...(project.resources ?? []).flatMap((resource) => resource.url ? [resource.url] : []),
+      ],
     });
     return { schemaVersion: 1 as const, projectId, path: CONTEXT_FILE, digest: written.metadata.bodyDigest, groundingDigest: planning.grounding.digest, topologyDigest: planning.topology.digest, observedAt: Date.now(), citations: [...citations.map(({ path, digest: sourceDigest }) => ({ path, digest: sourceDigest })), ...inputEvidence.map((item) => ({ path: item.path, digest: item.digest }))] };
   }
@@ -277,4 +318,13 @@ function reconcileConflicts(claims: readonly { key: string; value: string; sourc
 
 function normalizeKey(value: string) {
   return value.trim().toLocaleLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+function analyzerSection(results: Awaited<ReturnType<typeof runProjectContextAnalyzers>>, ids: readonly string[]) {
+  const items = results.filter((result) => ids.includes(result.analyzer)).flatMap((result) => [
+    ...result.facts.map((finding) => `- ${finding.statement} — ${finding.source}`),
+    ...result.inferences.map((finding) => `- Inference: ${finding.statement} — ${finding.source}`),
+    ...result.unknowns.map((finding) => `- Unknown: ${finding.statement} — ${finding.source}`),
+  ]);
+  return items.length ? items : ["- Unknown: no bounded evidence was available for this section."];
 }
