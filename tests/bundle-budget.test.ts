@@ -21,6 +21,7 @@ test("verified Sprint 22 topology passes explicit budgets", () => {
     entry: 450_000,
     shared: 210_000,
     feature: 75_000,
+    "ai-runtime": 600_000,
   });
 });
 

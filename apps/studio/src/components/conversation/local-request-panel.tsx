@@ -22,6 +22,7 @@ import { Warning } from "@phosphor-icons/react/Warning";
 import { X } from "@phosphor-icons/react/X";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 
+import { prepareVoiceEvidence } from "../../../../../packages/conversation/src/voice.js";
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
 import type { ProjectLifecycleRecord } from "../../../../../packages/orchestration/src/project-lifecycle.js";
 import type { EligibilityDecision } from "../../../../../packages/orchestration/src/eligibility-gate.js";
@@ -83,6 +84,10 @@ const LocalProposalControls = lazy(async () => {
   const module = await import("./local-proposal-card.js");
   return { default: module.LocalProposalControls };
 });
+const LocalVoiceInput = lazy(async () => {
+  const module = await import("./local-voice-input.js"); return { default: module.LocalVoiceInput };
+});
+type LocalVoiceDraft = import("./local-voice-input.js").LocalVoiceDraft;
 
 const endpoint =
   import.meta.env.VITE_PIPELINE_STUDIO_CONTROL_URL ?? "http://127.0.0.1:4312";
@@ -98,6 +103,7 @@ export function LocalRequestPanel(props: {
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceLabel, setWorkspaceLabel] = useState("");
   const [attachments, setAttachments] = useState<readonly { path: string; label: string }[]>([]);
+  const [voice, setVoice] = useState<LocalVoiceDraft | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
   const [resourceQuery, setResourceQuery] = useState("");
@@ -167,6 +173,7 @@ export function LocalRequestPanel(props: {
     };
   }, [refresh]);
 
+
   useEffect(() => {
     if (!projectId || projectId === "__new__") { setLifecycle(null); setEligibility(null); return; }
     let active = true;
@@ -195,7 +202,7 @@ export function LocalRequestPanel(props: {
   }
 
   async function submit() {
-    if (!projectId || outcome.trim().length < 3) {
+    if (!projectId || (outcome.trim().length < 3 && (voice?.transcript.trim().length ?? 0) < 3)) {
       setNotice("Describe what you want to build or change.");
       return;
     }
@@ -205,7 +212,8 @@ export function LocalRequestPanel(props: {
     }
     setStatus("working");
     try {
-      const submittedIdea = outcome.trim();
+      const voiceEvidence = voice ? prepareVoiceEvidence({ transcript: voice.transcript, mediaType: voice.mediaType, audioBytes: voice.bytes, durationSeconds: voice.durationSeconds, adapterId: "manual-local", corrected: voice.corrected }) : null;
+      const submittedIdea = voiceEvidence ? `${outcome.trim()}\n\n${voiceEvidence.markdown}` : outcome.trim();
       let targetProjectId = projectId;
       let targetProjectName =
         projects.find((project) => project.id === projectId)?.displayName ?? "New project";
@@ -247,6 +255,7 @@ export function LocalRequestPanel(props: {
       setWorkspacePath("");
       setWorkspaceLabel("");
       setAttachments([]);
+      setVoice(null);
       setLastSubmission({
         idea: submittedIdea,
         project: targetProjectName,
@@ -263,6 +272,7 @@ export function LocalRequestPanel(props: {
       setNotice(error instanceof Error ? error.message : "Request failed safely.");
     }
   }
+
 
   async function chooseFolder() {
     setStatus("working");
@@ -905,6 +915,7 @@ export function LocalRequestPanel(props: {
                   <button type="button" aria-label={`Remove ${attachment.label}`} onClick={() => setAttachments((current) => current.filter((item) => item.path !== attachment.path))} className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"><X /></button>
                 </span>)}
               </div>}
+              {voice && <Suspense fallback={null}><LocalVoiceInput value={voice} disabled={status === "working"} onChange={setVoice} onNotice={setNotice} /></Suspense>}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="relative flex flex-wrap items-center gap-2">
                   <Button type="button" size="sm" variant="secondary" onClick={() => setProjectPickerOpen((open) => !open)} aria-expanded={projectPickerOpen}>
@@ -921,10 +932,11 @@ export function LocalRequestPanel(props: {
                   <Button type="button" size="sm" variant="ghost" aria-label="Attach files" onClick={() => void chooseFiles()} disabled={status === "working"}>
                     <PaperclipHorizontal />
                   </Button>
+                  {!voice && <Suspense fallback={null}><LocalVoiceInput value={null} disabled={status === "working"} onChange={setVoice} onNotice={setNotice} /></Suspense>}
                 </div>
                 <Button
                   onClick={() => void submit()}
-                  disabled={status !== "ready" || !projectId || outcome.trim().length < 3 || (projectId === "__new__" && !workspacePath.trim())}
+                  disabled={status !== "ready" || !projectId || (outcome.trim().length < 3 && (voice?.transcript.trim().length ?? 0) < 3) || (voice !== null && voice.transcript.trim().length === 0) || (projectId === "__new__" && !workspacePath.trim())}
                 >
                   Start
                   <ArrowRight />

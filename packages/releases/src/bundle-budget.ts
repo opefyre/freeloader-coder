@@ -1,19 +1,21 @@
 export type BundleAsset = {
   file: string;
   bytes: number;
-  kind: "entry" | "shared" | "feature";
+  kind: "entry" | "shared" | "feature" | "ai-runtime";
 };
 
 export type BundleBudgets = {
   entry: number;
   shared: number;
   feature: number;
+  "ai-runtime": number;
 };
 
 export const studioBundleBudgets: BundleBudgets = {
   entry: 450_000,
   shared: 210_000,
   feature: 75_000,
+  "ai-runtime": 600_000,
 };
 
 export type BundleBudgetResult = {

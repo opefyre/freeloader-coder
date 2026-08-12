@@ -26,6 +26,8 @@ for (const asset of assetsByFile.values()) {
   const measurement = await stat(resolve(outputDirectory, asset.file));
   const kind = asset.isEntry
     ? "entry"
+    : /transformers\.web/.test(asset.file)
+      ? "ai-runtime"
     : /(?:react|rolldown)-runtime/.test(asset.file)
       ? "shared"
       : "feature";

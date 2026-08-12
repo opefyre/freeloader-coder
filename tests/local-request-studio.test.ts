@@ -11,13 +11,23 @@ test("Studio separates real request state from guided orchestration examples", a
     "apps/studio/src/components/conversation/local-proposal-card.tsx",
     "utf8"
   );
-  const studioUi = `${panel}\n${proposal}`;
+  const voice = await readFile("apps/studio/src/components/conversation/local-voice-input.tsx", "utf8");
+  const studioUi = `${panel}\n${proposal}\n${voice}`;
   for (const phrase of [
     "What do you want to build?",
     "Work in progress",
     "New project",
     "Choose folder",
     "Attach files",
+    "Record voice",
+    "Stop voice recording",
+    "Review transcript",
+    "Audio remains local. The speech model runs on this computer",
+    "Microphone access was not granted.",
+    "Recording stopped safely.",
+    "Transcribe locally",
+    "Upload audio",
+    "Local transcript ready.",
     "GitHub repositories",
     "Connect GitHub in Settings first.",
     "Jira project",
