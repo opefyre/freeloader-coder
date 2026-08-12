@@ -1,17 +1,19 @@
-import { createHash, randomUUID } from "node:crypto";
-import { chmod, lstat, open, readFile, readdir, rename } from "node:fs/promises";
-import { join } from "node:path";
-
 import type { LocalProjectRegistry } from "./local-project-registry.js";
+import { ProjectArtifactStore } from "./project-artifact-store.js";
 import type { OwnerAnswer, OwnerQuestion } from "../../../packages/orchestration/src/project-lifecycle.js";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { runProjectContextAnalyzers } from "./project-context-analyzers.js";
 
 const CONTEXT_FILE = "CONTEXT.md";
-const MAX_EXISTING_BYTES = 256_000;
 const DECISION_START = "<!-- accepted-decisions:start -->";
 const DECISION_END = "<!-- accepted-decisions:end -->";
 
 export class ProjectContextService {
-  constructor(private readonly projects: LocalProjectRegistry) {}
+  constructor(
+    private readonly projects: LocalProjectRegistry,
+    private readonly artifacts = new ProjectArtifactStore(),
+  ) {}
 
   async generate(projectId: string, input: unknown) {
     const outcome = parseOutcome(input);
@@ -29,12 +31,14 @@ export class ProjectContextService {
       Promise.resolve(analyzeResources(project.resources ?? [])),
     ]);
     const inputEvidence = await readInputEvidence(root);
+    const analyzerResults = await runProjectContextAnalyzers({ outcome, project, planning, attachmentSources: inputEvidence });
     const conflicts = reconcileConflicts([
       ...project.facts.map((fact) => ({ key: normalizeKey(fact.label), value: fact.value, source: fact.evidence })),
       ...manifestAnalysis.claims,
     ]);
-    const target = join(root, CONTEXT_FILE);
-    const acceptedDecisions = await readAcceptedDecisions(target);
+    await this.artifacts.initialize(root);
+    const current = await this.artifacts.read(root, "context");
+    const acceptedDecisions = readAcceptedDecisions(current.body);
     const citations = planning.grounding.sources.map((source, index) => ({
       number: index + 1,
       path: source.path,
@@ -91,6 +95,18 @@ export class ProjectContextService {
         ...item.units.map((unit) => `  - ${unit.locator} (${unit.confidence}): ${redactInput(unit.content)}`),
       ]) : ["- No owner-provided attachments were imported."]),
       "",
+      "## Context analyzer evidence",
+      "",
+      ...analyzerResults.flatMap((result) => [
+        `### ${result.analyzer.replaceAll("_", " ")} — ${result.status}`,
+        ...result.facts.map((value) => `- Fact: ${value.statement} — ${value.source}`),
+        ...result.inferences.map((value) => `- Inference: ${value.statement} — ${value.source}`),
+        ...result.assumptions.map((value) => `- Assumption: ${value.statement} — ${value.source}`),
+        ...result.unknowns.map((value) => `- Unknown: ${value.statement} — ${value.source}`),
+        ...result.failures.map((value) => `- Failure: ${value}`),
+        "",
+      ]),
+      "",
       "## Conflicts",
       "",
       ...(conflicts.length > 0 ? conflicts : ["- None detected among bounded sources."]),
@@ -112,17 +128,19 @@ export class ProjectContextService {
       "- Secrets, excluded directories, symlinks, provider prompts, and command output are not included.",
       "",
     ].join("\n");
-    const normalizedBody = body.replace(/\n+$/, "");
-    const digest = createHash("sha256").update(normalizedBody).digest("hex");
-    await atomicWrite(target, `${normalizedBody}\n\n<!-- context-digest:${digest} -->\n`);
-    return { schemaVersion: 1 as const, projectId, path: CONTEXT_FILE, digest, groundingDigest: planning.grounding.digest, topologyDigest: planning.topology.digest, observedAt: Date.now(), citations: [...citations.map(({ path, digest: sourceDigest }) => ({ path, digest: sourceDigest })), ...inputEvidence.map((item) => ({ path: item.path, digest: item.digest }))] };
+    const written = await this.artifacts.write(root, {
+      kind: "context",
+      body,
+      producer: "codkesh:context-discovery",
+      expectedDigest: current.metadata.bodyDigest,
+    });
+    return { schemaVersion: 1 as const, projectId, path: CONTEXT_FILE, digest: written.metadata.bodyDigest, groundingDigest: planning.grounding.digest, topologyDigest: planning.topology.digest, observedAt: Date.now(), citations: [...citations.map(({ path, digest: sourceDigest }) => ({ path, digest: sourceDigest })), ...inputEvidence.map((item) => ({ path: item.path, digest: item.digest }))] };
   }
 
   async applyClarifications(projectId: string, questions: readonly OwnerQuestion[], answers: readonly OwnerAnswer[]) {
-    const target = join(await this.projects.canonicalRoot(projectId), CONTEXT_FILE);
-    const info = await lstat(target);
-    if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_EXISTING_BYTES) throw new Error("Project context is not safely editable.");
-    let content = await readFile(target, "utf8");
+    const root = await this.projects.canonicalRoot(projectId);
+    const currentArtifact = await this.artifacts.read(root, "context");
+    let content = currentArtifact.body;
     const start = content.indexOf(DECISION_START);
     const end = content.indexOf(DECISION_END);
     if (start < 0 || end <= start) throw new Error("Project context decision section is missing.");
@@ -137,24 +155,18 @@ export class ProjectContextService {
     });
     const decisions = [current === "- None recorded yet." ? "" : current, ...additions].filter(Boolean).join("\n");
     content = `${content.slice(0, start + DECISION_START.length)}\n${decisions || "- None recorded yet."}\n${content.slice(end)}`;
-    content = content.replace(/\n<!-- context-digest:[a-f0-9]{64} -->\n?$/, "\n");
-    const body = content.replace(/\n+$/, "");
-    const digest = createHash("sha256").update(body).digest("hex");
-    await atomicWrite(target, `${body}\n\n<!-- context-digest:${digest} -->\n`);
-    return { digest, path: CONTEXT_FILE };
+    const written = await this.artifacts.write(root, {
+      kind: "context",
+      body: content,
+      producer: "codkesh:clarification",
+      expectedDigest: currentArtifact.metadata.bodyDigest,
+    });
+    return { digest: written.metadata.bodyDigest, path: CONTEXT_FILE };
   }
 
   async readVerified(projectId: string) {
-    const target = join(await this.projects.canonicalRoot(projectId), CONTEXT_FILE);
-    const info = await lstat(target);
-    if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_EXISTING_BYTES) throw new Error("Project context is not safely readable.");
-    const content = await readFile(target, "utf8");
-    const match = content.match(/\n<!-- context-digest:([a-f0-9]{64}) -->\s*$/);
-    if (!match) throw new Error("Project context is missing digest evidence.");
-    const markdown = content.slice(0, match.index).replace(/\n+$/, "");
-    const digest = createHash("sha256").update(markdown).digest("hex");
-    if (digest !== match[1]) throw new Error("Project context digest does not match its content.");
-    return { digest, markdown };
+    const artifact = await this.artifacts.read(await this.projects.canonicalRoot(projectId), "context");
+    return { digest: artifact.metadata.bodyDigest, markdown: artifact.body };
   }
 }
 
@@ -182,32 +194,11 @@ function parseOutcome(input: unknown) {
   return value.trim();
 }
 
-async function readAcceptedDecisions(path: string) {
-  try {
-    const info = await lstat(path);
-    if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_EXISTING_BYTES) return "";
-    const content = await readFile(path, "utf8");
-    const start = content.indexOf(DECISION_START);
-    const end = content.indexOf(DECISION_END);
-    if (start < 0 || end <= start) return "";
-    return content.slice(start + DECISION_START.length, end).trim().slice(0, 32_000);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw error;
-  }
-}
-
-async function atomicWrite(path: string, content: string) {
-  const temporary = `${path}.tmp-${randomUUID()}`;
-  const handle = await open(temporary, "wx", 0o600);
-  try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await rename(temporary, path);
-  await chmod(path, 0o600);
+function readAcceptedDecisions(content: string) {
+  const start = content.indexOf(DECISION_START);
+  const end = content.indexOf(DECISION_END);
+  if (start < 0 || end <= start) return "";
+  return content.slice(start + DECISION_START.length, end).trim().slice(0, 32_000);
 }
 
 type GroundingSource = Awaited<ReturnType<LocalProjectRegistry["grounding"]>>["grounding"]["sources"][number];
