@@ -15,7 +15,7 @@ export const PROJECT_CONTEXT_ANALYZER_IDS = [
 ] as const;
 
 export type ProjectContextAnalyzerId = (typeof PROJECT_CONTEXT_ANALYZER_IDS)[number];
-export type ProjectContextFinding = { statement: string; source: string };
+export type ProjectContextFinding = { key?: string; statement: string; source: string };
 export type ProjectContextAnalyzerResult = {
   analyzer: ProjectContextAnalyzerId;
   status: "completed" | "partial" | "failed";
@@ -123,7 +123,7 @@ function analyzePaths(planning: Planning, label: string, pattern: RegExp) {
 function normalized(result: ProjectContextAnalyzerResult): ProjectContextAnalyzerResult {
   return { ...result, facts: result.facts.slice(0, MAX_FINDINGS).map(safeFinding), inferences: result.inferences.slice(0, MAX_FINDINGS).map(safeFinding), assumptions: result.assumptions.slice(0, MAX_FINDINGS).map(safeFinding), unknowns: result.unknowns.slice(0, MAX_FINDINGS).map(safeFinding), sources: result.sources.filter(safeSource).slice(0, MAX_SOURCES), failures: result.failures.map((value) => sanitizeEvidence(value, 300)).slice(0, 10) };
 }
-function safeFinding(value: ProjectContextFinding) { return { statement: sanitizeEvidence(value.statement, 1_000), source: safeSource(value.source) ? value.source : "redacted:unsafe-source" }; }
+function safeFinding(value: ProjectContextFinding): ProjectContextFinding { return { ...(value.key ? { key: sanitizeEvidence(value.key, 160) } : {}), statement: sanitizeEvidence(value.statement, 1_000), source: safeSource(value.source) ? value.source : "redacted:unsafe-source" }; }
 function safeSource(value: string) { return value.length <= 2_048 && !/(^|\/)(\.env(?:\.|$)|secrets?|credentials?|\.ssh|\.aws|\.gnupg)(\/|$)/i.test(value) && !/\.{2}(\/|\\)/.test(value); }
 function safeFailure(value: unknown) { return sanitizeEvidence(value instanceof Error ? value.message : "Analyzer failed without a safe diagnostic.", 300); }
 async function withDeadline<T>(work: Promise<T>, analyzer: ProjectContextAnalyzerId): Promise<T> {

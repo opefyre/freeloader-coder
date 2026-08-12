@@ -4,6 +4,7 @@ import type { OwnerAnswer, OwnerQuestion } from "../../../packages/orchestration
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runProjectContextAnalyzers } from "./project-context-analyzers.js";
+import { reconcileProjectContext } from "./project-context-reconciler.js";
 
 const CONTEXT_FILE = "CONTEXT.md";
 const DECISION_START = "<!-- accepted-decisions:start -->";
@@ -32,13 +33,23 @@ export class ProjectContextService {
     ]);
     const inputEvidence = await readInputEvidence(root);
     const analyzerResults = await runProjectContextAnalyzers({ outcome, project, planning, attachmentSources: inputEvidence });
+    await this.artifacts.initialize(root);
+    const current = await this.artifacts.read(root, "context");
+    const acceptedDecisions = readAcceptedDecisions(current.body);
+    const sourceDigests = Object.fromEntries([
+      ...planning.grounding.sources.map((source) => [source.path, source.sha256] as const),
+      [`topology:${planning.topology.digest}`, planning.topology.digest] as const,
+    ]);
+    const canonical = reconcileProjectContext({
+      analyzerResults,
+      sourceDigests,
+      seedClaims: project.facts.map((fact) => ({ key: normalizeKey(fact.label), value: fact.value, classification: "fact" as const, source: fact.evidence, authority: 70, provenance: "project_observation" as const })),
+      ownerDecisions: acceptedDecisions.split("\n").filter((line) => /^-\s+\S/.test(line)).map((line, index) => ({ key: `accepted_decision_${index + 1}`, value: line.replace(/^-\s+/, "").replace(/<!--.*?-->/g, "").trim(), source: "owner:accepted-decisions" })),
+    });
     const conflicts = reconcileConflicts([
       ...project.facts.map((fact) => ({ key: normalizeKey(fact.label), value: fact.value, source: fact.evidence })),
       ...manifestAnalysis.claims,
     ]);
-    await this.artifacts.initialize(root);
-    const current = await this.artifacts.read(root, "context");
-    const acceptedDecisions = readAcceptedDecisions(current.body);
     const citations = planning.grounding.sources.map((source, index) => ({
       number: index + 1,
       path: source.path,
@@ -109,7 +120,14 @@ export class ProjectContextService {
       "",
       "## Conflicts",
       "",
-      ...(conflicts.length > 0 ? conflicts : ["- None detected among bounded sources."]),
+      ...(canonical.conflicts.length > 0 ? canonical.conflicts.map((conflict) => `- ${conflict.key.replaceAll("_", " ")}: selected “${conflict.selected.value}” (${conflict.selected.source}); alternatives: ${conflict.alternatives.map((value) => `“${value.value}” (${value.source})`).join(", ")}; resolution: ${conflict.resolution}.`) : conflicts.length > 0 ? conflicts : ["- None detected among bounded sources."]),
+      "",
+      "## Canonical evidence model",
+      "",
+      `- Version: ${canonical.version}`,
+      `- Content digest: \`${canonical.digest}\``,
+      ...canonical.claims.map((claim) => `- ${claim.classification}: ${claim.value} — ${claim.source}${claim.sourceDigest ? `; SHA-256 \`${claim.sourceDigest}\`` : ""}`),
+      ...canonical.excluded.map((claim) => `- Excluded unsupported claim: ${claim.value} — ${claim.reason}`),
       "",
       "## Accepted decisions",
       "",
