@@ -17,4 +17,8 @@ test("native picker client stays on loopback and validates selections", async ()
   assert.equal(result.selections[0]?.label, "project");
   assert.equal(result.selections[0]?.path.startsWith("selection_"), true);
   await assert.rejects(() => openNativePicker({ endpoint: "https://example.com", kind: "files", fetcher: fetch }));
+  await assert.rejects(
+    () => openNativePicker({ endpoint: "http://127.0.0.1:4312", kind: "folder", fetcher: async () => Response.json({ error: "denied" }, { status: 500 }) }),
+    /Files and Folders settings.*Nothing was changed/
+  );
 });

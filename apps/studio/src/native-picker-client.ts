@@ -17,7 +17,11 @@ export async function openNativePicker(input: {
   );
   const text = await response.text();
   if (text.length > MAX_RESPONSE_BYTES) throw new Error("Native picker response is too large.");
-  if (!response.ok) throw new Error("The native picker could not be opened.");
+  if (!response.ok) {
+    throw new Error(
+      "The picker is unavailable. Allow Codkesh access in your device's Files and Folders settings, then try again. Nothing was changed."
+    );
+  }
   return nativePickerResponseSchema.parse(JSON.parse(text) as unknown);
 }
 
