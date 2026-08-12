@@ -46,6 +46,8 @@ const documentSchema = z.strictObject({
 type Document = z.infer<typeof documentSchema>;
 
 export class ProviderCapacityStore {
+  private mutation: Promise<void> = Promise.resolve();
+
   public constructor(private readonly path: string) {}
 
   public async snapshot(
@@ -111,6 +113,50 @@ export class ProviderCapacityStore {
       document.connections[connectionId] = entry;
     }
     await this.save(document);
+  }
+
+  public async recordGatewayAttempt(input: {
+    readonly connectionId: string;
+    readonly attemptId: string;
+    readonly now: number;
+    readonly succeeded: boolean;
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly failureCode?: string | undefined;
+    readonly retryAt?: number | null | undefined;
+  }): Promise<void> {
+    const operation = this.mutation.then(async () => {
+      const document = await this.load();
+      const entry = document.connections[input.connectionId] ?? freshEntry(input.now);
+      if (entry.recordedAttempts.includes(input.attemptId)) return;
+      const usage = recordCapacityUsage({
+        state: entry.usage,
+        now: input.now,
+        inputTokens: input.inputTokens,
+        outputTokens: input.outputTokens,
+        ...(input.retryAt !== undefined ? { providerResetAt: input.retryAt } : {}),
+      });
+      entry.usage = {
+        ...usage,
+        requestTimestamps: [...usage.requestTimestamps],
+        tokenSamples: usage.tokenSamples.map((sample) => ({ ...sample })),
+      };
+      entry.circuit = input.succeeded
+        ? recordCircuitSuccess()
+        : recordCircuitFailure({
+            state: entry.circuit,
+            now: input.now,
+            threshold: 2,
+            cooldownMs: Math.max(60_000, (input.retryAt ?? 0) - input.now),
+            transient: ["rate_limited", "timeout", "provider_unavailable", "unknown"].includes(input.failureCode ?? ""),
+            ...(input.failureCode ? { code: input.failureCode } : {}),
+          });
+      entry.recordedAttempts.push(input.attemptId);
+      document.connections[input.connectionId] = entry;
+      await this.save(document);
+    });
+    this.mutation = operation.catch(() => undefined);
+    return operation;
   }
 
   private async load(): Promise<Document> {

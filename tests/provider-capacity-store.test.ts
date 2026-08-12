@@ -56,6 +56,43 @@ test("capacity and circuits persist exactly once across restart", async () => {
   }
 });
 
+test("Agent Canvas gateway attempts update durable usage and open the circuit on repeated rate limits", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-gateway-capacity-"));
+  try {
+    const path = join(root, "provider-capacity.json");
+    const store = new ProviderCapacityStore(path);
+    const now = 1_800_000_000_000;
+    for (const attemptId of ["gateway-1", "gateway-2"]) {
+      await store.recordGatewayAttempt({
+        connectionId: "groq-main",
+        attemptId,
+        now,
+        succeeded: false,
+        inputTokens: 500,
+        outputTokens: 0,
+        failureCode: "rate_limited",
+        retryAt: now + 90_000,
+      });
+    }
+    await store.recordGatewayAttempt({
+      connectionId: "groq-main",
+      attemptId: "gateway-2",
+      now,
+      succeeded: false,
+      inputTokens: 500,
+      outputTokens: 0,
+      failureCode: "rate_limited",
+      retryAt: now + 90_000,
+    });
+    const snapshot = await new ProviderCapacityStore(path).snapshot(["groq-main"], now);
+    assert.equal(snapshot.usageByConnectionId["groq-main"]?.requestsToday, 2);
+    assert.equal(snapshot.usageByConnectionId["groq-main"]?.tokensToday, 1_000);
+    assert.equal(snapshot.circuitOpenUntilByConnectionId["groq-main"], now + 90_000);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 function projection(
   attempts: ProviderJournalProjection["attempts"]
 ): ProviderJournalProjection {
@@ -95,4 +132,3 @@ function attempt(
     outputTokens: null,
   };
 }
-

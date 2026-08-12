@@ -8,6 +8,9 @@ import { NativePicker } from "./native-picker.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { ProjectContextService } from "./project-context-service.js";
 import { ProjectIntakeCoordinator } from "./project-intake-coordinator.js";
+import { FreeProviderProjectKindAssistant } from "./free-provider-project-kind-assistant.js";
+import { AgentCanvasModelGateway } from "./agent-canvas-model-gateway.js";
+import { ProviderCapacityStore } from "./provider-capacity-store.js";
 import { ProjectSolutionService } from "./project-solution-service.js";
 import { ProjectSolutionOrchestrator } from "./project-solution-orchestrator.js";
 import { FreeProviderSolutionModel } from "./free-provider-solution-model.js";
@@ -64,7 +67,6 @@ const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
 const projectDeliveryPlans = new ProjectDeliveryPlanService(localProjects);
 const projectLifecycles = new ProjectLifecycleService(stateDirectory);
-const projectIntake = new ProjectIntakeCoordinator(projectContexts, projectLifecycles, localProjects);
 const nativePicker = new NativePicker();
 const localRequests = new LocalRequestStore(
   stateDirectory,
@@ -117,6 +119,25 @@ const providerConnectionService = new ProviderConnectionService(
   providerConnections,
   credentialVault,
   adapterRegistry
+);
+const intakeCapacity = new ProviderCapacityStore(resolve(stateDirectory, "provider-capacity.json"));
+const intakeGateway = new AgentCanvasModelGateway(
+  providerConnections,
+  credentialVault,
+  adapterRegistry,
+  async () => {
+    const connections = await providerConnections.list();
+    return intakeCapacity.snapshot(connections.map((connection) => connection.id), Date.now());
+  },
+  Date.now,
+  undefined,
+  async (attempt) => intakeCapacity.recordGatewayAttempt({ ...attempt, now: Date.now() })
+);
+const projectIntake = new ProjectIntakeCoordinator(
+  projectContexts,
+  projectLifecycles,
+  localProjects,
+  new FreeProviderProjectKindAssistant(intakeGateway)
 );
 const projectEgress = new ProjectEgressPolicyService(stateDirectory);
 const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
