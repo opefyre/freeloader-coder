@@ -3,11 +3,26 @@ import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { LocalProjectRegistry } from "./local-project-registry.js";
 import type { LocalProjectSnapshot } from "../../../packages/runtime/src/local-projects.js";
 
+export type ProjectKindClassification = {
+  readonly kind: "new_product" | "existing_product" | "unknown";
+  readonly confidence: number;
+  readonly evidence: readonly string[];
+};
+
+export interface ProjectKindAssistant {
+  classify(input: {
+    readonly outcome: string;
+    readonly ownerSelection: "new_product" | "existing_product";
+    readonly deterministic: ProjectKindClassification;
+  }): Promise<ProjectKindClassification>;
+}
+
 export class ProjectIntakeCoordinator {
   constructor(
     private readonly contexts: ProjectContextService,
     private readonly lifecycles: ProjectLifecycleService,
-    private readonly projects?: LocalProjectRegistry
+    private readonly projects?: LocalProjectRegistry,
+    private readonly assistant?: ProjectKindAssistant
   ) {}
 
   async generate(projectId: string, input: unknown) {
@@ -35,7 +50,10 @@ export class ProjectIntakeCoordinator {
     }
     if (lifecycle.stage === "context_review" && !lifecycle.assessment) {
       const snapshot = this.projects ? (await this.projects.list()).projects.find((project) => project.id === projectId) : undefined;
-      const classification = classifyProjectKind(snapshot, intake.projectKind);
+      const deterministic = classifyProjectKind(snapshot, intake.projectKind);
+      const classification = deterministic.kind === "unknown" && this.assistant
+        ? await assistProjectKind(this.assistant, { outcome: intake.outcome, ownerSelection: intake.projectKind, deterministic })
+        : deterministic;
       await this.lifecycles.assess(projectId, {
         schemaVersion: 1,
         expectedRevision: lifecycle.revision,
@@ -46,6 +64,41 @@ export class ProjectIntakeCoordinator {
     }
     return context;
   }
+}
+
+export async function assistProjectKind(
+  assistant: ProjectKindAssistant,
+  input: Parameters<ProjectKindAssistant["classify"]>[0]
+): Promise<ProjectKindClassification> {
+  try {
+    return constrainAssistedClassification(input.deterministic, await assistant.classify(input));
+  } catch {
+    return {
+      ...input.deterministic,
+      evidence: [...input.deterministic.evidence, "Model assistance was unavailable; deterministic ambiguity was preserved for owner clarification."],
+      confidence: Math.min(input.deterministic.confidence, 0.4),
+    };
+  }
+}
+
+export function constrainAssistedClassification(
+  deterministic: ProjectKindClassification,
+  assisted: ProjectKindClassification
+): ProjectKindClassification {
+  if (deterministic.kind !== "unknown") return deterministic;
+  const strongConflict = deterministic.evidence.some((item) => item.includes("conflicts with the owner's"));
+  if (strongConflict || assisted.kind === "unknown" || assisted.confidence < 0.8) {
+    return {
+      ...deterministic,
+      evidence: [...deterministic.evidence, ...assisted.evidence],
+      confidence: Math.min(deterministic.confidence, assisted.confidence),
+    };
+  }
+  return {
+    kind: assisted.kind,
+    confidence: Math.min(0.9, assisted.confidence),
+    evidence: [...deterministic.evidence, ...assisted.evidence],
+  };
 }
 
 export function parseProjectIntake(input: unknown): {
