@@ -143,6 +143,26 @@ export async function addLocalProjectFiles(input: {
   );
 }
 
+export async function addLocalProjectFileContent(input: {
+  endpoint: string;
+  projectId: string;
+  files: readonly { label: string; mediaType: string; contentBase64: string }[];
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<LocalProjectFileImportResponse> {
+  assertProjectId(input.projectId);
+  return localProjectFileImportResponseSchema.parse(
+    await request({
+      endpoint: input.endpoint,
+      path: `/api/v1/projects/${input.projectId}/file-content`,
+      method: "POST",
+      body: { schemaVersion: 1, files: input.files },
+      idempotencyKey: input.idempotencyKey,
+      ...(input.fetcher ? { fetcher: input.fetcher } : {}),
+    })
+  );
+}
+
 export async function generateLocalProjectContext(input: {
   endpoint: string;
   projectId: string;

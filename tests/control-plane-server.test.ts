@@ -310,6 +310,10 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
           }],
         };
       },
+      addFileContent: (projectId, input) => {
+        calls.push(`file-content:${projectId}:${JSON.stringify(input)}`);
+        return { schemaVersion: 1, outcome: "imported", files: [{ label: "brief.md", projectRelativePath: ".pipeline/inputs/brief.md", bytes: 5, evidence: { status: "extracted", mediaType: "text/markdown", sourceDigest: "f".repeat(64), unitCount: 1, warning: null } }] };
+      },
       generateContext: (projectId, input) => {
         calls.push(`context:${projectId}:${JSON.stringify(input)}`);
         return { schemaVersion: 1, projectId, path: "CONTEXT.md", digest: "a".repeat(64), groundingDigest: "b".repeat(64), topologyDigest: "c".repeat(64), observedAt, citations: [{ path: "README.md", digest: "d".repeat(64) }] };
@@ -383,6 +387,12 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       body: JSON.stringify({ schemaVersion: 1, paths: ["/Users/example/brief.pdf"] }),
     });
     assert.equal(files.status, 200);
+    const fileContent = await fetch(`${base}/api/v1/projects/${project.id}/file-content`, {
+      method: "POST",
+      headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "file-content:0123456789" },
+      body: JSON.stringify({ schemaVersion: 1, files: [{ label: "brief.md", mediaType: "text/markdown", contentBase64: "YnJpZWY=" }] }),
+    });
+    assert.equal(fileContent.status, 200);
     const context = await fetch(`${base}/api/v1/projects/${project.id}/context`, {
       method: "POST",
       headers: { Origin: origin, "Content-Type": "application/json", "Idempotency-Key": "context:0123456789" },
@@ -403,7 +413,7 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       { method: "DELETE", headers: { Origin: origin } }
     );
     assert.equal(forget.status, 200);
-    assert.equal(calls.length, 7);
+    assert.equal(calls.length, 8);
 
     assert.equal(
       (

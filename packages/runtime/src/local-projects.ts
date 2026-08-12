@@ -139,6 +139,18 @@ export const localProjectFileImportSchema = z.strictObject({
   paths: z.array(z.string().trim().min(1).max(4_096)).min(1).max(20),
 });
 
+export const localProjectContentImportSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  files: z.array(z.strictObject({
+    label: z.string().trim().min(1).max(255),
+    mediaType: z.string().trim().min(1).max(200),
+    contentBase64: z.string().min(1).max(6_700_000).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+  })).min(1).max(20),
+}).superRefine((value, context) => {
+  const decodedBytes = value.files.reduce((total, file) => total + Math.floor(file.contentBase64.length * 3 / 4), 0);
+  if (decodedBytes > 20_000_000) context.addIssue({ code: "custom", message: "Attached files exceed the 20 MB total limit." });
+});
+
 export const localProjectFileImportResponseSchema = z.strictObject({
   schemaVersion: z.literal(1),
   outcome: z.literal("imported"),
@@ -169,6 +181,7 @@ export type LocalProjectCreation = z.infer<typeof localProjectCreationSchema>;
 export type ProjectResourceBinding = z.infer<typeof projectResourceBindingSchema>;
 export type ProjectResourceSelection = z.infer<typeof projectResourceSelectionSchema>;
 export type LocalProjectFileImportResponse = z.infer<typeof localProjectFileImportResponseSchema>;
+export type LocalProjectContentImport = z.infer<typeof localProjectContentImportSchema>;
 
 export const projectContextSnapshotSchema = z.strictObject({
   schemaVersion: z.literal(1),

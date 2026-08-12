@@ -13,6 +13,7 @@ import {
   localProjectRegistrationSchema,
   projectResourceSelectionSchema,
   localProjectFileImportSchema,
+  localProjectContentImportSchema,
   localProjectFileImportResponseSchema,
   projectContextSnapshotSchema,
   validateLocalProjectCollection,
@@ -168,6 +169,7 @@ export type ControlPlaneServerOptions = {
     rescan: (projectId: string) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     setResources?: (projectId: string, input: unknown) => LocalProjectSnapshot | Promise<LocalProjectSnapshot>;
     addFiles?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
+    addFileContent?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     generateContext?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     artifacts?: (projectId: string) => unknown | Promise<unknown>;
     openArtifact?: (projectId: string, kind: "context" | "memory" | "research" | "product" | "design" | "delivery_plan" | "ops_rules" | "infra" | "security" | "decisions" | "status") => unknown | Promise<unknown>;
@@ -1209,7 +1211,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const projectRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|context|artifacts)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|file-content|context|artifacts)$/
       );
       const projectLifecycleRoute = url.pathname.match(
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
@@ -1343,6 +1345,18 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         const body = localProjectFileImportSchema.parse(await readJsonBody(request));
         sendJson(response, 200, localProjectFileImportResponseSchema.parse(
           await options.projects.addFiles(projectRoute[1] ?? "", body)
+        ));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        projectRoute?.[2] === "file-content" &&
+        options.projects?.addFileContent
+      ) {
+        requireIdempotencyKey(request);
+        const body = localProjectContentImportSchema.parse(await readJsonBody(request, 28_000_000));
+        sendJson(response, 200, localProjectFileImportResponseSchema.parse(
+          await options.projects.addFileContent(projectRoute[1] ?? "", body)
         ));
         return;
       }
@@ -1524,19 +1538,19 @@ function requireIdempotencyKey(request: IncomingMessage): string {
   return value;
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+async function readJsonBody(request: IncomingMessage, maximumBytes = MAX_REQUEST_BYTES): Promise<unknown> {
   const contentType = request.headers["content-type"]?.split(";")[0]?.trim();
   if (contentType !== "application/json") {
     throw new ControlPlaneRequestError("Content-Type must be application/json.");
   }
   const declared = Number(request.headers["content-length"] ?? 0);
-  if (!Number.isSafeInteger(declared) || declared < 1 || declared > MAX_REQUEST_BYTES) {
+  if (!Number.isSafeInteger(declared) || declared < 1 || declared > maximumBytes) {
     throw new ControlPlaneRequestError("Request body is invalid.");
   }
   let value = "";
   for await (const chunk of request) {
     value += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
-    if (Buffer.byteLength(value, "utf8") > MAX_REQUEST_BYTES) {
+    if (Buffer.byteLength(value, "utf8") > maximumBytes) {
       throw new ControlPlaneRequestError("Request body is too large.");
     }
   }

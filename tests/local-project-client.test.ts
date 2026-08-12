@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addLocalProjectFileContent,
   addLocalProjectFiles,
   createLocalProject,
   forgetLocalProject,
@@ -223,6 +224,24 @@ test("browser client imports picker-selected files into a project", async () => 
   });
   assert.equal(result.files[0]?.label, "brief.pdf");
   assert.match(observedBody, /brief\.pdf/);
+});
+
+test("browser client imports dropped file content without exposing a local path", async () => {
+  let observedUrl = ""; let observedBody = "";
+  const result = await addLocalProjectFileContent({
+    endpoint: "http://127.0.0.1:4312",
+    projectId: "project_0123456789abcdef",
+    files: [{ label: "brief.md", mediaType: "text/markdown", contentBase64: "YnJpZWY=" }],
+    idempotencyKey: "file-content:0123456789",
+    fetcher: async (url, init) => {
+      observedUrl = String(url); observedBody = String(init?.body ?? "");
+      return Response.json({ schemaVersion: 1, outcome: "imported", files: [{ label: "brief.md", projectRelativePath: ".pipeline/inputs/brief.md", bytes: 5, evidence: { status: "extracted", mediaType: "text/markdown", sourceDigest: "e".repeat(64), unitCount: 1, warning: null } }] });
+    },
+  });
+  assert.match(observedUrl, /file-content$/);
+  assert.match(observedBody, /YnJpZWY=/);
+  assert.doesNotMatch(observedBody, /Users\//);
+  assert.equal(result.files[0]?.label, "brief.md");
 });
 
 test("browser client rejects remote endpoints, malformed data, and oversized data", async () => {

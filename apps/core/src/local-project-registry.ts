@@ -23,6 +23,7 @@ import {
   projectResourceBindingSchema,
   projectResourceSelectionSchema,
   localProjectFileImportSchema,
+  localProjectContentImportSchema,
   localProjectFileImportResponseSchema,
   localProjectSnapshotSchema,
   validateLocalProjectCollection,
@@ -416,6 +417,35 @@ export class LocalProjectRegistry {
     }
     await rm(staging, { recursive: true, force: true });
     return localProjectFileImportResponseSchema.parse({ schemaVersion: 1, outcome: "imported", files: imported });
+  }
+
+  async addFileContent(projectId: string, input: unknown): Promise<LocalProjectFileImportResponse> {
+    assertProjectId(projectId);
+    const request = localProjectContentImportSchema.parse(input);
+    const projectRoot = await this.canonicalRoot(projectId);
+    await mkdir(resolve(projectRoot, ".pipeline"), { recursive: true, mode: 0o700 });
+    const uploadRoot = resolve(projectRoot, ".pipeline", `.content-upload-${randomUUID()}`);
+    await mkdir(uploadRoot, { recursive: false, mode: 0o700 });
+    const paths: string[] = [];
+    try {
+      let totalBytes = 0;
+      for (const [index, file] of request.files.entries()) {
+        const content = Buffer.from(file.contentBase64, "base64");
+        totalBytes += content.length;
+        if (content.length < 1 || content.length > 5_000_000 || totalBytes > 20_000_000) {
+          throw new LocalProjectError("scan_limit", "Selected files exceed the 5 MB per-file or 20 MB total limit.");
+        }
+        const label = basename(file.label).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 180) || `attachment-${index + 1}`;
+        const itemRoot = resolve(uploadRoot, String(index));
+        await mkdir(itemRoot, { mode: 0o700 });
+        const path = resolve(itemRoot, label);
+        await writeFile(path, content, { mode: 0o600, flag: "wx" });
+        paths.push(path);
+      }
+      return await this.addFiles(projectId, { schemaVersion: 1, paths });
+    } finally {
+      await rm(uploadRoot, { recursive: true, force: true });
+    }
   }
 
   async rescan(projectId: string): Promise<LocalProjectSnapshot> {

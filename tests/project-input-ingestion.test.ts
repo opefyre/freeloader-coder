@@ -43,6 +43,25 @@ test("attachment ingestion rejects symlinks and MIME disguises, then cleans inte
   } finally { await rm(fixture.root, { recursive: true, force: true }); }
 });
 
+test("browser content ingestion uses the same bounded, untrusted evidence pipeline and removes upload staging", async () => {
+  const fixture = await createFixture();
+  try {
+    const content = Buffer.from("Product brief from browser upload.");
+    const result = await fixture.registry.addFileContent(fixture.projectId, {
+      schemaVersion: 1,
+      files: [{ label: "../brief.md", mediaType: "text/markdown", contentBase64: content.toString("base64") }],
+    });
+    assert.equal(result.files[0]?.label, "brief.md");
+    assert.equal(result.files[0]?.evidence.status, "extracted");
+    const pipelineNames = await readdir(join(fixture.repository, ".pipeline"));
+    assert.equal(pipelineNames.some((name) => name.startsWith(".content-upload-")), false);
+    await assert.rejects(() => fixture.registry.addFileContent(fixture.projectId, {
+      schemaVersion: 1,
+      files: [{ label: "empty.md", mediaType: "text/markdown", contentBase64: "" }],
+    }));
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
 async function createFixture(): Promise<{ root: string; repository: string; registry: LocalProjectRegistry; projectId: string }> {
   const root = join(process.cwd(), `.test-input-ingestion-${crypto.randomUUID()}`); const repository = join(root, "project");
   await mkdir(repository, { recursive: true }); await writeFile(join(repository, "README.md"), "# Project\n"); await execFileAsync("git", ["init", "-q"], { cwd: repository });

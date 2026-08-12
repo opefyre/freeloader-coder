@@ -31,6 +31,7 @@ import type {
   LocalRequest,
 } from "../../../../../packages/runtime/src/local-requests.js";
 import {
+  addLocalProjectFileContent,
   addLocalProjectFiles,
   createLocalProject,
   generateLocalProjectContext,
@@ -92,6 +93,15 @@ type LocalVoiceDraft = import("./local-voice-input.js").LocalVoiceDraft;
 const endpoint =
   import.meta.env.VITE_PIPELINE_STUDIO_CONTROL_URL ?? "http://127.0.0.1:4312";
 
+function encodeBase64(value: ArrayBuffer): string {
+  const bytes = new Uint8Array(value);
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+  }
+  return btoa(binary);
+}
+
 export function LocalRequestPanel(props: {
   mode: "compose" | "queue";
   initialProjectId?: string | undefined;
@@ -103,6 +113,7 @@ export function LocalRequestPanel(props: {
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceLabel, setWorkspaceLabel] = useState("");
   const [attachments, setAttachments] = useState<readonly { path: string; label: string }[]>([]);
+  const [browserAttachments, setBrowserAttachments] = useState<readonly File[]>([]);
   const [voice, setVoice] = useState<LocalVoiceDraft | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [resourcePickerOpen, setResourcePickerOpen] = useState(false);
@@ -203,7 +214,8 @@ export function LocalRequestPanel(props: {
   }
 
   async function submit() {
-    if (!projectId || (outcome.trim().length < 3 && (voice?.transcript.trim().length ?? 0) < 3)) {
+    const hasAttachments = attachments.length > 0 || browserAttachments.length > 0;
+    if (!projectId || (outcome.trim().length < 3 && (voice?.transcript.trim().length ?? 0) < 3 && !hasAttachments)) {
       setNotice("Describe what you want to build or change.");
       return;
     }
@@ -214,7 +226,8 @@ export function LocalRequestPanel(props: {
     setStatus("working");
     try {
       const voiceEvidence = voice ? prepareVoiceEvidence({ transcript: voice.transcript, mediaType: voice.mediaType, audioBytes: voice.bytes, durationSeconds: voice.durationSeconds, adapterId: "manual-local", corrected: voice.corrected }) : null;
-      const submittedIdea = voiceEvidence ? `${outcome.trim()}\n\n${voiceEvidence.markdown}` : outcome.trim();
+      const writtenIdea = outcome.trim() || (hasAttachments ? "Review the attached evidence and design the product described by it." : "");
+      const submittedIdea = voiceEvidence ? `${writtenIdea}\n\n${voiceEvidence.markdown}` : writtenIdea;
       let targetProjectId = projectId;
       let targetProjectName =
         projects.find((project) => project.id === projectId)?.displayName ?? "New project";
@@ -239,6 +252,19 @@ export function LocalRequestPanel(props: {
         });
         importedFiles = imported.files;
       }
+      if (browserAttachments.length > 0) {
+        const imported = await addLocalProjectFileContent({
+          endpoint,
+          projectId: targetProjectId,
+          files: await Promise.all(browserAttachments.map(async (file) => ({
+            label: file.name,
+            mediaType: file.type || "application/octet-stream",
+            contentBase64: encodeBase64(await file.arrayBuffer()),
+          }))),
+          idempotencyKey: `file-content:${crypto.randomUUID()}`,
+        });
+        importedFiles = [...importedFiles, ...imported.files];
+      }
       const request = await createLocalRequest({
         endpoint,
         projectId: targetProjectId,
@@ -258,6 +284,7 @@ export function LocalRequestPanel(props: {
       setWorkspacePath("");
       setWorkspaceLabel("");
       setAttachments([]);
+      setBrowserAttachments([]);
       setVoice(null);
       setLastSubmission({
         idea: submittedIdea,
@@ -311,6 +338,20 @@ export function LocalRequestPanel(props: {
       setStatus("ready");
       setNotice(error instanceof Error ? error.message : "File picker failed safely.");
     }
+  }
+
+  function acceptBrowserFiles(files: FileList | readonly File[]) {
+    const incoming = [...files];
+    const totalBytes = [...browserAttachments, ...incoming].reduce((total, file) => total + file.size, 0);
+    if (incoming.some((file) => file.size > 5_000_000) || totalBytes > 20_000_000) {
+      setNotice("Attachments must be 5 MB or smaller each and 20 MB or smaller together.");
+      return;
+    }
+    setBrowserAttachments((current) => {
+      const unique = new Map([...current, ...incoming].map((file) => [`${file.name}:${file.size}:${file.lastModified}`, file]));
+      return [...unique.values()].slice(0, 20);
+    });
+    setNotice(`${incoming.length} file${incoming.length === 1 ? "" : "s"} attached.`);
   }
 
   async function openResourcePicker() {
@@ -904,19 +945,31 @@ export function LocalRequestPanel(props: {
               <label className="sr-only" htmlFor="build-request">
                 What would you like to build?
               </label>
-                <textarea
-                  id="build-request"
-                  value={outcome}
-                  onChange={(event) => setOutcome(event.target.value)}
-                  rows={3}
-                  maxLength={20_000}
-                  placeholder="Describe your idea…"
-                  className="min-h-40 w-full resize-y rounded-3xl bg-muted px-5 py-4 text-base leading-7 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-                />
+                <div
+                  onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
+                  onDrop={(event) => { event.preventDefault(); acceptBrowserFiles(event.dataTransfer.files); }}
+                  className="rounded-3xl focus-within:ring-3 focus-within:ring-ring/30"
+                >
+                  <textarea
+                    id="build-request"
+                    value={outcome}
+                    onChange={(event) => setOutcome(event.target.value)}
+                    rows={3}
+                    maxLength={20_000}
+                    placeholder="Describe your idea… or drop files here"
+                    className="min-h-40 w-full resize-y rounded-3xl bg-muted px-5 py-4 text-base leading-7 outline-none"
+                  />
+                </div>
               {attachments.length > 0 && <div className="flex flex-wrap gap-2">
                 {attachments.map((attachment) => <span key={attachment.path} className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs">
                   {attachment.label}
                   <button type="button" aria-label={`Remove ${attachment.label}`} onClick={() => setAttachments((current) => current.filter((item) => item.path !== attachment.path))} className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"><X /></button>
+                </span>)}
+              </div>}
+              {browserAttachments.length > 0 && <div className="flex flex-wrap gap-2" aria-label="Dropped attachments">
+                {browserAttachments.map((attachment) => <span key={`${attachment.name}:${attachment.size}:${attachment.lastModified}`} className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs">
+                  {attachment.name}
+                  <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => setBrowserAttachments((current) => current.filter((item) => item !== attachment))} className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"><X /></button>
                 </span>)}
               </div>}
               {voice && <Suspense fallback={null}><LocalVoiceInput value={voice} disabled={status === "working"} onChange={setVoice} onNotice={setNotice} /></Suspense>}
@@ -936,11 +989,15 @@ export function LocalRequestPanel(props: {
                   <Button type="button" size="sm" variant="ghost" aria-label="Attach files" onClick={() => void chooseFiles()} disabled={status === "working"}>
                     <PaperclipHorizontal />
                   </Button>
+                  <label className="inline-flex h-8 cursor-pointer items-center rounded-xl px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">
+                    <input type="file" multiple className="sr-only" disabled={status === "working"} onChange={(event) => { if (event.target.files) acceptBrowserFiles(event.target.files); event.target.value = ""; }} />
+                    Upload
+                  </label>
                   {!voice && <Suspense fallback={null}><LocalVoiceInput value={null} disabled={status === "working"} onChange={setVoice} onNotice={setNotice} /></Suspense>}
                 </div>
                 <Button
                   onClick={() => void submit()}
-                  disabled={status !== "ready" || !projectId || (outcome.trim().length < 3 && (voice?.transcript.trim().length ?? 0) < 3) || (voice !== null && voice.transcript.trim().length === 0) || (projectId === "__new__" && !workspacePath.trim())}
+                  disabled={status !== "ready" || !projectId || (outcome.trim().length < 3 && (voice?.transcript.trim().length ?? 0) < 3 && attachments.length === 0 && browserAttachments.length === 0) || (voice !== null && voice.transcript.trim().length === 0) || (projectId === "__new__" && !workspacePath.trim())}
                 >
                   Start
                   <ArrowRight />
