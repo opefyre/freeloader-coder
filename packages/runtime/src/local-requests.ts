@@ -117,7 +117,7 @@ export const localGroundingSchema = z.strictObject({
     bytes: z.number().int().nonnegative().max(65_536),
     classification: z.enum(["guidance", "manifest", "documentation"]),
     excerpt: z.string().max(2_000),
-  })).min(1).max(12),
+  })).max(12),
   limitations: z.array(z.string().trim().min(1).max(300)).min(1).max(10),
 });
 

@@ -194,12 +194,6 @@ export class LocalProjectRegistry {
         }
       }
     }
-    if (sources.length === 0) {
-      throw new LocalProjectError(
-        "scan_failed",
-        "No safe root guidance, documentation, or manifest was available for grounding."
-      );
-    }
     const body = { projectId, sources };
     const grounding = localGroundingSchema.parse({
       schemaVersion: 1,
@@ -209,7 +203,9 @@ export class LocalProjectRegistry {
       observedAt: Date.now(),
       sources,
       limitations: [
-        "Only explicitly allowlisted root files were read.",
+        sources.length > 0
+          ? "Only explicitly allowlisted root files were read."
+          : "The workspace has no readable root guidance, documentation, or manifest yet.",
         "Symlinks, sensitive-shaped content, source directories, and command output were excluded.",
       ],
     });

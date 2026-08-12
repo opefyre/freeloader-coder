@@ -15,7 +15,6 @@ test("new project intake verifies CONTEXT.md and reaches solution design without
   const workspace = join(root, "new-product");
   try {
     await mkdir(join(workspace, ".git"), { recursive: true });
-    await writeFile(join(workspace, "README.md"), "# New product\n", "utf8");
     const projects = new LocalProjectRegistry(state);
     const project = await projects.register({ schemaVersion: 1, path: workspace });
     const lifecycles = new ProjectLifecycleService(state);
@@ -33,6 +32,9 @@ test("new project intake verifies CONTEXT.md and reaches solution design without
     assert.equal(lifecycle?.artifacts[0]?.digest, context.digest);
     assert.equal(lifecycle?.artifacts[0]?.qaPassed, true);
     assert.deepEqual(lifecycle?.artifacts[0]?.reviewerIds, ["context-grounding", "context-integrity"]);
+    const planning = await projects.grounding(project.id);
+    assert.equal(planning.grounding.sources.length, 0);
+    assert.match(planning.grounding.limitations[0] ?? "", /no readable root guidance/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
