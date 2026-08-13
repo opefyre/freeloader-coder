@@ -14,11 +14,12 @@ const digest = "d".repeat(64);
 const evidence = "e".repeat(64);
 const plan = completeDeliveryPlan();
 const draft = { ...plan, revision: 1, reviews: [{ schemaVersion: 1 as const, reviewerId: "delivery-reviewer", discipline: "delivery" as const, verdict: "pass" as const, findings: [] }, { schemaVersion: 1 as const, reviewerId: "technical-reviewer", discipline: "technical" as const, verdict: "pass" as const, findings: [] }] };
+const eligibility = { eligibility: async () => ({ schemaVersion: 1 as const, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: { classification: "major_feature" as const, rationale: ["Multi-stage feature."], affectedDomains: ["frontend", "backend"], estimatedDeveloperHours: 24, requiresArchitectureDecision: true, confidence: 1 }, evidence: ["Approved major feature."], alternatives: [], override: null, decidedAt: 1 }) };
 
 test("autonomous worker heals one failure then validates, reviews, integrates, and completes", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-worker-"));
   try {
-    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100);
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
     let fastCalls = 0;
     const sequence: string[] = [];
     const adapters: ProjectExecutionAdapters = {
@@ -42,7 +43,7 @@ test("autonomous worker heals one failure then validates, reviews, integrates, a
 test("integration conflict pauses safely, preserves non-completion, and publishes the state", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-conflict-"));
   try {
-    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100);
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
     let observed = 0;
     const adapters: ProjectExecutionAdapters = {
       candidates: async () => [{ providerId: "groq", modelId: "coder", deviceId: "spare-mac", capabilities: ["chat", "structured_output"], privacyClasses: ["source_code"], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 4_000, deviceLoad: 0.2, preference: 10 }],

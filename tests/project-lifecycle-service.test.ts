@@ -74,6 +74,37 @@ test("uncertain eligibility becomes a durable selectable owner question", async 
   assert.equal((await service.eligibility(projectId))?.eligible, true);
 });
 
+test("owner eligibility override is revision-bound, request-bound, durable, and idempotent", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pipeline-eligibility-override-"));
+  const service = new ProjectLifecycleService(root);
+  const projectId = "project_0123456789abcdef";
+  const begun = await service.begin({ projectId, mission: "Improve the experience.", now: 1 });
+  const assessed = await service.assess(projectId, { schemaVersion: 1, expectedRevision: begun.revision, requestId: "request_abcdef01234567890123", projectKind: "unknown", affectedDomains: [], deliveryStages: [], estimatedDeveloperHours: 0, requiresArchitectureDecision: false, evidence: ["Scope is ambiguous."], confidence: 0.4 }, "eligibility-override-assess-001");
+  await assert.rejects(() => service.override(projectId, { schemaVersion: 1, expectedRevision: begun.revision, requestId: assessed.decision.requestId, rationale: "Owner confirms this is a major launch capability." }, "eligibility-override-stale-001"), /scope changed/i);
+  await assert.rejects(() => service.override(projectId, { schemaVersion: 1, expectedRevision: assessed.lifecycle.revision, requestId: "request_0123456789abcdef0123", rationale: "Owner confirms this is a major launch capability." }, "eligibility-override-wrong-request-001"), /superseded/i);
+  const input = { schemaVersion: 1 as const, expectedRevision: assessed.lifecycle.revision, requestId: assessed.decision.requestId, rationale: "Owner confirms this belongs to the approved major launch capability." };
+  const overridden = await service.override(projectId, input, "eligibility-override-valid-001");
+  const replay = await service.override(projectId, input, "eligibility-override-valid-001");
+  assert.equal(overridden.lifecycle.stage, "solution_design");
+  assert.equal(overridden.decision.override?.authorizedBy, "owner");
+  assert.equal(overridden.decision.assessment.classification, "major_feature");
+  assert.deepEqual(replay, overridden);
+  assert.deepEqual(await new ProjectLifecycleService(root).eligibility(projectId), overridden.decision);
+});
+
+test("direct planning publication cannot bypass missing or rejected eligibility", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pipeline-eligibility-direct-gate-"));
+  const service = new ProjectLifecycleService(root);
+  const projectId = "project_0123456789abcdef";
+  await service.begin({ projectId, mission: "Change one label.", now: 1 });
+  const solution = { kind: "solution" as const, projectRelativePath: ".pipeline/SOLUTION.md" as const, digest: "b".repeat(64), revision: 1, createdAt: 3, citations: ["local://CONTEXT.md"], reviewerIds: ["product-reviewer", "technical-reviewer"], qaPassed: true as const };
+  await assert.rejects(() => service.publishSolution(projectId, solution), /eligibility/i);
+  const current = await service.get(projectId);
+  const rejected = await service.assess(projectId, { schemaVersion: 1, expectedRevision: current!.revision, requestId: "request_0123456789abcdef0123", projectKind: "existing_product", affectedDomains: ["frontend"], deliveryStages: ["frontend"], estimatedDeveloperHours: 1, requiresArchitectureDecision: false, evidence: ["One isolated label change."], confidence: 1 }, "eligibility-direct-reject-001");
+  assert.equal(rejected.lifecycle.stage, "cancelled");
+  await assert.rejects(() => service.publishSolution(projectId, solution), /blocked|eligibility|major-work/i);
+});
+
 test("solution decisions are digest-bound, revision-bound, and idempotent", async () => {
   const root = await mkdtemp(join(tmpdir(), "pipeline-solution-decision-"));
   const service = new ProjectLifecycleService(root);

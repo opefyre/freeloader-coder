@@ -10,6 +10,7 @@ import type { ProjectLifecycleRecord } from "../../../packages/orchestration/src
 import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { ProjectSolutionService } from "./project-solution-service.js";
 import type { ProjectEgressPermit } from "./project-egress-policy-service.js";
+import { assertDeliveryPlanningEligible } from "../../../packages/orchestration/src/eligibility-gate.js";
 
 export type SolutionRole = "product_research" | "technical_research" | "solution_revision_scope" | "solution_reconciliation" | "product_review" | "technical_review" | "delivery_planning" | "delivery_review" | "technical_delivery_review";
 
@@ -37,7 +38,7 @@ export interface VerifiedProjectContext {
 
 export class ProjectSolutionOrchestrator {
   constructor(
-    private readonly lifecycles: Pick<ProjectLifecycleService, "get" | "publishSolution">,
+    private readonly lifecycles: Pick<ProjectLifecycleService, "get" | "eligibility" | "publishSolution">,
     private readonly solutions: Pick<ProjectSolutionService, "publish" | "publishResearch" | "read" | "readContent">,
     private readonly context: { readVerified(projectId: string): Promise<VerifiedProjectContext> },
     private readonly egress: { authorize(projectId: string, contextDigest: string): Promise<ProjectEgressPermit> },
@@ -50,6 +51,13 @@ export class ProjectSolutionOrchestrator {
     if (!lifecycle) throw new Error("Project lifecycle was not found.");
     if (lifecycle.stage === "awaiting_design_approval") return lifecycle;
     if (lifecycle.stage !== "solution_design") throw new Error("Solution research is available only during solution design.");
+    const eligibility = await this.lifecycles.eligibility(projectId);
+    if (!eligibility) throw new Error("Solution research requires a current major-work eligibility decision.");
+    assertDeliveryPlanningEligible(eligibility, {
+      projectId,
+      assessment: lifecycle.assessment,
+      now: this.now(),
+    });
     const verified = await this.context.readVerified(projectId);
     const permit = await this.egress.authorize(projectId, verified.digest);
     const existing = await this.readExisting(projectId);

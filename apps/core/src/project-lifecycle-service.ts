@@ -12,7 +12,7 @@ import {
   type OwnerQuestion,
   type ProjectLifecycleRecord,
 } from "../../../packages/orchestration/src/project-lifecycle.js";
-import { assessEligibility, eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
+import { assessEligibility, assertDeliveryPlanningEligible, authorizeEligibilityOverride, eligibilityDecisionSchema, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 
 const answerRequestSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -31,6 +31,12 @@ const reopenRequestSchema = z.strictObject({
   expectedRevision: z.number().int().nonnegative(),
   mission: z.string().trim().min(3).max(20_000),
   reason: z.string().trim().min(3).max(2_000),
+});
+const eligibilityOverrideRequestSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  expectedRevision: z.number().int().nonnegative(),
+  requestId: z.string().regex(/^request_[a-f0-9]{20}$/),
+  rationale: z.string().trim().min(10).max(2_000),
 });
 const stateSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -81,6 +87,36 @@ export class ProjectLifecycleService {
       const questions = decision.assessment.classification === "unclear" ? [scopeClarification(decision)] : [];
       const lifecycle = advanceProjectLifecycle(current, { type: "scope_assessed", assessment: decision.assessment, questions }, Date.now());
       return { state: { ...replaceRecord(state, lifecycle), eligibility: { ...state.eligibility, [projectId]: decision }, eligibilityReceipts: { ...state.eligibilityReceipts, [key]: decision } }, result: { lifecycle, decision } };
+    });
+  }
+
+  async override(projectId: string, raw: unknown, idempotencyKey: string): Promise<{ lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision }> {
+    assertProjectId(projectId); assertIdempotencyKey(idempotencyKey);
+    const request = eligibilityOverrideRequestSchema.parse(raw);
+    return this.#mutate(async (state) => {
+      const key = `${projectId}:override:${idempotencyKey}`;
+      const replay = state.eligibilityReceipts[key];
+      const current = requireRecord(state.records, projectId);
+      if (replay) return { state, result: { lifecycle: current, decision: replay } };
+      if (current.revision !== request.expectedRevision) throw new ProjectLifecycleServiceError("stale_revision", "Project scope changed. Review the latest eligibility decision.");
+      const prior = state.eligibility[projectId];
+      if (!prior || prior.requestId !== request.requestId) throw new ProjectLifecycleServiceError("stale_revision", "Eligibility authority was superseded. Reassess the current request.");
+      const decision = authorizeEligibilityOverride(prior, { authorizedBy: "owner", rationale: request.rationale, at: Date.now() });
+      let lifecycle = current;
+      if (lifecycle.stage === "clarification") {
+        const scopeQuestion = lifecycle.questions.find((question) => question.sourceFindingIds.includes(prior.requestId));
+        if (!scopeQuestion) throw new Error("Eligibility override requires the current scope question.");
+        lifecycle = advanceProjectLifecycle(lifecycle, { type: "clarifications_resolved", answers: [{ questionId: scopeQuestion.id, optionId: "major_feature", customAnswer: null, answeredAt: Date.now() }] }, Date.now());
+      }
+      lifecycle = advanceProjectLifecycle(lifecycle, { type: "scope_assessed", assessment: decision.assessment }, Date.now());
+      return {
+        state: {
+          ...replaceRecord(state, lifecycle),
+          eligibility: { ...state.eligibility, [projectId]: decision },
+          eligibilityReceipts: { ...state.eligibilityReceipts, [key]: decision },
+        },
+        result: { lifecycle, decision },
+      };
     });
   }
 
@@ -163,7 +199,9 @@ export class ProjectLifecycleService {
     assertProjectId(projectId);
     const artifact = z.strictObject({ kind: z.literal("solution"), projectRelativePath: z.literal(".pipeline/SOLUTION.md"), digest: z.string().regex(/^[a-f0-9]{64}$/), revision: z.number().int().positive(), createdAt: z.number().int().nonnegative(), citations: z.array(z.string().trim().min(1).max(2_048)).min(1).max(500), reviewerIds: z.array(z.string().trim().min(1).max(160)).min(2).max(20), qaPassed: z.literal(true) }).parse(rawArtifact);
     return this.#mutate(async (state) => {
-      const record = advanceProjectLifecycle(requireRecord(state.records, projectId), { type: "design_completed", artifact }, Date.now());
+      const current = requireRecord(state.records, projectId);
+      requireCurrentEligibility(state, current, Date.now());
+      const record = advanceProjectLifecycle(current, { type: "design_completed", artifact }, Date.now());
       return { state: replaceRecord(state, record), result: record };
     });
   }
@@ -173,7 +211,9 @@ export class ProjectLifecycleService {
     const artifact = projectArtifactSchema.parse(rawArtifact);
     if (artifact.kind !== "backlog" || artifact.projectRelativePath !== ".pipeline/BACKLOG.md") throw new Error("Backlog artifact is invalid.");
     return this.#mutate(async (state) => {
-      const record = advanceProjectLifecycle(requireRecord(state.records, projectId), { type: "backlog_completed", artifact }, Date.now());
+      const current = requireRecord(state.records, projectId);
+      requireCurrentEligibility(state, current, Date.now());
+      const record = advanceProjectLifecycle(current, { type: "backlog_completed", artifact }, Date.now());
       return { state: replaceRecord(state, record), result: record };
     });
   }
@@ -181,7 +221,9 @@ export class ProjectLifecycleService {
   async activateDelivery(projectId: string, artifactDigest: string, jiraEpicId: string): Promise<ProjectLifecycleRecord> {
     assertProjectId(projectId);
     return this.#mutate(async (state) => {
-      const record = advanceProjectLifecycle(requireRecord(state.records, projectId), { type: "backlog_qa_passed", artifactDigest, jiraEpicId }, Date.now());
+      const current = requireRecord(state.records, projectId);
+      requireCurrentEligibility(state, current, Date.now());
+      const record = advanceProjectLifecycle(current, { type: "backlog_qa_passed", artifactDigest, jiraEpicId }, Date.now());
       return { state: replaceRecord(state, record), result: record };
     });
   }
@@ -267,6 +309,21 @@ function requireRecord(records: readonly ProjectLifecycleRecord[], projectId: st
 
 function replaceRecord(state: z.infer<typeof stateSchema>, record: ProjectLifecycleRecord) {
   return { ...state, records: [...state.records.filter((candidate) => candidate.projectId !== record.projectId), record] };
+}
+
+function requireCurrentEligibility(
+  state: z.infer<typeof stateSchema>,
+  record: ProjectLifecycleRecord,
+  now: number,
+) {
+  const decision = state.eligibility[record.projectId];
+  if (!decision) throw new Error("Major-work eligibility must be assessed before planning or execution.");
+  assertDeliveryPlanningEligible(decision, {
+    projectId: record.projectId,
+    assessment: record.assessment,
+    now,
+  });
+  return decision;
 }
 
 function assertProjectId(value: string) {

@@ -31,6 +31,7 @@ const content = {
   citations: ["local://CONTEXT.md", "local://RESEARCH.md", "https://example.com/product", "https://example.com/technical"],
 };
 const permit = { schemaVersion: 1 as const, projectId: "project_abcdef0123456789", contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["test"], approvedAt: 1, expiresAt: 9_999_999_999_999 };
+const eligibility = { schemaVersion: 1 as const, projectId: "project_abcdef0123456789", requestId: "request_0123456789abcdef0123", eligible: true, assessment: { classification: "new_product" as const, rationale: ["A complete product is requested."], affectedDomains: ["frontend", "backend"], estimatedDeveloperHours: 80, requiresArchitectureDecision: true, confidence: 1 }, evidence: ["A complete product is requested."], alternatives: [], override: null, decidedAt: Date.now() };
 
 function researchEvidence(role: SolutionRole) {
   const discipline = role === "product_research" ? "product" as const : "technical" as const;
@@ -56,7 +57,7 @@ test("solution orchestration uses parallel specialists and independent reviewers
     },
   };
   const service = new ProjectSolutionOrchestrator(
-    { get: async () => lifecycle as any, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
+    { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
     { publishResearch: async (_id: string, evidence: unknown) => { research.push(evidence); }, publish: async (_id: string, draft: unknown) => { published.push(draft); return { kind: "solution", digest: "b".repeat(64), revision: 1 }; }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
     { authorize: async () => permit },
@@ -79,7 +80,7 @@ test("review dissent fails closed without publishing", async () => {
   let published = false;
   const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };
   const service = new ProjectSolutionOrchestrator(
-    { get: async () => lifecycle as any, publishSolution: async () => { throw new Error("must not publish"); } },
+    { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async () => { throw new Error("must not publish"); } },
     { publishResearch: async () => undefined, publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
     { authorize: async () => permit },
@@ -93,7 +94,7 @@ test("malformed reconciler output fails before review and publication", async ()
   let published = false;
   const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };
   const service = new ProjectSolutionOrchestrator(
-    { get: async () => lifecycle as any, publishSolution: async () => { throw new Error("must not publish"); } },
+    { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async () => { throw new Error("must not publish"); } },
     { publishResearch: async () => undefined, publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
     { authorize: async () => permit },
@@ -108,7 +109,7 @@ test("owner revision feedback changes only explicitly scoped solution sections",
   const current = { ...content, behavior: ["Preserve this product behavior."], architecture: ["Preserve the old architecture."] };
   let published: any;
   const service = new ProjectSolutionOrchestrator(
-    { get: async () => lifecycle as any, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
+    { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
     {
       read: async () => ({ digest: "b".repeat(64), revision: 1 }),
       readContent: async () => current,

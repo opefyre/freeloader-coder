@@ -40,6 +40,7 @@ test("backlog planning fails closed on reviewer dissent, planner self-review, an
     { read: async () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: solutionDigest, markdown: "solution" }) },
     { authorize: async () => permit },
     { run: async (input) => input.role === "delivery_planning" ? { providerId: "groq", modelId: "planner", response: { ...completeDeliveryPlan(), ...(mismatch ? { solutionDigest: "d".repeat(64) } : {}) } } : { providerId: selfReview && input.role === "delivery_review" ? "groq" : input.role, modelId: selfReview && input.role === "delivery_review" ? "planner" : "reviewer", response: { schemaVersion: 1, reviewerId: input.role, discipline: input.role === "delivery_review" ? "delivery" : "technical", verdict: dissent && input.role === "delivery_review" ? "fail" : "pass", findings: dissent ? ["Missing recovery detail."] : [] } } },
+    () => 20,
   ).run(projectId);
   await assert.rejects(() => run(true, false), /not bound/);
   await assert.rejects(() => run(false, true), DeliveryPlanReviewDissentError);

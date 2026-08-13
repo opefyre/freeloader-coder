@@ -145,7 +145,7 @@ const projectEgress = new ProjectEgressPolicyService(stateDirectory);
 const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
 const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new ProjectSolutionOrchestrator(projectLifecycles, projectSolutions, projectContexts, projectEgress, solutionModel));
 const jiraDelivery = new JiraDeliveryService(stateDirectory, localProjects, projectDeliveryPlans, projectLifecycles, credentialVault);
-const projectExecutions = new ProjectExecutionService(stateDirectory, projectDeliveryPlans, jiraDelivery);
+const projectExecutions = new ProjectExecutionService(stateDirectory, projectDeliveryPlans, jiraDelivery, Date.now, projectLifecycles);
 const projectPortfolio = new ProjectPortfolioService(localProjects, projectLifecycles, projectExecutions, credentialVault);
 const projectExecutionJira = new ProjectExecutionJiraObserver(stateDirectory, projectExecutions, jiraDelivery, credentialVault);
 const executionModel = new FreeProviderExecutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
@@ -433,6 +433,7 @@ const controlPlane = createControlPlaneServer({
       return decision;
     },
     assess: (projectId, input, idempotencyKey) => projectLifecycles.assess(projectId, input, idempotencyKey),
+    override: (projectId, input, idempotencyKey) => projectLifecycles.override(projectId, input, idempotencyKey),
     publishSolution: async (projectId, input) => {
       const artifact = await projectSolutions.publish(projectId, input);
       return projectLifecycles.publishSolution(projectId, artifact);

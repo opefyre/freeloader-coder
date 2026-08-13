@@ -25,5 +25,14 @@ test("ambiguous boundary work fails closed and owner override is audited", () =>
   const overridden = authorizeEligibilityOverride(unclear, { authorizedBy: "owner", rationale: "This is part of the approved product launch scope.", at: 20 });
   assert.equal(overridden.eligible, true);
   assert.equal(overridden.override?.authorizedBy, "owner");
-  assert.doesNotThrow(() => assertDeliveryPlanningEligible(overridden));
+  assert.equal(overridden.assessment.classification, "major_feature");
+  assert.doesNotThrow(() => assertDeliveryPlanningEligible(overridden, { now: 20 }));
+});
+
+test("expired, cross-project, and superseded eligibility authority fail closed", () => {
+  const decision = assessEligibility({ ...base, projectKind: "new_product" }, 100);
+  assert.throws(() => assertDeliveryPlanningEligible(decision, { now: 200, validityMs: 99 }), /expired/);
+  assert.throws(() => assertDeliveryPlanningEligible(decision, { projectId: "project_fedcba9876543210", now: 100 }), /another project/);
+  assert.throws(() => assertDeliveryPlanningEligible(decision, { requestId: "request_abcdef01234567890123", now: 100 }), /superseded/);
+  assert.throws(() => assertDeliveryPlanningEligible(decision, { assessment: { ...decision.assessment, confidence: 0.5 }, now: 100 }), /superseded/);
 });

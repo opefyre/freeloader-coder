@@ -14,6 +14,7 @@ const taskId = "plan_0000000000000004";
 const plan = completeDeliveryPlan();
 const draft = { ...plan, revision: 1, reviews: [{ schemaVersion: 1 as const, reviewerId: "delivery-reviewer", discipline: "delivery" as const, verdict: "pass" as const, findings: [] }, { schemaVersion: 1 as const, reviewerId: "technical-reviewer", discipline: "technical" as const, verdict: "pass" as const, findings: [] }] };
 const candidate = { providerId: "groq", modelId: "coder", deviceId: "spare-mac", capabilities: ["chat", "structured_output", "tool_calling"], privacyClasses: ["source_code" as const], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 4_000, deviceLoad: 0.2, preference: 10 };
+const eligibility = { eligibility: async () => ({ schemaVersion: 1 as const, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: { classification: "major_feature" as const, rationale: ["Multi-stage feature."], affectedDomains: ["frontend", "backend"], estimatedDeveloperHours: 24, requiresArchitectureDecision: true, confidence: 1 }, evidence: ["Approved major feature."], alternatives: [], override: null, decidedAt: 1 }) };
 
 test("durable execution enforces one lease, ordered validation, independent quorum, and restart evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-service-"));
@@ -43,6 +44,16 @@ test("durable execution enforces one lease, ordered validation, independent quor
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("execution initialization fails before reading delivery effects when eligibility is missing or expired", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-eligibility-"));
+  let planReads = 0;
+  const plans = { readDraft: async () => { planReads += 1; return { draft, document: { schemaVersion: 1 as const, projectId, projectRelativePath: ".pipeline/BACKLOG.md" as const, revision: 1, digest, markdown: "# Plan", itemCount: 4 } }; } };
+  const jira = { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) };
+  await assert.rejects(() => new ProjectExecutionService(root, plans, jira, () => 100).initialize(projectId), /eligibility authority/i);
+  await assert.rejects(() => new ProjectExecutionService(root, plans, jira, () => 100_000_000, { eligibility: async () => ({ ...(await eligibility.eligibility()), decidedAt: 1 }) }).initialize(projectId), /expired/i);
+  assert.equal(planReads, 0);
+});
+
 test("failed validation permits only bounded healing and expired outcomes require owner review", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-healing-"));
   let now = 100;
@@ -67,7 +78,7 @@ test("protected paths are rejected before execution and reviewer dissent cannot 
   const root = await mkdtemp(join(tmpdir(), "project-execution-guards-"));
   try {
     const protectedDraft = { ...draft, items: draft.items.map((item) => item.id === taskId ? { ...item, allowedFiles: [".env.production"] } : item) };
-    const protectedService = new ProjectExecutionService(root, { readDraft: async () => ({ draft: protectedDraft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100);
+    const protectedService = new ProjectExecutionService(root, { readDraft: async () => ({ draft: protectedDraft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
     await assert.rejects(() => protectedService.initialize(projectId), /protected credential, environment, or Git path/);
 
     const service = makeService(root, () => 100);
@@ -107,6 +118,6 @@ test("repeated validation failures exhaust the bounded repair budget and quarant
 });
 
 function makeService(root: string, now: () => number) {
-  return new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, now);
+  return new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, now, eligibility);
 }
 function review(reviewerId: string, providerId: string, role: "functional" | "design") { return { reviewerId, providerId, role, verdict: "pass" as const, findings: [{ id: `${role}-finding`, severity: "info" as const, evidenceRef: evidence, confidence: 0.99, acceptanceCriterion: "The approved behavior is implemented and verified.", recommendedRepair: "No repair is required." }] }; }

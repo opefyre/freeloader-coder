@@ -23,6 +23,7 @@ export const eligibilityDecisionSchema = z.strictObject({
   decidedAt: z.number().int().nonnegative(),
 });
 export type EligibilityDecision = z.infer<typeof eligibilityDecisionSchema>;
+export const ELIGIBILITY_VALIDITY_MS = 24 * 60 * 60 * 1_000;
 
 export function assessEligibility(raw: EligibilityEvidence, now = Date.now()): EligibilityDecision {
   const input = evidenceSchema.parse(raw);
@@ -55,9 +56,38 @@ export function assessEligibility(raw: EligibilityEvidence, now = Date.now()): E
 export function authorizeEligibilityOverride(decision: EligibilityDecision, input: { authorizedBy: "owner"; rationale: string; at: number }): EligibilityDecision {
   if (decision.eligible) throw new Error("Eligible work does not require an override.");
   if (input.authorizedBy !== "owner" || input.rationale.trim().length < 10) throw new Error("Eligibility override requires an owner and a specific rationale.");
-  return eligibilityDecisionSchema.parse({ ...decision, eligible: true, override: { authorizedBy: "owner", rationale: input.rationale.trim(), at: input.at } });
+  return eligibilityDecisionSchema.parse({
+    ...decision,
+    eligible: true,
+    assessment: {
+      ...decision.assessment,
+      classification: "major_feature",
+      rationale: [
+        ...decision.assessment.rationale,
+        "The owner explicitly authorized this outcome as substantial work.",
+      ],
+      confidence: 1,
+    },
+    override: { authorizedBy: "owner", rationale: input.rationale.trim(), at: input.at },
+    decidedAt: input.at,
+  });
 }
 
-export function assertDeliveryPlanningEligible(decision: EligibilityDecision) {
+export function assertDeliveryPlanningEligible(
+  decision: EligibilityDecision,
+  input: {
+    projectId?: string;
+    requestId?: string;
+    assessment?: MajorWorkAssessment | null;
+    now?: number;
+    validityMs?: number;
+  } = {},
+) {
   if (!decision.eligible) throw new Error("Jira delivery planning and execution are blocked until major-work eligibility passes.");
+  if (input.projectId && decision.projectId !== input.projectId) throw new Error("Eligibility authority belongs to another project.");
+  if (input.requestId && decision.requestId !== input.requestId) throw new Error("Eligibility authority was superseded by another request.");
+  if (input.assessment && JSON.stringify(input.assessment) !== JSON.stringify(decision.assessment)) throw new Error("Eligibility authority was superseded by a newer scope assessment.");
+  const now = input.now ?? Date.now();
+  const validityMs = input.validityMs ?? ELIGIBILITY_VALIDITY_MS;
+  if (!Number.isInteger(validityMs) || validityMs < 1 || decision.decidedAt + validityMs < now) throw new Error("Eligibility authority expired; reassess the current project scope.");
 }

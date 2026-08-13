@@ -5,6 +5,7 @@ import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
 import type { RoutedSolutionModel, SolutionModelEvidence, VerifiedProjectContext } from "./project-solution-orchestrator.js";
 import type { SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
+import { assertDeliveryPlanningEligible } from "../../../packages/orchestration/src/eligibility-gate.js";
 
 export class ProjectDeliveryPlanOrchestrator {
   constructor(
@@ -23,7 +24,12 @@ export class ProjectDeliveryPlanOrchestrator {
     if (lifecycle.stage === "backlog_qa" || lifecycle.stage === "delivery") return lifecycle;
     if (lifecycle.stage !== "backlog_design" || lifecycle.designApproval?.decision !== "approved") throw new Error("Backlog planning requires an approved solution.");
     const eligibility = await this.lifecycles.eligibility(projectId);
-    if (!eligibility?.eligible) throw new Error("Backlog planning requires an eligible major-work decision.");
+    if (!eligibility) throw new Error("Backlog planning requires an eligible major-work decision.");
+    assertDeliveryPlanningEligible(eligibility, {
+      projectId,
+      assessment: lifecycle.assessment,
+      now: this.now(),
+    });
     const [context, solution] = await Promise.all([this.context.readVerified(projectId), this.solutions.read(projectId)]);
     if (lifecycle.designApproval.artifactDigest !== solution.digest) throw new Error("Approved solution digest does not match the verified solution artifact.");
     const permit = await this.egress.authorize(projectId, context.digest);

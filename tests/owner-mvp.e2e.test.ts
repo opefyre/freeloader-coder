@@ -32,7 +32,7 @@ test("owner MVP advances approved major work through Jira-backed execution to du
 
     const plan = completeDeliveryPlan();
     const reviewedPlan = { ...plan, revision: 1, reviews: [{ schemaVersion: 1 as const, reviewerId: "delivery-reviewer", discipline: "delivery" as const, verdict: "pass" as const, findings: [] }, { schemaVersion: 1 as const, reviewerId: "technical-reviewer", discipline: "technical" as const, verdict: "pass" as const, findings: [] }] };
-    const execution = new ProjectExecutionService(root, { readDraft: async () => ({ draft: reviewedPlan, document: { schemaVersion: 1 as const, projectId, projectRelativePath: ".pipeline/BACKLOG.md" as const, revision: 1, digest: planDigest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => now);
+    const execution = new ProjectExecutionService(root, { readDraft: async () => ({ draft: reviewedPlan, document: { schemaVersion: 1 as const, projectId, projectRelativePath: ".pipeline/BACKLOG.md" as const, revision: 1, digest: planDigest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => now, lifecycle);
     const worker = {
       tick: async () => {
         const candidate = { providerId: "groq", modelId: "coder", deviceId: "provider:groq", capabilities: ["chat", "structured_output", "tool_calling"], privacyClasses: ["source_code" as const], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 1_000, deviceLoad: 0.1, preference: 10 };

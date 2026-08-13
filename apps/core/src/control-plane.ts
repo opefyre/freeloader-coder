@@ -190,6 +190,7 @@ export type ControlPlaneServerOptions = {
     answer: (projectId: string, input: unknown, idempotencyKey: string) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     eligibility: (projectId: string) => EligibilityDecision | Promise<EligibilityDecision>;
     assess: (projectId: string, input: unknown, idempotencyKey: string) => { lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision } | Promise<{ lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision }>;
+    override?: (projectId: string, input: unknown, idempotencyKey: string) => { lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision } | Promise<{ lifecycle: ProjectLifecycleRecord; decision: EligibilityDecision }>;
     publishSolution: (projectId: string, input: unknown) => ProjectLifecycleRecord | Promise<ProjectLifecycleRecord>;
     getSolution: (projectId: string) => SolutionDocument | Promise<SolutionDocument>;
     getSolutionHistory?: (projectId: string) => readonly SolutionDocument[] | Promise<readonly SolutionDocument[]>;
@@ -1244,7 +1245,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|file-content|context|artifacts)$/
       );
       const projectLifecycleRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|eligibility-override|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
       const projectArtifactOpenRoute = url.pathname.match(/^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/artifacts\/(context|memory|research|product|design|delivery_plan|ops_rules|infra|security|decisions|status)\/open$/);
       if (request.method === "GET" && projectRoute?.[2] === "artifacts" && options.projects?.artifacts) {
@@ -1298,6 +1299,11 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       }
       if (request.method === "POST" && projectLifecycleRoute?.[2] === "eligibility" && options.projectLifecycles) {
         const result = await options.projectLifecycles.assess(projectLifecycleRoute[1] ?? "", await readJsonBody(request), requireIdempotencyKey(request));
+        sendJson(response, 200, z.strictObject({ lifecycle: projectLifecycleRecordSchema, decision: eligibilityDecisionSchema }).parse(result));
+        return;
+      }
+      if (request.method === "POST" && projectLifecycleRoute?.[2] === "eligibility-override" && options.projectLifecycles?.override) {
+        const result = await options.projectLifecycles.override(projectLifecycleRoute[1] ?? "", await readJsonBody(request), requireIdempotencyKey(request));
         sendJson(response, 200, z.strictObject({ lifecycle: projectLifecycleRecordSchema, decision: eligibilityDecisionSchema }).parse(result));
         return;
       }

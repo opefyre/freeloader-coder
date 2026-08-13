@@ -8,6 +8,7 @@ import { evaluateQualityQuorum, type QualityReview } from "../../../packages/orc
 import { eligibleExecutionTasks, projectExecutionRecordSchema, selectExecutionAssignment, type ExecutionCandidate, type ExecutionTask, type ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
 import type { DeliveryPlanDraft } from "../../../packages/orchestration/src/delivery-plan.js";
 import type { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
+import { assertDeliveryPlanningEligible, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 
 const stateSchema = z.strictObject({ schemaVersion: z.literal(1), projects: z.record(z.string(), projectExecutionRecordSchema) });
 type JiraReceipt = { completed: boolean; planDigest: string; issues: Record<string, { issueKey: string }> };
@@ -20,7 +21,8 @@ export class ProjectExecutionService {
     stateDirectory: string,
     private readonly plans: Pick<ProjectDeliveryPlanService, "readDraft">,
     private readonly jira: { get(projectId: string): Promise<JiraReceipt | null> },
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly eligibility?: { eligibility(projectId: string): Promise<EligibilityDecision | null> },
   ) {
     this.#path = resolve(stateDirectory, "project-executions.json");
   }
@@ -29,6 +31,10 @@ export class ProjectExecutionService {
 
   async initialize(projectId: string) {
     const existing = await this.get(projectId);
+    if (!this.eligibility) throw new ProjectExecutionError("eligibility_missing", "Implementation requires a current major-work eligibility authority.");
+    const authority = await this.eligibility.eligibility(projectId);
+    if (!authority) throw new ProjectExecutionError("eligibility_missing", "Implementation requires a current major-work eligibility authority.");
+    assertDeliveryPlanningEligible(authority, { projectId, now: this.now() });
     const [{ draft, document }, jira] = await Promise.all([this.plans.readDraft(projectId), this.jira.get(projectId)]);
     if (!jira?.completed || jira.planDigest !== document.digest) throw new ProjectExecutionError("jira_not_ready", "Implementation cannot start until the reviewed Jira hierarchy is complete.");
     if (existing) {

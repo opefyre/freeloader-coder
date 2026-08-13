@@ -59,6 +59,7 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
   }, 3);
   const calls: string[] = [];
   const eligibilityCalls: string[] = [];
+  const overrideCalls: string[] = [];
   const solutionCalls: string[] = [];
   const consentCalls: string[] = [];
   const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: 4, expiresAt: 9_999_999_999_999 };
@@ -74,6 +75,10 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
       eligibility: () => eligibility,
       assess: (_projectId, input, key) => {
         eligibilityCalls.push(`${key}:${JSON.stringify(input)}`);
+        return { lifecycle: { ...lifecycle, stage: "solution_design", assessment: eligibility.assessment, questions: [], revision: lifecycle.revision + 1 }, decision: eligibility };
+      },
+      override: (_projectId, input, key) => {
+        overrideCalls.push(`${key}:${JSON.stringify(input)}`);
         return { lifecycle: { ...lifecycle, stage: "solution_design", assessment: eligibility.assessment, questions: [], revision: lifecycle.revision + 1 }, decision: eligibility };
       },
       publishSolution: (_projectId, input) => { solutionCalls.push(`publish:${JSON.stringify(input)}`); return lifecycle; },
@@ -115,6 +120,13 @@ test("clarification endpoints are origin-bound, revision-bound, and idempotent",
     assert.equal(assessed.status, 200);
     assert.equal((await assessed.json() as { lifecycle: { stage: string } }).lifecycle.stage, "solution_design");
     assert.equal(eligibilityCalls.length, 1);
+    const overridden = await fetch(`${endpoint}/eligibility-override`, {
+      method: "POST",
+      headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "eligibility-override-001" },
+      body: JSON.stringify({ schemaVersion: 1, expectedRevision: lifecycle.revision, requestId: eligibility.requestId, rationale: "Owner confirms this is a substantial product capability." }),
+    });
+    assert.equal(overridden.status, 200);
+    assert.equal(overrideCalls.length, 1);
     const solutionArtifact = { kind: "solution", projectRelativePath: ".pipeline/SOLUTION.md", digest: "b".repeat(64), revision: 1, createdAt: 5, citations: ["local://CONTEXT.md"], reviewerIds: ["product-reviewer", "technical-reviewer"], qaPassed: true };
     const publishedSolution = await fetch(`${endpoint}/solution`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "solution-publish-001" }, body: JSON.stringify(solutionArtifact) });
     assert.equal(publishedSolution.status, 200);
