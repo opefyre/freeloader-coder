@@ -19,6 +19,7 @@ test("durable infrastructure service keeps design, approval, execution, receipt,
   const preview = await service.preview(projectId, previewInput, "infra-preview-001"); assert.equal(applies, 0);
   await service.approve(projectId, preview.id, "infra-approval-001"); assert.equal(applies, 0);
   const receipt = await service.execute(projectId, preview.id, "infra-execution-001"); assert.equal(receipt.state, "verified"); assert.equal(applies, 1);
+  const status = await service.status(projectId); assert.equal(status.operations.length, 1); assert.deepEqual(status.operations[0], { preview, approval: await service.approve(projectId, preview.id, "infra-approval-001"), receipt });
   const replay = await service.execute(projectId, preview.id, "infra-execution-001"); assert.deepEqual(replay, receipt); assert.equal(applies, 1);
   const restarted = new InfrastructureDeliveryService(root, new Map([["Cloudflare", adapter]]), () => now); assert.deepEqual(await restarted.receipt(projectId, preview.id), receipt); assert.deepEqual(await restarted.getDesign(projectId), design);
 });

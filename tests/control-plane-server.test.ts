@@ -206,6 +206,7 @@ test("infrastructure API separates design, exact preview, owner approval, execut
   const receipt = { schemaVersion: 1 as const, previewId: preview.id, previewDigest: preview.digest, state: "verified" as const, providerOperationId: "operation-123", endpoint: "https://preview.example.test", checks: [{ name: "provider", passed: true, evidence: "Provider reports deployment active." }], observedAt: 12, rollbackEvidence: null, safeMessage: "Provider evidence reports the deployment healthy." };
   const calls: string[] = [];
   const controlPlane = createControlPlaneServer({ host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot, infrastructure: {
+    status: () => ({ schemaVersion: 1, design, operations: [{ preview, approval, receipt }] }),
     getDesign: () => design,
     publishDesign: (_id, _input, key) => { calls.push(`design:${key}`); return design; },
     preview: (_id, _input, key) => { calls.push(`preview:${key}`); return preview; },
@@ -215,6 +216,7 @@ test("infrastructure API separates design, exact preview, owner approval, execut
   } });
   const port = await controlPlane.listen(); const base = `http://127.0.0.1:${port}/api/v1/projects/${projectId}/infrastructure`;
   try {
+    const status = await fetch(`${base}/status`, { headers: { Origin: "http://127.0.0.1:4310" } }); assert.equal(status.status, 200); assert.equal((await status.json() as { operations: unknown[] }).operations.length, 1);
     assert.equal((await fetch(`${base}/design`, { headers: { Origin: "http://127.0.0.1:4310" } })).status, 200);
     assert.deepEqual(calls, [], "Reading or approving product design must not mutate cloud state.");
     const designWrite = await fetch(`${base}/design`, { method: "PUT", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "design-publish-001" }, body: JSON.stringify(design) });

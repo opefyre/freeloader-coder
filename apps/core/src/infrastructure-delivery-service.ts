@@ -10,11 +10,13 @@ import {
   executeInfrastructureMutation,
   infrastructureApprovalSchema,
   infrastructureDesignSchema,
+  infrastructureDeliveryStatusSchema,
   infrastructureMutationPreviewSchema,
   infrastructureReceiptSchema,
   type InfrastructureAdapter,
   type InfrastructureApproval,
   type InfrastructureDesign,
+  type InfrastructureDeliveryStatus,
   type InfrastructureMutationPreview,
   type InfrastructureReceipt,
 } from "../../../packages/orchestration/src/infrastructure-delivery.js";
@@ -57,6 +59,15 @@ export class InfrastructureDeliveryService {
 
   public async getDesign(projectId: string): Promise<InfrastructureDesign | null> {
     return (await this.#load()).designs[projectId] ?? null;
+  }
+
+  public async status(projectId: string): Promise<InfrastructureDeliveryStatus> {
+    const state = await this.#load();
+    const operations = Object.values(state.previews)
+      .filter((preview) => preview.projectId === projectId)
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map((preview) => ({ preview, approval: state.approvals[preview.id] ?? null, receipt: state.receipts[preview.id] ?? null }));
+    return infrastructureDeliveryStatusSchema.parse({ schemaVersion: 1, design: state.designs[projectId] ?? null, operations });
   }
 
   public async publishDesign(projectId: string, input: unknown, idempotencyKey: string): Promise<InfrastructureDesign> {

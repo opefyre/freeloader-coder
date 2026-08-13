@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { listProjectArtifacts, openProjectArtifact, type ProjectArtifactInspection } from "../../local-project-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
+import { InfrastructureDeliveryPanel } from "./infrastructure-delivery-panel.js";
 
 export function ProjectArtifactWorkspace(props: { endpoint: string; projectId: string }) {
   const [items, setItems] = useState<readonly ProjectArtifactInspection[]>([]);
@@ -22,7 +23,7 @@ export function ProjectArtifactWorkspace(props: { endpoint: string; projectId: s
       setNotice(`${item.fileName} opened on this computer.`);
     } catch { setNotice(`${item.fileName} could not be opened. The file remains unchanged.`); }
   };
-  return <section aria-labelledby="project-artifacts-title" className="rounded-[1.75rem] bg-card p-5 sm:p-6">
+  return <><section aria-labelledby="project-artifacts-title" className="rounded-[1.75rem] bg-card p-5 sm:p-6">
     <div className="flex items-center justify-between gap-3">
       <div><h2 id="project-artifacts-title" className="text-lg font-semibold">Project files</h2><p className="mt-1 text-sm text-muted-foreground">Plans, decisions, and operating context.</p></div>
       <Button variant="ghost" size="sm" onClick={() => void refresh()} aria-label="Refresh project files"><ArrowClockwise />Refresh</Button>
@@ -41,7 +42,7 @@ export function ProjectArtifactWorkspace(props: { endpoint: string; projectId: s
       })}
     </div>}
     {notice && state === "ready" && <p className="mt-4 text-xs text-muted-foreground" aria-live="polite">{notice}</p>}
-  </section>;
+  </section><InfrastructureDeliveryPanel endpoint={props.endpoint} projectId={props.projectId} /></>;
 }
 
 function label(kind: ProjectArtifactInspection["kind"]) { return ({ context: "Context", memory: "Memory", research: "Research", product: "Product", design: "Design", delivery_plan: "Delivery plan", ops_rules: "Operating rules", infra: "Infrastructure", security: "Security", decisions: "Decisions", status: "Status" })[kind]; }

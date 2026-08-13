@@ -122,10 +122,12 @@ import { projectExecutionRecordSchema, type ProjectExecutionRecord } from "../..
 import {
   infrastructureApprovalSchema,
   infrastructureDesignSchema,
+  infrastructureDeliveryStatusSchema,
   infrastructureMutationPreviewSchema,
   infrastructureReceiptSchema,
   type InfrastructureApproval,
   type InfrastructureDesign,
+  type InfrastructureDeliveryStatus,
   type InfrastructureMutationPreview,
   type InfrastructureReceipt,
 } from "../../../packages/orchestration/src/infrastructure-delivery.js";
@@ -217,6 +219,7 @@ export type ControlPlaneServerOptions = {
     revokeEgressConsent?: (projectId: string) => void | Promise<void>;
   };
   infrastructure?: {
+    status?: (projectId: string) => InfrastructureDeliveryStatus | Promise<InfrastructureDeliveryStatus>;
     getDesign: (projectId: string) => InfrastructureDesign | null | Promise<InfrastructureDesign | null>;
     publishDesign: (projectId: string, input: unknown, idempotencyKey: string) => InfrastructureDesign | Promise<InfrastructureDesign>;
     preview: (projectId: string, input: unknown, idempotencyKey: string) => InfrastructureMutationPreview | Promise<InfrastructureMutationPreview>;
@@ -1266,8 +1269,12 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|eligibility-override|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
       const infrastructureRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/infrastructure(?:\/(design|previews|approvals|executions|receipts)(?:\/(infra_preview_[a-f0-9]{20}))?)?$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/infrastructure(?:\/(status|design|previews|approvals|executions|receipts)(?:\/(infra_preview_[a-f0-9]{20}))?)?$/
       );
+      if (request.method === "GET" && infrastructureRoute?.[2] === "status" && !infrastructureRoute[3] && options.infrastructure?.status) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, infrastructureDeliveryStatusSchema.parse(await options.infrastructure.status(infrastructureRoute[1] ?? ""))); return;
+      }
       if (request.method === "GET" && infrastructureRoute && (!infrastructureRoute[2] || infrastructureRoute[2] === "design") && options.infrastructure) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
         sendJson(response, 200, infrastructureDesignSchema.nullable().parse(await options.infrastructure.getDesign(infrastructureRoute[1] ?? ""))); return;

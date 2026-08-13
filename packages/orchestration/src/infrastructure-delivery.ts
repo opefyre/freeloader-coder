@@ -97,7 +97,7 @@ export const infrastructureReceiptSchema = z.strictObject({
   previewDigest: digest,
   state: z.enum(["verified", "rolled_back", "partial", "needs_user"]),
   providerOperationId: z.string().trim().min(3).max(300),
-  endpoint: z.string().url().nullable(),
+  endpoint: z.string().url().refine((value) => value.startsWith("https://"), "Infrastructure endpoints must use HTTPS.").nullable(),
   checks: z.array(z.strictObject({ name: z.string().trim().min(2).max(100), passed: z.boolean(), evidence: detail })).min(1).max(100),
   observedAt: z.number().int().nonnegative(),
   rollbackEvidence: detail.nullable(),
@@ -105,6 +105,18 @@ export const infrastructureReceiptSchema = z.strictObject({
 });
 
 export type InfrastructureReceipt = z.infer<typeof infrastructureReceiptSchema>;
+
+export const infrastructureDeliveryStatusSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  design: infrastructureDesignSchema.nullable(),
+  operations: z.array(z.strictObject({
+    preview: infrastructureMutationPreviewSchema,
+    approval: infrastructureApprovalSchema.nullable(),
+    receipt: infrastructureReceiptSchema.nullable(),
+  })).max(200),
+});
+
+export type InfrastructureDeliveryStatus = z.infer<typeof infrastructureDeliveryStatusSchema>;
 
 export interface InfrastructureAdapter {
   apply(preview: InfrastructureMutationPreview): Promise<{ providerOperationId: string; endpoint: string | null; evidence: readonly string[] }>;

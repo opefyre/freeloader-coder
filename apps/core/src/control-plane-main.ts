@@ -473,6 +473,7 @@ const controlPlane = createControlPlaneServer({
     files: () => nativePicker.files(),
   },
   infrastructure: {
+    status: (projectId) => infrastructureDelivery.status(projectId),
     getDesign: (projectId) => infrastructureDelivery.getDesign(projectId),
     publishDesign: (projectId, input, key) => infrastructureDelivery.publishDesign(projectId, input, key),
     preview: (projectId, input, key) => infrastructureDelivery.preview(projectId, input, key),
