@@ -686,6 +686,8 @@ export function LocalRequestPanel(props: {
         setWorkspacePath(selection.path);
         setWorkspaceLabel(selection.label);
         setNotice(`${selection.label} selected.`);
+      } else {
+        setNotice("Folder selection cancelled. Nothing was changed.");
       }
       setStatus("ready");
     } catch (error) {
@@ -710,6 +712,8 @@ export function LocalRequestPanel(props: {
         setNotice(
           `${result.selections.length} file${result.selections.length === 1 ? "" : "s"} attached.`,
         );
+      } else {
+        setNotice("File selection cancelled. Nothing was changed.");
       }
       setStatus("ready");
     } catch (error) {

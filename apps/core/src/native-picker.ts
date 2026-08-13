@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { access, lstat, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import { promisify } from "node:util";
 
@@ -30,15 +32,16 @@ export class NativePicker {
     try {
       const paths = await this.picker(kind);
       this.#discardExpired();
-      const selections = paths
+      const selections = await Promise.all(paths
         .map((path) => path.trim())
         .filter((path) => path && isAbsolute(path))
         .slice(0, kind === "folder" ? 1 : 20)
-        .map((path) => {
+        .map(async (path) => {
+          const canonicalPath = await validateSelection(path, kind);
           const handle = `selection_${randomBytes(16).toString("hex")}`;
-          this.#selections.set(handle, { kind, path, expiresAt: this.now() + 10 * 60_000 });
-          return { path: handle, label: basename(path) };
-        });
+          this.#selections.set(handle, { kind, path: canonicalPath, expiresAt: this.now() + 10 * 60_000 });
+          return { path: handle, label: basename(canonicalPath) };
+        }));
       return nativePickerResponseSchema.parse({
         schemaVersion: 1,
         outcome: selections.length > 0 ? "selected" : "cancelled",
@@ -49,7 +52,10 @@ export class NativePicker {
       if (/user canceled|cancelled|canceled/i.test(message)) {
         return nativePickerResponseSchema.parse({ schemaVersion: 1, outcome: "cancelled", selections: [] });
       }
-      throw new Error("The native picker could not be opened on this device.");
+      if (/not readable|not a regular|not a folder|symbolic link/i.test(message)) {
+        throw new Error(message);
+      }
+      throw new Error("The native picker could not be opened on this device. Check Files and Folders access, then try again.");
     }
   }
 
@@ -69,6 +75,17 @@ export class NativePicker {
     const now = this.now();
     for (const [handle, selection] of this.#selections) if (selection.expiresAt <= now) this.#selections.delete(handle);
   }
+}
+
+async function validateSelection(path: string, kind: "folder" | "files"): Promise<string> {
+  const selected = await lstat(path);
+  if (selected.isSymbolicLink()) throw new Error("The selected item is a symbolic link. Choose the original item instead.");
+  if (kind === "folder" && !selected.isDirectory()) throw new Error("The selected item is not a folder.");
+  if (kind === "files" && !selected.isFile()) throw new Error("The selected item is not a regular file.");
+  await access(path, kind === "folder" ? constants.R_OK | constants.W_OK : constants.R_OK).catch(() => {
+    throw new Error(kind === "folder" ? "The selected folder is not readable and writable." : "The selected file is not readable.");
+  });
+  return realpath(path);
 }
 
 async function platformPick(kind: "folder" | "files"): Promise<string[]> {
@@ -98,7 +115,7 @@ async function pickOnMac(kind: "folder" | "files"): Promise<string[]> {
 }
 
 async function pickOnLinux(kind: "folder" | "files"): Promise<string[]> {
-  const args = ["--file-selection", "--title=Pipeline Studio"];
+  const args = ["--file-selection", "--title=Codkesh"];
   if (kind === "folder") args.push("--directory");
   else args.push("--multiple", "--separator=\n");
   const { stdout } = await execFileAsync("zenity", args, { timeout: 120_000, maxBuffer: 128_000 });
