@@ -46,7 +46,7 @@ export class CloudflarePagesInfrastructureAdapter implements InfrastructureAdapt
     this.#sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.#pollAttempts = options.pollAttempts ?? 40;
     this.#pollIntervalMs = options.pollIntervalMs ?? 3_000;
-    this.#smokeAttempts = options.smokeAttempts ?? 10;
+    this.#smokeAttempts = options.smokeAttempts ?? 40;
   }
 
   async apply(preview: InfrastructureMutationPreview) {
