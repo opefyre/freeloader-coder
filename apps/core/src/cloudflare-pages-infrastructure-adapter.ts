@@ -29,6 +29,7 @@ export class CloudflarePagesInfrastructureAdapter implements InfrastructureAdapt
   readonly #sleep: (milliseconds: number) => Promise<void>;
   readonly #pollAttempts: number;
   readonly #pollIntervalMs: number;
+  readonly #smokeAttempts: number;
 
   constructor(
     vault: CredentialReader,
@@ -37,6 +38,7 @@ export class CloudflarePagesInfrastructureAdapter implements InfrastructureAdapt
       sleep?: (milliseconds: number) => Promise<void>;
       pollAttempts?: number;
       pollIntervalMs?: number;
+      smokeAttempts?: number;
     } = {}
   ) {
     this.#vault = vault;
@@ -44,6 +46,7 @@ export class CloudflarePagesInfrastructureAdapter implements InfrastructureAdapt
     this.#sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.#pollAttempts = options.pollAttempts ?? 40;
     this.#pollIntervalMs = options.pollIntervalMs ?? 3_000;
+    this.#smokeAttempts = options.smokeAttempts ?? 10;
   }
 
   async apply(preview: InfrastructureMutationPreview) {
@@ -118,26 +121,22 @@ export class CloudflarePagesInfrastructureAdapter implements InfrastructureAdapt
     if (!providerPassed) return checks;
 
     const endpoint = requirePagesEndpoint(applied.endpoint);
-    try {
-      const response = await this.#fetcher(endpoint, {
-        method: "GET",
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-      });
-      checks.push({
-        name: "https smoke check",
-        passed: response.ok,
-        evidence: response.ok
-          ? `The exact Cloudflare Pages endpoint responded with HTTP ${response.status}.`
-          : `The exact Cloudflare Pages endpoint responded with HTTP ${response.status}.`,
-      });
-    } catch {
-      checks.push({
-        name: "https smoke check",
-        passed: false,
-        evidence: "The exact Cloudflare Pages endpoint did not complete a safe HTTPS smoke check.",
-      });
+    let smokeStatus: number | null = null;
+    for (let attempt = 0; attempt < this.#smokeAttempts; attempt += 1) {
+      try {
+        const response = await this.#fetcher(endpoint, { method: "GET", redirect: "error", signal: AbortSignal.timeout(15_000) });
+        smokeStatus = response.status;
+        if (response.ok) break;
+      } catch { smokeStatus = null; }
+      if (attempt + 1 < this.#smokeAttempts) await this.#sleep(this.#pollIntervalMs);
     }
+    checks.push({
+      name: "https smoke check",
+      passed: smokeStatus !== null && smokeStatus >= 200 && smokeStatus < 300,
+      evidence: smokeStatus === null
+        ? "The exact Cloudflare Pages endpoint did not complete a safe HTTPS smoke check after bounded propagation retries."
+        : `The exact Cloudflare Pages endpoint responded with HTTP ${smokeStatus}.`,
+    });
     return checks;
   }
 

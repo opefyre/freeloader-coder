@@ -93,6 +93,22 @@ test("Cloudflare adapter returns safe failed verification evidence for provider 
   }
 });
 
+test("Cloudflare adapter tolerates bounded HTTPS propagation delay before declaring the release healthy", async () => {
+  const responses = [
+    json({ success: true, result: { id: "deployment-123", latest_stage: { status: "success" } } }),
+    new Response("not ready", { status: 404 }),
+    new Response("ok", { status: 200 }),
+  ];
+  let sleeps = 0;
+  const adapter = new CloudflarePagesInfrastructureAdapter(
+    { read: async () => JSON.stringify({ secret: token }) },
+    { fetcher: async () => { const response = responses.shift(); assert.ok(response); return response; }, sleep: async () => { sleeps += 1; }, pollAttempts: 1, pollIntervalMs: 0, smokeAttempts: 3 }
+  );
+  const checks = await adapter.verify(preview, { providerOperationId: "deployment-123", endpoint: "https://deployment-123.codkesh-preview.pages.dev" });
+  assert.deepEqual(checks.map((check) => check.passed), [true, true]);
+  assert.equal(sleeps, 1);
+});
+
 test("Cloudflare adapter never exposes a credential through provider errors", async () => {
   const adapter = new CloudflarePagesInfrastructureAdapter(
     { read: async () => JSON.stringify({ secret: token }) },
