@@ -479,6 +479,7 @@ const controlPlane = createControlPlaneServer({
     preview: (projectId, input, key) => infrastructureDelivery.preview(projectId, input, key),
     approve: (projectId, previewId, key) => infrastructureDelivery.approve(projectId, previewId, key),
     execute: (projectId, previewId, key) => infrastructureDelivery.execute(projectId, previewId, key),
+    rollback: (projectId, previewId, key) => infrastructureDelivery.rollback(projectId, previewId, key),
     receipt: (projectId, previewId) => infrastructureDelivery.receipt(projectId, previewId),
   },
   projectIntakes: {

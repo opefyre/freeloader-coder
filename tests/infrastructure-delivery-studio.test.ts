@@ -8,6 +8,7 @@ import {
   createInfrastructurePreview,
   executeInfrastructurePreview,
   getInfrastructureDeliveryStatus,
+  rollbackInfrastructurePreview,
 } from "../apps/studio/src/infrastructure-delivery-client.js";
 import {
   approveInfrastructureMutation,
@@ -29,20 +30,21 @@ test("Studio infrastructure client keeps review, approval, execution, and eviden
     if (String(url).endsWith("/status")) return json({ schemaVersion: 1, design, operations: [{ preview, approval: null, receipt: null }] });
     if (String(url).includes("/previews")) return json(preview);
     if (String(url).includes("/approvals")) return json(approval);
-    return json(receipt);
+    return json(String(url).includes("/rollbacks") ? { ...receipt, state: "rolled_back", rollbackEvidence: "Exact deployment absent." } : receipt);
   };
   const endpoint = "http://127.0.0.1:4310/";
   assert.equal((await getInfrastructureDeliveryStatus({ endpoint, projectId, fetcher })).operations.length, 1);
   await createInfrastructurePreview({ endpoint, projectId, body: { schemaVersion: 1 }, idempotencyKey: "preview-key", fetcher });
   await approveInfrastructurePreview({ endpoint, projectId, previewId: preview.id, idempotencyKey: "approval-key", fetcher });
   assert.equal((await executeInfrastructurePreview({ endpoint, projectId, previewId: preview.id, idempotencyKey: "execution-key", fetcher })).state, "verified");
-  assert.deepEqual(calls.map((call) => call.method), ["GET", "POST", "POST", "POST"]);
-  assert.deepEqual(calls.map((call) => call.key), [null, "preview-key", "approval-key", "execution-key"]);
+  assert.equal((await rollbackInfrastructurePreview({ endpoint, projectId, previewId: preview.id, idempotencyKey: "rollback-key", fetcher })).state, "rolled_back");
+  assert.deepEqual(calls.map((call) => call.method), ["GET", "POST", "POST", "POST", "POST"]);
+  assert.deepEqual(calls.map((call) => call.key), [null, "preview-key", "approval-key", "execution-key", "rollback-key"]);
 });
 
 test("owner release UI presents exact authority, zero cost, rollback, and observed receipt without technical setup clutter", async () => {
   const source = await readFile(resolve("apps/studio/src/components/projects/infrastructure-delivery-panel.tsx"), "utf8");
-  for (const copy of ["Review deployment", "$0.00", "Automatic rollback", "Permission", "Expected result", "Approve and deploy", "Retry deployment", "Release verified", "Open verified release"]) assert.match(source, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  for (const copy of ["Review deployment", "$0.00", "Automatic rollback", "Permission", "Expected result", "Approve and deploy", "Retry deployment", "Release verified", "Open verified release", "Remove disposable release", "Roll back release"]) assert.match(source, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(source, /API key|command line|terminal|curl/i);
 });
 

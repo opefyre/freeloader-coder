@@ -72,7 +72,7 @@ test("Cloudflare adapter fails closed before mutation for missing credentials or
   await assert.rejects(() => missing.apply(preview), /not connected/);
   const connected = new CloudflarePagesInfrastructureAdapter({ read: async () => JSON.stringify({ secret: token }) }, { fetcher });
   await assert.rejects(() => connected.apply({ ...preview, provider: "Other" }), /only accepts Cloudflare/);
-  await assert.rejects(() => connected.apply({ ...preview, action: "delete" }), /only approved deploy/);
+  await assert.rejects(() => connected.apply({ ...preview, action: "delete" }), /deploy or disposable-create/);
   await assert.rejects(() => connected.apply({ ...preview, permissions: ["pages:read"] }), /pages:write/);
   assert.equal(fetches, 0);
 });
@@ -103,3 +103,42 @@ test("Cloudflare adapter never exposes a credential through provider errors", as
   assert.match(message, /HTTP 403/);
   assert.ok(!message.includes(token));
 });
+
+test("Cloudflare adapter creates, deploys, verifies, and removes an isolated disposable Pages project", async () => {
+  const disposable = createInfrastructureMutationPreview({ ...withoutGenerated(preview), action: "create", idempotencyKey: "cloudflare-disposable-test-001" });
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const responses = [
+    json({ success: false, errors: [{ message: "not found" }] }, 404),
+    json({ success: true, result: { name: "codkesh-preview" } }),
+    json({ success: true, result: { id: "deployment-disposable", url: "https://deployment-disposable.codkesh-preview.pages.dev" } }),
+    json({ success: true, result: { id: "deployment-disposable", latest_stage: { status: "success" } } }),
+    new Response("ok", { status: 200 }),
+    json({ success: true, result: null }),
+    json({ success: false }, 404),
+  ];
+  const adapter = new CloudflarePagesInfrastructureAdapter({ read: async () => JSON.stringify({ secret: token }) }, { fetcher: async (url, init) => { calls.push(init ? { url: String(url), init } : { url: String(url) }); const response = responses.shift(); assert.ok(response); return response; }, sleep: async () => undefined, pollAttempts: 1 });
+  const applied = await adapter.apply(disposable);
+  assert.equal((await adapter.verify(disposable, applied)).every((check) => check.passed), true);
+  assert.match(await adapter.rollback(disposable, applied), /disposable project codkesh-preview is absent/);
+  assert.deepEqual(calls.map((call) => call.init?.method), ["GET", "POST", "POST", "GET", "GET", "DELETE", "GET"]);
+  const projectCreate = JSON.parse(String(calls[1]?.init?.body)) as { name: string; production_branch: string };
+  assert.deepEqual(projectCreate, { name: "codkesh-preview", production_branch: "main" });
+  const deploymentBody = calls[2]?.init?.body; assert.ok(deploymentBody instanceof FormData); assert.equal(deploymentBody.get("manifest"), "{}"); assert.ok(deploymentBody.get("_worker.js") instanceof Blob);
+  assert.ok(calls[5]?.url.endsWith("/pages/projects/codkesh-preview"));
+});
+
+test("failed disposable upload compensates by deleting the newly created project", async () => {
+  const disposable = createInfrastructureMutationPreview({ ...withoutGenerated(preview), action: "create", idempotencyKey: "cloudflare-disposable-test-002" });
+  const calls: string[] = [];
+  const responses = [json({ success: false }, 404), json({ success: true, result: {} }), json({ success: false }, 500), json({ success: true, result: null }), json({ success: false }, 404)];
+  const adapter = new CloudflarePagesInfrastructureAdapter({ read: async () => JSON.stringify({ secret: token }) }, { fetcher: async (url) => { calls.push(String(url)); const response = responses.shift(); assert.ok(response); return response; } });
+  await assert.rejects(() => adapter.apply(disposable), /HTTP 500/);
+  assert.equal(calls.length, 5);
+  assert.ok(calls[3]?.endsWith("/pages/projects/codkesh-preview"));
+});
+
+function withoutGenerated(value: typeof preview) {
+  const { schemaVersion: ignoredSchema, id: ignoredId, digest: ignoredDigest, ...input } = value;
+  void ignoredSchema; void ignoredId; void ignoredDigest;
+  return input;
+}

@@ -10,6 +10,7 @@ import {
   createInfrastructurePreview,
   executeInfrastructurePreview,
   getInfrastructureDeliveryStatus,
+  rollbackInfrastructurePreview,
 } from "../../infrastructure-delivery-client.js";
 import type { InfrastructureDeliveryStatus } from "../../../../../packages/orchestration/src/infrastructure-delivery.js";
 import { Badge } from "../ui/badge.js";
@@ -26,7 +27,9 @@ export function InfrastructureDeliveryPanel(props: { endpoint: string; projectId
   useEffect(() => { void refresh(); }, [refresh]);
   const current = status?.operations[0] ?? null;
   const resource = status?.design?.resources[0] ?? null;
-  const supported = resource?.provider === "Cloudflare" && resource.kind.toLowerCase() === "pages";
+  const resourceKind = resource?.kind.toLowerCase() ?? "";
+  const supported = resource?.provider === "Cloudflare" && ["pages", "pages_disposable"].includes(resourceKind);
+  const disposable = resourceKind === "pages_disposable";
   const expired = Boolean(current && current.preview.expiresAt <= Date.now() && !current.receipt);
   const canPrepare = Boolean(status?.design && resource && supported && (!current || expired || current.receipt));
   const canRun = Boolean(current && !expired && !current.receipt);
@@ -38,7 +41,7 @@ export function InfrastructureDeliveryPanel(props: { endpoint: string; projectId
       await createInfrastructurePreview({
         ...props,
         idempotencyKey: `infra-preview:${crypto.randomUUID()}`,
-        body: { schemaVersion: 1, requestId: status.design.requestId, provider: resource.provider, accountId: resource.accountId, projectOrTenantId: resource.projectOrTenantId, resourceId: resource.resourceId, region: resource.region, action: "deploy", permissions: ["pages:write"], maximumCostUsd: 0, reversible: true, rollbackAction: status.design.rollback[0] ?? "Delete the exact deployment and verify absence." },
+        body: { schemaVersion: 1, requestId: status.design.requestId, provider: resource.provider, accountId: resource.accountId, projectOrTenantId: resource.projectOrTenantId, resourceId: resource.resourceId, region: resource.region, action: disposable ? "create" : "deploy", permissions: ["pages:write"], maximumCostUsd: 0, reversible: true, rollbackAction: status.design.rollback[0] ?? (disposable ? "Delete the exact disposable project and verify absence." : "Delete the exact deployment and verify absence.") },
       });
       await refresh(); setNotice("Deployment review is ready. Nothing has been deployed.");
     } catch (error) { setState("ready"); setNotice(safeMessage(error)); }
@@ -50,6 +53,15 @@ export function InfrastructureDeliveryPanel(props: { endpoint: string; projectId
     try {
       if (!current.approval) await approveInfrastructurePreview({ ...props, previewId: current.preview.id, idempotencyKey: `infra-approve:${crypto.randomUUID()}` });
       const receipt = await executeInfrastructurePreview({ ...props, previewId: current.preview.id, idempotencyKey: `infra-execute:${crypto.randomUUID()}` });
+      await refresh(); setNotice(receipt.safeMessage);
+    } catch (error) { await refresh(); setNotice(safeMessage(error)); }
+  };
+
+  const rollback = async () => {
+    if (!current?.receipt || current.receipt.state !== "verified") return;
+    setState("working"); setNotice("");
+    try {
+      const receipt = await rollbackInfrastructurePreview({ ...props, previewId: current.preview.id, idempotencyKey: `infra-rollback:${crypto.randomUUID()}` });
       await refresh(); setNotice(receipt.safeMessage);
     } catch (error) { await refresh(); setNotice(safeMessage(error)); }
   };
@@ -77,6 +89,7 @@ export function InfrastructureDeliveryPanel(props: { endpoint: string; projectId
       <div className="flex flex-wrap gap-2">
         {canPrepare && <Button onClick={() => void prepare()} disabled={state === "working"}>{state === "working" ? "Preparing…" : "Review deployment"}</Button>}
         {canRun && <Button onClick={() => void approveAndDeploy()} disabled={state === "working"}>{state === "working" ? "Deploying…" : current?.approval ? "Retry deployment" : "Approve and deploy"}</Button>}
+        {current?.receipt?.state === "verified" && <Button variant="destructive" onClick={() => void rollback()} disabled={state === "working"}>{state === "working" ? "Removing…" : disposable ? "Remove disposable release" : "Roll back release"}</Button>}
       </div>
       {notice && <p className="text-xs text-muted-foreground" aria-live="polite">{notice}</p>}
     </div>}

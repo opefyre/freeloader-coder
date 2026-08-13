@@ -52,6 +52,17 @@ export async function executeInfrastructurePreview(input: {
   return infrastructureReceiptSchema.parse(await request({ ...input, path: `/api/v1/projects/${input.projectId}/infrastructure/executions/${input.previewId}`, method: "POST" }));
 }
 
+export async function rollbackInfrastructurePreview(input: {
+  endpoint: string;
+  projectId: string;
+  previewId: string;
+  idempotencyKey: string;
+  fetcher?: typeof fetch;
+}): Promise<InfrastructureReceipt> {
+  assertIdentities(input.projectId, input.previewId);
+  return infrastructureReceiptSchema.parse(await request({ ...input, path: `/api/v1/projects/${input.projectId}/infrastructure/rollbacks/${input.previewId}`, method: "POST" }));
+}
+
 async function request(input: {
   endpoint: string;
   path: string;

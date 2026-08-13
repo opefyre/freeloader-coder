@@ -212,6 +212,7 @@ test("infrastructure API separates design, exact preview, owner approval, execut
     preview: (_id, _input, key) => { calls.push(`preview:${key}`); return preview; },
     approve: (_id, _previewId, key) => { calls.push(`approve:${key}`); return approval; },
     execute: (_id, _previewId, key) => { calls.push(`execute:${key}`); return receipt; },
+    rollback: (_id, _previewId, key) => { calls.push(`rollback:${key}`); return { ...receipt, state: "rolled_back", rollbackEvidence: "Exact deployment absent." }; },
     receipt: () => receipt,
   } });
   const port = await controlPlane.listen(); const base = `http://127.0.0.1:${port}/api/v1/projects/${projectId}/infrastructure`;
@@ -226,8 +227,9 @@ test("infrastructure API separates design, exact preview, owner approval, execut
     assert.equal((await fetch(`${base}/approvals/${preview.id}`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "infra-approval-001" } })).status, 200);
     assert.equal(calls.some((entry: string) => /^execute:/.test(entry)), false, "Approval must not execute the mutation.");
     assert.equal((await fetch(`${base}/executions/${preview.id}`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "infra-execution-001" } })).status, 200);
+    assert.equal((await fetch(`${base}/rollbacks/${preview.id}`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "infra-rollback-001" } })).status, 200);
     const observed = await fetch(`${base}/receipts/${preview.id}`, { headers: { Origin: "http://127.0.0.1:4310" } }); assert.equal(observed.status, 200); assert.equal((await observed.json() as { state: string }).state, "verified");
-    assert.deepEqual(calls, ["design:design-publish-001", "preview:infra-preview-001", "approve:infra-approval-001", "execute:infra-execution-001"]);
+    assert.deepEqual(calls, ["design:design-publish-001", "preview:infra-preview-001", "approve:infra-approval-001", "execute:infra-execution-001", "rollback:infra-rollback-001"]);
   } finally { await controlPlane.close(); }
 });
 

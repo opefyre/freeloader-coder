@@ -8,6 +8,7 @@ import {
   createInfrastructureMutationPreview,
   digestInfrastructureDesign,
   executeInfrastructureMutation,
+  rollbackInfrastructureMutation,
   infrastructureApprovalSchema,
   infrastructureDesignSchema,
   infrastructureDeliveryStatusSchema,
@@ -110,6 +111,15 @@ export class InfrastructureDeliveryService {
 
   public async receipt(projectId: string, previewId: string): Promise<InfrastructureReceipt | null> {
     const state = await this.#load(); const preview = state.previews[previewId]; if (!preview || preview.projectId !== projectId) return null; return state.receipts[previewId] ?? null;
+  }
+
+  public async rollback(projectId: string, previewId: string, idempotencyKey: string): Promise<InfrastructureReceipt> {
+    const state = await this.#load(); const replay = this.#replay<InfrastructureReceipt>(state, idempotencyKey, "receipt"); if (replay) return replay;
+    const preview = state.previews[previewId]; const approval = state.approvals[previewId]; const design = state.designs[projectId]; const receipt = state.receipts[previewId];
+    if (!preview || preview.projectId !== projectId || !approval || !design || !receipt) throw new Error("Infrastructure rollback requires the exact approved deployment receipt.");
+    const adapter = this.adapters.get(preview.provider); if (!adapter) throw new Error("The approved infrastructure provider is not available on this computer.");
+    const rolledBack = await rollbackInfrastructureMutation({ preview, approval, design, receipt, adapter, now: this.now() });
+    state.receipts[previewId] = rolledBack; state.idempotency[idempotencyKey] = `receipt:${previewId}`; await this.#save(state); return rolledBack;
   }
 
   async #load(): Promise<State> {

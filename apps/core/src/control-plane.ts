@@ -225,6 +225,7 @@ export type ControlPlaneServerOptions = {
     preview: (projectId: string, input: unknown, idempotencyKey: string) => InfrastructureMutationPreview | Promise<InfrastructureMutationPreview>;
     approve: (projectId: string, previewId: string, idempotencyKey: string) => InfrastructureApproval | Promise<InfrastructureApproval>;
     execute: (projectId: string, previewId: string, idempotencyKey: string) => InfrastructureReceipt | Promise<InfrastructureReceipt>;
+    rollback: (projectId: string, previewId: string, idempotencyKey: string) => InfrastructureReceipt | Promise<InfrastructureReceipt>;
     receipt: (projectId: string, previewId: string) => InfrastructureReceipt | null | Promise<InfrastructureReceipt | null>;
   };
   nativePicker?: {
@@ -1269,7 +1270,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|eligibility-override|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
       const infrastructureRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/infrastructure(?:\/(status|design|previews|approvals|executions|receipts)(?:\/(infra_preview_[a-f0-9]{20}))?)?$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/infrastructure(?:\/(status|design|previews|approvals|executions|rollbacks|receipts)(?:\/(infra_preview_[a-f0-9]{20}))?)?$/
       );
       if (request.method === "GET" && infrastructureRoute?.[2] === "status" && !infrastructureRoute[3] && options.infrastructure?.status) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
@@ -1295,6 +1296,11 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       if (request.method === "POST" && infrastructureRoute?.[2] === "executions" && infrastructureRoute[3] && options.infrastructure) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
         const result = await options.infrastructure.execute(infrastructureRoute[1] ?? "", infrastructureRoute[3], requireIdempotencyKey(request));
+        sendJson(response, 200, infrastructureReceiptSchema.parse(result)); return;
+      }
+      if (request.method === "POST" && infrastructureRoute?.[2] === "rollbacks" && infrastructureRoute[3] && options.infrastructure) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        const result = await options.infrastructure.rollback(infrastructureRoute[1] ?? "", infrastructureRoute[3], requireIdempotencyKey(request));
         sendJson(response, 200, infrastructureReceiptSchema.parse(result)); return;
       }
       if (request.method === "GET" && infrastructureRoute?.[2] === "receipts" && infrastructureRoute[3] && options.infrastructure) {

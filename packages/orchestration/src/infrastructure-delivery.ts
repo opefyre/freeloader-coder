@@ -193,6 +193,23 @@ export async function executeInfrastructureMutation(input: { preview: Infrastruc
   }
 }
 
+export async function rollbackInfrastructureMutation(input: { preview: InfrastructureMutationPreview; approval: InfrastructureApproval; design: InfrastructureDesign; receipt: InfrastructureReceipt; adapter: InfrastructureAdapter; now: number }): Promise<InfrastructureReceipt> {
+  const preview = assertPreviewIntegrity(input.preview);
+  const approval = infrastructureApprovalSchema.parse(input.approval);
+  const design = infrastructureDesignSchema.parse(input.design);
+  const receipt = infrastructureReceiptSchema.parse(input.receipt);
+  if (!preview.reversible || preview.designDigest !== digestInfrastructureDesign(design)) throw new Error("Infrastructure rollback no longer matches the approved design.");
+  if (approval.previewId !== preview.id || approval.previewDigest !== preview.digest || receipt.previewId !== preview.id || receipt.previewDigest !== preview.digest) throw new Error("Infrastructure rollback authority does not match the exact deployment.");
+  if (receipt.state === "rolled_back") return receipt;
+  if (receipt.state !== "verified") throw new Error("Only a provider-verified deployment can be explicitly rolled back.");
+  try {
+    const rollbackEvidence = await input.adapter.rollback(preview, { providerOperationId: receipt.providerOperationId, endpoint: receipt.endpoint });
+    return infrastructureReceiptSchema.parse({ ...receipt, state: "rolled_back", observedAt: input.now, rollbackEvidence, safeMessage: "The exact approved deployment was removed and the provider confirmed rollback." });
+  } catch (error) {
+    return infrastructureReceiptSchema.parse({ ...receipt, state: "needs_user", observedAt: input.now, checks: [...receipt.checks, { name: "rollback", passed: false, evidence: safeError(error) }], rollbackEvidence: null, safeMessage: "The provider could not confirm rollback of the exact deployment; owner attention is required." });
+  }
+}
+
 function assertPreviewIntegrity(preview: InfrastructureMutationPreview): InfrastructureMutationPreview {
   const parsed = infrastructureMutationPreviewSchema.parse(preview);
   const { digest: ignored, ...withoutDigest } = parsed;

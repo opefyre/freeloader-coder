@@ -21,7 +21,9 @@ test("durable infrastructure service keeps design, approval, execution, receipt,
   const receipt = await service.execute(projectId, preview.id, "infra-execution-001"); assert.equal(receipt.state, "verified"); assert.equal(applies, 1);
   const status = await service.status(projectId); assert.equal(status.operations.length, 1); assert.deepEqual(status.operations[0], { preview, approval: await service.approve(projectId, preview.id, "infra-approval-001"), receipt });
   const replay = await service.execute(projectId, preview.id, "infra-execution-001"); assert.deepEqual(replay, receipt); assert.equal(applies, 1);
-  const restarted = new InfrastructureDeliveryService(root, new Map([["Cloudflare", adapter]]), () => now); assert.deepEqual(await restarted.receipt(projectId, preview.id), receipt); assert.deepEqual(await restarted.getDesign(projectId), design);
+  const rolledBack = await service.rollback(projectId, preview.id, "infra-rollback-001"); assert.equal(rolledBack.state, "rolled_back"); assert.equal(rolledBack.rollbackEvidence, "Deleted.");
+  assert.deepEqual(await service.rollback(projectId, preview.id, "infra-rollback-001"), rolledBack);
+  const restarted = new InfrastructureDeliveryService(root, new Map([["Cloudflare", adapter]]), () => now); assert.deepEqual(await restarted.receipt(projectId, preview.id), rolledBack); assert.deepEqual(await restarted.getDesign(projectId), design);
 });
 
 test("service rejects targets outside approved inventory and execution without approval or adapter", async () => {
