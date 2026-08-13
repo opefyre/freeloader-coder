@@ -6,6 +6,7 @@ export * from "./durable-scheduler.js";
 export * from "./eligibility-gate.js";
 export * from "./grounding.js";
 export * from "./healing.js";
+export * from "./infrastructure-delivery.js";
 export * from "./provider-runtime.js";
 export * from "./provider-scheduler.js";
 export * from "./quality-review.js";
