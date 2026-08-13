@@ -52,6 +52,7 @@ import { buildUniversalSearchSnapshot } from "./universal-search.js";
 import { LocalAttentionService } from "./attention-center.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
+import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -98,6 +99,7 @@ const credentialVault = new ProviderCredentialVaultBridge(
   Date.now
 );
 const integrationConnections = new IntegrationConnectionService(undefined, credentialVault);
+const infrastructureDelivery = new InfrastructureDeliveryService(stateDirectory, new Map());
 const adapterCache = new Map<string, ReturnType<typeof createOpenAiCompatibleAdapter>>();
 const adapterRegistry = {
   adapter(providerId: string) {
@@ -465,6 +467,14 @@ const controlPlane = createControlPlaneServer({
   nativePicker: {
     folder: () => nativePicker.folder(),
     files: () => nativePicker.files(),
+  },
+  infrastructure: {
+    getDesign: (projectId) => infrastructureDelivery.getDesign(projectId),
+    publishDesign: (projectId, input, key) => infrastructureDelivery.publishDesign(projectId, input, key),
+    preview: (projectId, input, key) => infrastructureDelivery.preview(projectId, input, key),
+    approve: (projectId, previewId, key) => infrastructureDelivery.approve(projectId, previewId, key),
+    execute: (projectId, previewId, key) => infrastructureDelivery.execute(projectId, previewId, key),
+    receipt: (projectId, previewId) => infrastructureDelivery.receipt(projectId, previewId),
   },
   projectIntakes: {
     list: () => projectIntakes.list(), create: (input) => projectIntakes.create(input),

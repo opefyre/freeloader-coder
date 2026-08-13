@@ -120,6 +120,16 @@ import { solutionRunSchema, type SolutionRun } from "./project-solution-coordina
 import { deliveryPlanDocumentSchema, deliveryPlanRunSchema, type DeliveryPlanDocument, type DeliveryPlanRun } from "../../../packages/orchestration/src/delivery-plan.js";
 import { projectExecutionRecordSchema, type ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
 import {
+  infrastructureApprovalSchema,
+  infrastructureDesignSchema,
+  infrastructureMutationPreviewSchema,
+  infrastructureReceiptSchema,
+  type InfrastructureApproval,
+  type InfrastructureDesign,
+  type InfrastructureMutationPreview,
+  type InfrastructureReceipt,
+} from "../../../packages/orchestration/src/infrastructure-delivery.js";
+import {
   nativePickerResponseSchema,
   type NativePickerResponse,
 } from "../../../packages/runtime/src/native-picker.js";
@@ -205,6 +215,14 @@ export type ControlPlaneServerOptions = {
     getEgressConsent?: (projectId: string) => ProjectEgressPermit | null | Promise<ProjectEgressPermit | null>;
     grantEgressConsent?: (projectId: string, input: unknown) => ProjectEgressPermit | Promise<ProjectEgressPermit>;
     revokeEgressConsent?: (projectId: string) => void | Promise<void>;
+  };
+  infrastructure?: {
+    getDesign: (projectId: string) => InfrastructureDesign | null | Promise<InfrastructureDesign | null>;
+    publishDesign: (projectId: string, input: unknown, idempotencyKey: string) => InfrastructureDesign | Promise<InfrastructureDesign>;
+    preview: (projectId: string, input: unknown, idempotencyKey: string) => InfrastructureMutationPreview | Promise<InfrastructureMutationPreview>;
+    approve: (projectId: string, previewId: string, idempotencyKey: string) => InfrastructureApproval | Promise<InfrastructureApproval>;
+    execute: (projectId: string, previewId: string, idempotencyKey: string) => InfrastructureReceipt | Promise<InfrastructureReceipt>;
+    receipt: (projectId: string, previewId: string) => InfrastructureReceipt | null | Promise<InfrastructureReceipt | null>;
   };
   nativePicker?: {
     folder: () => NativePickerResponse | Promise<NativePickerResponse>;
@@ -1247,6 +1265,35 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       const projectLifecycleRoute = url.pathname.match(
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|eligibility-override|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
       );
+      const infrastructureRoute = url.pathname.match(
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/infrastructure(?:\/(design|previews|approvals|executions|receipts)(?:\/(infra_preview_[a-f0-9]{20}))?)?$/
+      );
+      if (request.method === "GET" && infrastructureRoute && (!infrastructureRoute[2] || infrastructureRoute[2] === "design") && options.infrastructure) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, infrastructureDesignSchema.nullable().parse(await options.infrastructure.getDesign(infrastructureRoute[1] ?? ""))); return;
+      }
+      if (request.method === "PUT" && infrastructureRoute?.[2] === "design" && !infrastructureRoute[3] && options.infrastructure) {
+        const result = await options.infrastructure.publishDesign(infrastructureRoute[1] ?? "", infrastructureDesignSchema.parse(await readJsonBody(request)), requireIdempotencyKey(request));
+        sendJson(response, 200, infrastructureDesignSchema.parse(result)); return;
+      }
+      if (request.method === "POST" && infrastructureRoute?.[2] === "previews" && !infrastructureRoute[3] && options.infrastructure) {
+        const result = await options.infrastructure.preview(infrastructureRoute[1] ?? "", await readJsonBody(request), requireIdempotencyKey(request));
+        sendJson(response, 200, infrastructureMutationPreviewSchema.parse(result)); return;
+      }
+      if (request.method === "POST" && infrastructureRoute?.[2] === "approvals" && infrastructureRoute[3] && options.infrastructure) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        const result = await options.infrastructure.approve(infrastructureRoute[1] ?? "", infrastructureRoute[3], requireIdempotencyKey(request));
+        sendJson(response, 200, infrastructureApprovalSchema.parse(result)); return;
+      }
+      if (request.method === "POST" && infrastructureRoute?.[2] === "executions" && infrastructureRoute[3] && options.infrastructure) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        const result = await options.infrastructure.execute(infrastructureRoute[1] ?? "", infrastructureRoute[3], requireIdempotencyKey(request));
+        sendJson(response, 200, infrastructureReceiptSchema.parse(result)); return;
+      }
+      if (request.method === "GET" && infrastructureRoute?.[2] === "receipts" && infrastructureRoute[3] && options.infrastructure) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, infrastructureReceiptSchema.nullable().parse(await options.infrastructure.receipt(infrastructureRoute[1] ?? "", infrastructureRoute[3]))); return;
+      }
       const projectArtifactOpenRoute = url.pathname.match(/^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/artifacts\/(context|memory|research|product|design|delivery_plan|ops_rules|infra|security|decisions|status)\/open$/);
       if (request.method === "GET" && projectRoute?.[2] === "artifacts" && options.projects?.artifacts) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }

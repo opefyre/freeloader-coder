@@ -5,6 +5,7 @@ import test from "node:test";
 import { createControlPlaneServer } from "../apps/core/src/control-plane.js";
 import { assessEligibility } from "../packages/orchestration/src/eligibility-gate.js";
 import { advanceProjectLifecycle, createProjectLifecycle } from "../packages/orchestration/src/project-lifecycle.js";
+import { approveInfrastructureMutation, createInfrastructureMutationPreview, digestInfrastructureDesign, infrastructureDesignSchema } from "../packages/orchestration/src/infrastructure-delivery.js";
 import type {
   ControlPlaneHealth,
   ControlPlaneSnapshot,
@@ -191,6 +192,41 @@ test("loopback server exposes only validated read-only health and snapshot data"
   } finally {
     await controlPlane.close();
   }
+});
+
+test("infrastructure API separates design, exact preview, owner approval, execution, and receipt evidence", async () => {
+  const projectId = "project_0123456789abcdef";
+  const design = infrastructureDesignSchema.parse({
+    schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", contextDigest: "a".repeat(64), solutionDigest: "b".repeat(64), approvedSolutionDigest: "b".repeat(64),
+    environments: [{ name: "preview", purpose: "Disposable owner-approved verification environment.", promotionFrom: null }], topology: ["Static content is served from a provider-managed edge."], services: [{ name: "web", purpose: "Serve the disposable preview.", runtime: "Provider managed edge.", dependencies: [] }],
+    resources: [{ provider: "Cloudflare", accountId: "account-test", projectOrTenantId: "codkesh-test", resourceId: "disposable-preview", region: "global", kind: "pages", freeTierVerifiedAt: 10, billingEnabled: false, promotionalCreditOnly: false, evidence: ["Free plan observed with billing disabled."] }], infrastructureAsCode: ["infra/wrangler.jsonc is the reviewed configuration."], secrets: [{ purpose: "Authenticate the bounded adapter.", reference: "vault://projects/test/cloudflare-token", consumers: ["deployment-adapter"] }], networking: ["HTTPS terminates at the edge."], dataAndBackups: ["No persistent data exists in this disposable preview."], observability: ["Observe provider status and HTTPS release marker."], deployment: ["Deploy the exact approved artifact after owner approval."], rollback: ["Delete the exact deployment and verify absence."], runbook: ["Escalate only when provider reconciliation or rollback fails."], alternatives: [{ option: "Cloudflare Pages", decision: "Chosen for the verified free account and reversible preview deployment.", citations: ["provider://cloudflare/free-plan"] }], citations: ["local://CONTEXT.md", "local://DESIGN.md"],
+  });
+  const preview = createInfrastructureMutationPreview({ projectId, requestId: design.requestId, designDigest: digestInfrastructureDesign(design), provider: "Cloudflare", accountId: "account-test", projectOrTenantId: "codkesh-test", resourceId: "disposable-preview", region: "global", action: "deploy", permissions: ["pages:write"], maximumCostUsd: 0, reversible: true, rollbackAction: "Delete exact deployment and verify absence.", idempotencyKey: "infra-disposable-preview-v1", createdAt: 10, expiresAt: 10_000 });
+  const approval = approveInfrastructureMutation(preview, 11, 1_000);
+  const receipt = { schemaVersion: 1 as const, previewId: preview.id, previewDigest: preview.digest, state: "verified" as const, providerOperationId: "operation-123", endpoint: "https://preview.example.test", checks: [{ name: "provider", passed: true, evidence: "Provider reports deployment active." }], observedAt: 12, rollbackEvidence: null, safeMessage: "Provider evidence reports the deployment healthy." };
+  const calls: string[] = [];
+  const controlPlane = createControlPlaneServer({ host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => snapshot, infrastructure: {
+    getDesign: () => design,
+    publishDesign: (_id, _input, key) => { calls.push(`design:${key}`); return design; },
+    preview: (_id, _input, key) => { calls.push(`preview:${key}`); return preview; },
+    approve: (_id, _previewId, key) => { calls.push(`approve:${key}`); return approval; },
+    execute: (_id, _previewId, key) => { calls.push(`execute:${key}`); return receipt; },
+    receipt: () => receipt,
+  } });
+  const port = await controlPlane.listen(); const base = `http://127.0.0.1:${port}/api/v1/projects/${projectId}/infrastructure`;
+  try {
+    assert.equal((await fetch(`${base}/design`, { headers: { Origin: "http://127.0.0.1:4310" } })).status, 200);
+    assert.deepEqual(calls, [], "Reading or approving product design must not mutate cloud state.");
+    const designWrite = await fetch(`${base}/design`, { method: "PUT", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "design-publish-001" }, body: JSON.stringify(design) });
+    assert.equal(designWrite.status, 200, await designWrite.text());
+    assert.equal((await fetch(`${base}/previews`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Content-Type": "application/json", "Idempotency-Key": "infra-preview-001" }, body: JSON.stringify({ action: "deploy" }) })).status, 200);
+    const missingApprovalKey = await fetch(`${base}/approvals/${preview.id}`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310" } }); assert.equal(missingApprovalKey.status, 400);
+    assert.equal((await fetch(`${base}/approvals/${preview.id}`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "infra-approval-001" } })).status, 200);
+    assert.equal(calls.some((entry: string) => /^execute:/.test(entry)), false, "Approval must not execute the mutation.");
+    assert.equal((await fetch(`${base}/executions/${preview.id}`, { method: "POST", headers: { Origin: "http://127.0.0.1:4310", "Idempotency-Key": "infra-execution-001" } })).status, 200);
+    const observed = await fetch(`${base}/receipts/${preview.id}`, { headers: { Origin: "http://127.0.0.1:4310" } }); assert.equal(observed.status, 200); assert.equal((await observed.json() as { state: string }).state, "verified");
+    assert.deepEqual(calls, ["design:design-publish-001", "preview:infra-preview-001", "approve:infra-approval-001", "execute:infra-execution-001"]);
+  } finally { await controlPlane.close(); }
 });
 
 test("server rejects foreign origins, writes, bodies, and unknown endpoints", async () => {
