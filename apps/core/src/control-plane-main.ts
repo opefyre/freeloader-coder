@@ -53,6 +53,7 @@ import { LocalAttentionService } from "./attention-center.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
+import { CloudflarePagesInfrastructureAdapter } from "./cloudflare-pages-infrastructure-adapter.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -99,7 +100,10 @@ const credentialVault = new ProviderCredentialVaultBridge(
   Date.now
 );
 const integrationConnections = new IntegrationConnectionService(undefined, credentialVault);
-const infrastructureDelivery = new InfrastructureDeliveryService(stateDirectory, new Map());
+const infrastructureDelivery = new InfrastructureDeliveryService(
+  stateDirectory,
+  new Map([["Cloudflare", new CloudflarePagesInfrastructureAdapter(credentialVault)]])
+);
 const adapterCache = new Map<string, ReturnType<typeof createOpenAiCompatibleAdapter>>();
 const adapterRegistry = {
   adapter(providerId: string) {
