@@ -18,6 +18,7 @@ test("attachment ingestion is content-addressed, atomic, deduplicated, and polic
     const result = await fixture.registry.addFiles(fixture.projectId, { schemaVersion: 1, paths: [first, duplicate] });
     assert.equal(result.files.length, 1);
     assert.equal(result.files[0]?.evidence.status, "extracted");
+    assert.equal(result.files[0]?.evidence.preview, payload);
     const inputs = join(fixture.repository, ".pipeline", "inputs");
     const names = await readdir(inputs);
     assert.equal(names.filter((name) => name.endsWith(".md")).length, 1);
@@ -59,6 +60,22 @@ test("browser content ingestion uses the same bounded, untrusted evidence pipeli
       schemaVersion: 1,
       files: [{ label: "empty.md", mediaType: "text/markdown", contentBase64: "" }],
     }));
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+
+test("extraction preview is bounded and redacts credential-shaped content before owner review", async () => {
+  const fixture = await createFixture();
+  try {
+    const result = await fixture.registry.addFileContent(fixture.projectId, {
+      schemaVersion: 1,
+      files: [{
+        label: "private-notes.md",
+        mediaType: "text/markdown",
+        contentBase64: Buffer.from(`Product notes\napi_key=${"x".repeat(40)}`).toString("base64"),
+      }],
+    });
+    assert.equal(result.files[0]?.evidence.preview, "Product notes [redacted credential]");
+    assert.doesNotMatch(result.files[0]?.evidence.preview ?? "", /x{20}/);
   } finally { await rm(fixture.root, { recursive: true, force: true }); }
 });
 

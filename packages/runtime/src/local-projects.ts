@@ -164,6 +164,7 @@ export const localProjectFileImportResponseSchema = z.strictObject({
       sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
       unitCount: z.number().int().nonnegative().max(10_000),
       warning: z.string().trim().min(1).max(300).nullable(),
+      preview: z.string().max(2_000).nullable().default(null),
     }),
   })).min(1).max(20),
 });

@@ -363,7 +363,7 @@ export class LocalProjectRegistry {
     await rm(staging, { recursive: true, force: true });
     await mkdir(staging, { recursive: true, mode: 0o700 });
     await cleanupInterruptedInputImports(destination);
-    const imported: Array<{ label: string; projectRelativePath: string; bytes: number; evidence: { status: "extracted" | "unsupported" | "encrypted" | "corrupt" | "limit_exceeded"; mediaType: string; sourceDigest: string; unitCount: number; warning: string | null } }> = [];
+    const imported: Array<{ label: string; projectRelativePath: string; bytes: number; evidence: { status: "extracted" | "unsupported" | "encrypted" | "corrupt" | "limit_exceeded"; mediaType: string; sourceDigest: string; unitCount: number; warning: string | null; preview: string | null } }> = [];
     let totalBytes = 0;
     const importedDigests = new Set<string>();
     for (const requestedPath of request.paths) {
@@ -409,7 +409,7 @@ export class LocalProjectRegistry {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         await rm(stagedEvidence, { force: true });
       });
-      imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size, evidence: { status: extraction.status, mediaType: extraction.mediaType, sourceDigest: extraction.sourceDigest, unitCount: extraction.units.length, warning: extraction.warning } });
+      imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size, evidence: { status: extraction.status, mediaType: extraction.mediaType, sourceDigest: extraction.sourceDigest, unitCount: extraction.units.length, warning: extraction.warning, preview: extraction.units.length > 0 ? redactEvidencePreview(extraction.units.map((unit) => unit.content).join("\n")) : null } });
     }
     await rm(staging, { recursive: true, force: true });
     return localProjectFileImportResponseSchema.parse({ schemaVersion: 1, outcome: "imported", files: imported });
@@ -562,6 +562,15 @@ function assertInputSignature(extension: string, content: Buffer): void {
             : null;
   const matches = required === ".office" ? [".docx", ".xlsx", ".pptx"].includes(extension) : required === ".jpeg" ? [".jpg", ".jpeg"].includes(extension) : required === null || extension === required;
   if (!matches) throw new LocalProjectError("invalid_path", "The selected file extension does not match its verified content type.");
+}
+
+function redactEvidencePreview(value: string): string {
+  return value
+    .replace(/\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, "[redacted credential]")
+    .replace(/\b(?:sk|gsk|ghp|github_pat)_[A-Za-z0-9_-]{8,}\b/g, "[redacted credential]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 2_000);
 }
 
 async function defaultOpenArtifactFile(path: string) {

@@ -12,7 +12,11 @@ test("Studio separates real request state from guided orchestration examples", a
     "utf8"
   );
   const voice = await readFile("apps/studio/src/components/conversation/local-voice-input.tsx", "utf8");
-  const studioUi = `${panel}\n${proposal}\n${voice}`;
+  const evidenceReview = await readFile(
+    "apps/studio/src/components/conversation/local-evidence-review.tsx",
+    "utf8"
+  );
+  const studioUi = `${panel}\n${proposal}\n${voice}\n${evidenceReview}`;
   for (const phrase of [
     "What do you want to build?",
     "Work in progress",
@@ -33,6 +37,10 @@ test("Studio separates real request state from guided orchestration examples", a
     "Local transcript ready.",
     "Imported evidence summary",
     "evidence unit",
+    "Review extracted summary",
+    "Save correction",
+    "Correction saved",
+    "Saving regenerates project context from the owner correction.",
     "GitHub repositories",
     "Connect GitHub in Settings first.",
     "Jira project",

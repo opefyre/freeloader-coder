@@ -100,6 +100,10 @@ const LocalVoiceInput = lazy(async () => {
   const module = await import("./local-voice-input.js");
   return { default: module.LocalVoiceInput };
 });
+const LocalEvidenceReview = lazy(async () => {
+  const module = await import("./local-evidence-review.js");
+  return { default: module.LocalEvidenceReview };
+});
 type LocalVoiceDraft = import("./local-voice-input.js").LocalVoiceDraft;
 
 const endpoint =
@@ -160,8 +164,17 @@ export function LocalRequestPanel(props: {
     idea: string;
     project: string;
     created: boolean;
+    projectId: string;
+    requestId: string;
+    projectKind: "new_product" | "existing_product";
     imports: LocalProjectFileImportResponse["files"];
   }>();
+  const [evidenceCorrections, setEvidenceCorrections] = useState<
+    Record<string, string>
+  >({});
+  const [correctedEvidence, setCorrectedEvidence] = useState<
+    Record<string, boolean>
+  >({});
   const [status, setStatus] = useState<
     "loading" | "ready" | "working" | "offline"
   >("loading");
@@ -577,8 +590,14 @@ export function LocalRequestPanel(props: {
         idea: submittedIdea,
         project: targetProjectName,
         created: projectId === "__new__",
+        projectId: targetProjectId,
+        requestId: request.request.id,
+        projectKind:
+          projectId === "__new__" ? "new_product" : "existing_product",
         imports: importedFiles,
       });
+      setEvidenceCorrections({});
+      setCorrectedEvidence({});
       await refresh();
       setNotice(
         projectId === "__new__"
@@ -589,6 +608,71 @@ export function LocalRequestPanel(props: {
       setStatus("ready");
       setNotice(
         error instanceof Error ? error.message : "Request failed safely.",
+      );
+    }
+  }
+
+  async function saveEvidenceCorrection(
+    file: LocalProjectFileImportResponse["files"][number],
+  ) {
+    if (!lastSubmission) return;
+    const correction = (
+      evidenceCorrections[file.projectRelativePath] ?? file.evidence.preview ?? ""
+    ).trim();
+    if (correction.length < 3 || correction === file.evidence.preview) {
+      setNotice("Edit the extracted summary before saving a correction.");
+      return;
+    }
+    setStatus("working");
+    try {
+      const markdown = [
+        "# Owner-corrected extraction",
+        "",
+        `Source: ${file.projectRelativePath}`,
+        `Source SHA-256: ${file.evidence.sourceDigest}`,
+        "Authority: owner correction",
+        "",
+        correction,
+        "",
+      ].join("\n");
+      const content = new TextEncoder().encode(markdown);
+      const imported = await addLocalProjectFileContent({
+        endpoint,
+        projectId: lastSubmission.projectId,
+        files: [
+          {
+            label: `owner-correction-${file.evidence.sourceDigest.slice(0, 12)}.md`,
+            mediaType: "text/markdown",
+            contentBase64: encodeBase64(content.buffer),
+          },
+        ],
+        idempotencyKey: `evidence-correction:${crypto.randomUUID()}`,
+      });
+      await generateLocalProjectContext({
+        endpoint,
+        projectId: lastSubmission.projectId,
+        outcome: lastSubmission.idea,
+        requestId: lastSubmission.requestId,
+        projectKind: lastSubmission.projectKind,
+        idempotencyKey: `context:correction:${crypto.randomUUID()}`,
+      });
+      setLastSubmission((current) =>
+        current
+          ? { ...current, imports: [...current.imports, ...imported.files] }
+          : current,
+      );
+      setCorrectedEvidence((current) => ({
+        ...current,
+        [file.projectRelativePath]: true,
+      }));
+      setNotice("Correction saved as owner evidence and project context regenerated.");
+      setStatus("ready");
+    } catch (error) {
+      setStatus("ready");
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "The evidence correction could not be saved safely.",
       );
     }
   }
@@ -2304,6 +2388,29 @@ export function LocalRequestPanel(props: {
                         {file.evidence.warning}
                       </span>
                     )}
+                    {file.evidence.preview &&
+                      !file.label.startsWith("owner-correction-") && (
+                        <Suspense fallback={null}>
+                          <LocalEvidenceReview
+                            file={file}
+                            value={
+                              evidenceCorrections[file.projectRelativePath] ??
+                              file.evidence.preview
+                            }
+                            saved={
+                              correctedEvidence[file.projectRelativePath] === true
+                            }
+                            disabled={status === "working"}
+                            onChange={(value) =>
+                              setEvidenceCorrections((current) => ({
+                                ...current,
+                                [file.projectRelativePath]: value,
+                              }))
+                            }
+                            onSave={() => void saveEvidenceCorrection(file)}
+                          />
+                        </Suspense>
+                      )}
                   </div>
                 ))}
               </div>
