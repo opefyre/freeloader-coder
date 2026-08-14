@@ -54,6 +54,12 @@ import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
 import { CloudflarePagesInfrastructureAdapter } from "./cloudflare-pages-infrastructure-adapter.js";
+import { OwnerResponseDeliveryStore } from "./owner-response-delivery-store.js";
+import { OwnerResponseDeliveryPlanner } from "./owner-response-delivery-planner.js";
+import { SignedOwnerResponseService } from "./signed-owner-response-service.js";
+import { OAuthOwnerIdentityResolver } from "./oauth-owner-identity-resolver.js";
+import { ChannelRelayClient } from "./channel-relay-client.js";
+import { OwnerChannelRuntime } from "./owner-channel-runtime.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -217,6 +223,55 @@ const telegramOwnerChannel = new TelegramOwnerChannelService(stateDirectory, loc
 }, credentialVault);
 void telegramOwnerChannel.synchronize().catch(() => undefined);
 setInterval(() => void telegramOwnerChannel.synchronize().catch(() => undefined), 15_000).unref();
+const ownerResponseDeliveries = new OwnerResponseDeliveryStore(stateDirectory);
+const oauthOwnerIdentities = new OAuthOwnerIdentityResolver(credentialVault);
+const ownerResponsePlanner = new OwnerResponseDeliveryPlanner(
+  localProjects,
+  { list: () => projectLifecycles.list() },
+  ownerResponseDeliveries,
+  () => oauthOwnerIdentities.resolve(),
+);
+const signedOwnerResponses = new SignedOwnerResponseService(
+  stateDirectory,
+  ownerResponseDeliveries,
+  {
+    get: (projectId) => projectLifecycles.get(projectId),
+    answer: (projectId, input, idempotencyKey) => projectLifecycles.answer(
+      projectId,
+      input,
+      idempotencyKey,
+      (questions, answers) => projectContexts.applyClarifications(projectId, questions, answers).then(() => undefined),
+    ),
+    decideSolution: async (projectId, input, idempotencyKey) => {
+      const lifecycle = await projectLifecycles.decideSolution(
+        projectId,
+        input,
+        idempotencyKey,
+        () => projectSolutions.recordDecision(projectId, input, idempotencyKey).then(() => undefined),
+      );
+      if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
+      return lifecycle;
+    },
+  },
+  async (projectId) => {
+    await lifecycleCoordinator.reconcile(projectId);
+    await jiraDelivery.synchronize(projectId).catch(() => undefined);
+  },
+);
+const channelRelayEndpoint = process.env.CODKESH_CHANNEL_RELAY_URL?.trim() ?? "";
+const channelRelayToken = process.env.CODKESH_CHANNEL_RELAY_TOKEN?.trim() ?? "";
+const channelRelay = channelRelayEndpoint && channelRelayToken
+  ? new ChannelRelayClient(channelRelayEndpoint, channelRelayToken, signedOwnerResponses)
+  : null;
+const ownerChannelRuntime = new OwnerChannelRuntime(
+  stateDirectory,
+  ownerResponsePlanner,
+  [],
+  channelRelay,
+  async () => undefined,
+);
+void ownerChannelRuntime.synchronize().catch(() => undefined);
+setInterval(() => void ownerChannelRuntime.synchronize().catch(() => undefined), 15_000).unref();
 const autonomy = new LocalAutonomyService(
   stateDirectory,
   () => localRequests.list(),
