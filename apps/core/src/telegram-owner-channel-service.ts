@@ -112,7 +112,8 @@ export class TelegramOwnerChannelService {
       const callback = update.callback_query && typeof update.callback_query === "object" ? update.callback_query as Record<string, unknown> : null;
       if (!callback || typeof callback.id !== "string" || typeof callback.data !== "string") continue;
       const chat = callback.message && typeof callback.message === "object" && (callback.message as Record<string, unknown>).chat && typeof (callback.message as Record<string, unknown>).chat === "object" ? (callback.message as Record<string, any>).chat as Record<string, unknown> : null;
-      const outcome = await this.#handleCallback(callback.data, chat ? String(chat.id ?? "") : "");
+      const actor = callback.from && typeof callback.from === "object" ? callback.from as Record<string, unknown> : null;
+      const outcome = await this.#handleCallback(callback.data, chat ? String(chat.id ?? "") : "", actor ? String(actor.id ?? "") : "");
       await this.#telegram(credential, "answerCallbackQuery", { callback_query_id: callback.id, text: outcome, show_alert: false });
       if (outcome.startsWith("Saved") || outcome.startsWith("Decision")) handled += 1;
     }
@@ -120,7 +121,7 @@ export class TelegramOwnerChannelService {
     return handled;
   }
 
-  async #handleCallback(data: string, chatId: string) {
+  async #handleCallback(data: string, chatId: string, actorId: string) {
     const match = data.match(/^ps:([a-f0-9]{16}):([a-f0-9]{16})$/);
     if (!match) return "This response is not recognized.";
     const state = await this.#load();
@@ -128,6 +129,8 @@ export class TelegramOwnerChannelService {
     const delivery = state.deliveries[id];
     if (!delivery || !timingSafeSignature(match[2]!, this.#signature(delivery, state.signingSecret))) return "This response is not authorized.";
     if (delivery.chatId !== chatId) return "This chat is not authorized.";
+    const credential = await this.#credential();
+    if (!credential || credential.ownerUserId !== actorId) return "This account is not authorized.";
     if (delivery.usedAt !== null) return "This response was already used.";
     if (delivery.expiresAt <= this.now()) return "This response expired. Open Studio for the current decision.";
     const lifecycle = await this.lifecycles.get(delivery.projectId);

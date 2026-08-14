@@ -10,7 +10,7 @@ import { Robot } from "@phosphor-icons/react/Robot";
 import { useEffect, useState } from "react";
 
 import { Button } from "../ui/button.js";
-import { connectJiraConnection, connectTelegramConnection, disconnectJiraConnection, disconnectTelegramConnection, listIntegrationConnections, probeGitHubConnection } from "../../integration-connection-client.js";
+import { beginIntegrationOAuth, connectTelegramConnection, connectTokenService, disconnectJiraConnection, disconnectServiceConnection, disconnectTelegramConnection, listIntegrationConnections } from "../../integration-connection-client.js";
 import type { PublicIntegrationConnectionCollection } from "../../../../../packages/runtime/src/integration-connections.js";
 
 type Connection = {
@@ -23,17 +23,17 @@ type Connection = {
 
 const connections: readonly Connection[] = [
   { id: "ai", name: "AI providers", group: "Work", icon: Robot, available: true },
-  { id: "github", name: "GitHub", group: "Work", icon: GithubLogo, available: false },
-  { id: "jira", name: "Jira", group: "Work", icon: Kanban, available: false },
+  { id: "github", name: "GitHub", group: "Work", icon: GithubLogo, available: true },
+  { id: "jira", name: "Jira", group: "Work", icon: Kanban, available: true },
   { id: "telegram", name: "Telegram", group: "Messages", icon: PaperPlaneTilt, available: true },
-  { id: "discord", name: "Discord", group: "Messages", icon: ChatCircleDots, available: false },
-  { id: "slack", name: "Slack", group: "Messages", icon: PlugsConnected, available: false },
-  { id: "gmail", name: "Gmail", group: "Messages", icon: EnvelopeSimple, available: false },
-  { id: "calendar", name: "Google Calendar", group: "Messages", icon: CalendarDots, available: false },
-  { id: "cloudflare", name: "Cloudflare", group: "Cloud", icon: Cloud, available: false },
-  { id: "gcloud", name: "Google Cloud", group: "Cloud", icon: Cloud, available: false },
-  { id: "aws", name: "AWS", group: "Cloud", icon: Cloud, available: false },
-  { id: "vercel", name: "Vercel", group: "Cloud", icon: Cloud, available: false },
+  { id: "discord", name: "Discord", group: "Messages", icon: ChatCircleDots, available: true },
+  { id: "slack", name: "Slack", group: "Messages", icon: PlugsConnected, available: true },
+  { id: "gmail", name: "Gmail", group: "Messages", icon: EnvelopeSimple, available: true },
+  { id: "calendar", name: "Google Calendar", group: "Messages", icon: CalendarDots, available: true },
+  { id: "cloudflare", name: "Cloudflare", group: "Cloud", icon: Cloud, available: true },
+  { id: "gcloud", name: "Google Cloud", group: "Cloud", icon: Cloud, available: true },
+  { id: "aws", name: "AWS", group: "Cloud", icon: Cloud, available: true },
+  { id: "vercel", name: "Vercel", group: "Cloud", icon: Cloud, available: true },
 ];
 
 export function ConnectionCatalog(props: { openProviders: () => void; endpoint?: string }) {
@@ -42,15 +42,27 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
   const [observed, setObserved] = useState<PublicIntegrationConnectionCollection | null>(null);
   const [working, setWorking] = useState(false);
   const [jiraSetupOpen, setJiraSetupOpen] = useState(false);
-  const [jiraSite, setJiraSite] = useState("");
-  const [jiraEmail, setJiraEmail] = useState("");
-  const [jiraToken, setJiraToken] = useState("");
+  const [deviceCode, setDeviceCode] = useState("");
   const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramChat, setTelegramChat] = useState("");
+  const [telegramOwner, setTelegramOwner] = useState("");
+  const [serviceOpen, setServiceOpen] = useState<"google" | "slack" | "discord" | "cloudflare" | "aws" | "vercel" | null>(null);
+  const [tokenOpen, setTokenOpen] = useState<"cloudflare" | "aws" | "vercel" | null>(null);
+  const [tokenSecret, setTokenSecret] = useState("");
+  const [accessKeyId, setAccessKeyId] = useState("");
   const endpoint = props.endpoint ?? "http://127.0.0.1:4312";
   useEffect(() => { void listIntegrationConnections({ endpoint }).then(setObserved).catch(() => setObserved(null)); }, [endpoint]);
   const visible = connections.filter((connection) => group === "All" || connection.group === group);
+  const startOAuth = (provider: "github" | "jira" | "google" | "slack" | "discord") => {
+    setWorking(true); setNotice(""); setDeviceCode("");
+    void beginIntegrationOAuth({ endpoint, provider, idempotencyKey: `oauth-start:${provider}:${crypto.randomUUID()}` }).then((result) => {
+      if (result.userCode) setDeviceCode(result.userCode);
+      window.open(result.authorizationUrl, "_blank", "noopener,noreferrer");
+      setNotice(result.userCode ? `Enter ${result.userCode} in the GitHub tab. This page will update automatically.` : `Approve ${provider[0]?.toUpperCase()}${provider.slice(1)} in the browser.`);
+      window.setTimeout(() => void listIntegrationConnections({ endpoint }).then(setObserved), 4_000);
+    }).catch((error) => setNotice(error instanceof Error ? error.message : "Browser authorization could not start.")).finally(() => setWorking(false));
+  };
 
   return (
     <section aria-labelledby="connections-title" className="space-y-5">
@@ -67,24 +79,28 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {visible.map((connection) => {
           const Icon = connection.icon;
-          const live = observed?.connections.find((item) => item.provider === connection.id);
+          const providerId = connection.id === "gmail" || connection.id === "calendar" || connection.id === "gcloud" ? "google" : connection.id;
+          const live = observed?.connections.find((item) => item.provider === providerId);
           const ready = live?.state === "ready";
           return (
             <div key={connection.id} className="flex items-center gap-3 rounded-3xl bg-muted/50 p-4">
               <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-background text-primary"><Icon size={20} weight="duotone" /></span>
               <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{connection.name}</strong>{ready && <span className="block truncate text-xs text-muted-foreground">{live?.accountLabel}</span>}</span>
-              <Button size="sm" variant={connection.available || ready ? "secondary" : "ghost"} disabled={working && (connection.id === "github" || connection.id === "jira")} onClick={() => {
+              <Button size="sm" variant={connection.available || ready ? "secondary" : "ghost"} disabled={working} onClick={() => {
                 if (connection.id === "ai") props.openProviders();
                 else if (connection.id === "github") {
-                  setWorking(true);
-                  void probeGitHubConnection({ endpoint, idempotencyKey: `github-probe:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setNotice(result.connections[0]?.nextAction ?? "GitHub checked."); }).catch((error) => setNotice(error instanceof Error ? error.message : "GitHub check failed.")).finally(() => setWorking(false));
+                  if (ready) setNotice("GitHub is connected. Choose repositories inside a project."); else startOAuth("github");
                 } else if (connection.id === "jira") {
-                  setJiraSetupOpen(true);
+                  if (ready) setJiraSetupOpen(true); else startOAuth("jira");
                 } else if (connection.id === "telegram") {
                   setTelegramSetupOpen(true);
-                } else setNotice(`${connection.name} connection is not installed yet.`);
+                } else if (providerId === "google" || providerId === "slack" || providerId === "discord") {
+                  if (ready) setServiceOpen(providerId); else startOAuth(providerId);
+                } else if (providerId === "cloudflare" || providerId === "aws" || providerId === "vercel") {
+                  if (ready) setServiceOpen(providerId); else setTokenOpen(providerId);
+                }
               }}>
-                {connection.id === "github" ? (ready ? "Refresh" : "Detect") : connection.id === "jira" || connection.id === "telegram" ? (ready ? "Manage" : "Connect") : connection.available ? "Set up" : "Not connected"}
+                {connection.id === "ai" ? "Set up" : ready ? "Manage" : "Connect"}
               </Button>
             </div>
           );
@@ -92,20 +108,30 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
       </div>
       {jiraSetupOpen && <div role="dialog" aria-modal="false" aria-labelledby="jira-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
         <div className="flex items-center justify-between gap-3"><h3 id="jira-connect-title" className="font-semibold">Jira</h3><Button size="sm" variant="ghost" onClick={() => setJiraSetupOpen(false)}>Close</Button></div>
-        {observed?.connections.find((item) => item.provider === "jira")?.state === "ready" ? <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed.connections.find((item) => item.provider === "jira")?.resources.length ?? 0} projects available</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectJiraConnection({ endpoint, idempotencyKey: `jira-disconnect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setJiraSetupOpen(false); setNotice("Jira disconnected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Jira disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div> : <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); setWorking(true); void connectJiraConnection({ endpoint, siteUrl: jiraSite, email: jiraEmail, apiToken: jiraToken, idempotencyKey: `jira-connect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setJiraToken(""); setJiraSetupOpen(false); setNotice(result.connections.find((item) => item.provider === "jira")?.nextAction ?? "Jira connected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Jira connection failed.")).finally(() => setWorking(false)); }}>
-          <input aria-label="Jira site" type="url" required placeholder="https://company.atlassian.net" value={jiraSite} onChange={(event) => setJiraSite(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <input aria-label="Jira account email" type="email" required placeholder="you@company.com" value={jiraEmail} onChange={(event) => setJiraEmail(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <input aria-label="Jira API token" type="password" required autoComplete="off" placeholder="API token" value={jiraToken} onChange={(event) => setJiraToken(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <Button type="submit" disabled={working || !jiraSite || !jiraEmail || jiraToken.length < 8}>Connect</Button>
-        </form>}
+        <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed?.connections.find((item) => item.provider === "jira")?.resources.length ?? 0} projects available</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectJiraConnection({ endpoint, idempotencyKey: `jira-disconnect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setJiraSetupOpen(false); setNotice("Jira disconnected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Jira disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div>
       </div>}
+      {deviceCode && <div className="mx-auto max-w-xl rounded-3xl bg-primary/10 p-5 text-center"><span className="text-xs text-muted-foreground">GitHub code</span><strong className="mt-2 block font-mono text-2xl tracking-[.2em]">{deviceCode}</strong></div>}
       {telegramSetupOpen && <div role="dialog" aria-modal="false" aria-labelledby="telegram-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
         <div className="flex items-center justify-between gap-3"><h3 id="telegram-connect-title" className="font-semibold">Telegram</h3><Button size="sm" variant="ghost" onClick={() => setTelegramSetupOpen(false)}>Close</Button></div>
-        {observed?.connections.find((item) => item.provider === "telegram")?.state === "ready" ? <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed.connections.find((item) => item.provider === "telegram")?.resources[0]?.label ?? "Notification chat ready"}</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectTelegramConnection({ endpoint, idempotencyKey: `telegram-disconnect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramSetupOpen(false); setNotice("Telegram disconnected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div> : <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); setWorking(true); void connectTelegramConnection({ endpoint, botToken: telegramToken, chatId: telegramChat, idempotencyKey: `telegram-connect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramToken(""); setTelegramSetupOpen(false); setNotice(result.connections.find((item) => item.provider === "telegram")?.nextAction ?? "Telegram connected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram connection failed.")).finally(() => setWorking(false)); }}>
+        {observed?.connections.find((item) => item.provider === "telegram")?.state === "ready" ? <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed.connections.find((item) => item.provider === "telegram")?.resources[0]?.label ?? "Notification chat ready"}</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectTelegramConnection({ endpoint, idempotencyKey: `telegram-disconnect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramSetupOpen(false); setNotice("Telegram disconnected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div> : <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); setWorking(true); void connectTelegramConnection({ endpoint, botToken: telegramToken, chatId: telegramChat, ownerUserId: telegramOwner, idempotencyKey: `telegram-connect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramToken(""); setTelegramSetupOpen(false); setNotice(result.connections.find((item) => item.provider === "telegram")?.nextAction ?? "Telegram connected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram connection failed.")).finally(() => setWorking(false)); }}>
           <input aria-label="Telegram bot token" type="password" required autoComplete="off" placeholder="Bot token" value={telegramToken} onChange={(event) => setTelegramToken(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
           <input aria-label="Telegram chat" required placeholder="Chat ID or @channel" value={telegramChat} onChange={(event) => setTelegramChat(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
-          <Button type="submit" disabled={working || telegramToken.length < 30 || telegramChat.length < 5}>Connect</Button>
+          <input aria-label="Telegram owner user ID" inputMode="numeric" required pattern="[0-9]{5,20}" placeholder="Your Telegram user ID" value={telegramOwner} onChange={(event) => setTelegramOwner(event.target.value.replace(/\D/g, ""))} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
+          <p className="text-xs text-muted-foreground">Only this Telegram account can approve project decisions.</p>
+          <Button type="submit" disabled={working || telegramToken.length < 30 || telegramChat.length < 5 || telegramOwner.length < 5}>Connect</Button>
         </form>}
+      </div>}
+      {serviceOpen && <div role="dialog" aria-modal="false" aria-labelledby="service-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
+        <div className="flex items-center justify-between gap-3"><h3 id="service-connect-title" className="font-semibold">{serviceOpen[0]?.toUpperCase()}{serviceOpen.slice(1)}</h3><Button size="sm" variant="ghost" onClick={() => setServiceOpen(null)}>Close</Button></div>
+        <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed?.connections.find((item) => item.provider === serviceOpen)?.resources.length ?? 0} options available</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectServiceConnection({ endpoint, provider: serviceOpen, idempotencyKey: `service-disconnect:${serviceOpen}:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setServiceOpen(null); setNotice(`${serviceOpen} disconnected.`); }).catch((error) => setNotice(error instanceof Error ? error.message : "Disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div>
+      </div>}
+      {tokenOpen && <div role="dialog" aria-modal="false" aria-labelledby="token-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
+        <div className="flex items-center justify-between gap-3"><h3 id="token-connect-title" className="font-semibold">{tokenOpen[0]?.toUpperCase()}{tokenOpen.slice(1)}</h3><Button size="sm" variant="ghost" onClick={() => setTokenOpen(null)}>Close</Button></div>
+        <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); const provider = tokenOpen; setWorking(true); void connectTokenService({ endpoint, provider, ...(provider === "aws" ? { accessKeyId } : {}), secret: tokenSecret, idempotencyKey: `token-connect:${provider}:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTokenSecret(""); setAccessKeyId(""); setTokenOpen(null); setNotice(`${provider} connected.`); }).catch((error) => setNotice(error instanceof Error ? error.message : "Connection failed.")).finally(() => setWorking(false)); }}>
+          {tokenOpen === "aws" && <input aria-label="AWS access key ID" required autoComplete="off" placeholder="Access key ID" value={accessKeyId} onChange={(event) => setAccessKeyId(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />}
+          <input aria-label={`${tokenOpen} secret`} type="password" required autoComplete="off" placeholder={tokenOpen === "aws" ? "Secret access key" : "API token"} value={tokenSecret} onChange={(event) => setTokenSecret(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
+          <Button type="submit" disabled={working || tokenSecret.length < 8 || (tokenOpen === "aws" && accessKeyId.length < 8)}>Connect</Button>
+        </form>
       </div>}
       <p className="min-h-5 text-xs text-muted-foreground" aria-live="polite">{notice}</p>
     </section>
