@@ -55,6 +55,9 @@ test("portfolio derives progress from selected Jira and latest state from canoni
   assert.deepEqual(project.progress, { source: "jira", completed: 1, total: 3, blocked: 1, percent: 33, observedAt: now });
   assert.equal(project.latestUpdate?.source, "pipeline");
   assert.match(project.latestUpdate?.summary ?? "", /PIPE-99/);
+  assert.equal(project.reconciliation?.confidence, "verified");
+  assert.deepEqual(project.reconciliation?.disagreements, []);
+  assert.equal(project.reconciliation?.latest?.source, "execution");
   await service.list();
   assert.equal(requests, 1, "Jira polling is bounded by the freshness cache");
 });
@@ -71,4 +74,33 @@ test("portfolio labels Jira as unknown when authentication or observation is una
   const project = (await service.list()).projects[0]!;
   assert.equal(project.progress, null);
   assert.equal(project.latestUpdate, null);
+  assert.equal(project.reconciliation?.confidence, "unknown");
+  assert.equal(project.reconciliation?.disagreements[0]?.code, "missing_jira");
+});
+
+test("portfolio observes the selected Jira project through the browser OAuth credential", async () => {
+  const urls: string[] = [];
+  const service = new ProjectPortfolioService(
+    { list: async () => collection() },
+    { list: async () => [] },
+    { get: async () => null },
+    { read: async () => JSON.stringify({ accessToken: "oauth-access-token", expiresAt: now + 60_000 }) },
+    async (input, init) => {
+      urls.push(String(input));
+      assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer oauth-access-token");
+      if (String(input).includes("accessible-resources")) return Response.json([{ id: "cloud-123", url: "https://opefyre.atlassian.net" }]);
+      return Response.json({
+        isLast: true,
+        issues: [{
+          key: "PIPE-1",
+          fields: { summary: "OAuth observed", updated: "2026-08-09T11:59:00.000Z", status: { name: "Done", statusCategory: { key: "done" } } },
+        }],
+      });
+    },
+    () => now,
+  );
+  const project = (await service.list()).projects[0]!;
+  assert.equal(project.progress?.percent, 100);
+  assert.equal(project.reconciliation?.confidence, "verified");
+  assert.ok(urls.some((url) => url === "https://api.atlassian.com/ex/jira/cloud-123/rest/api/3/search/jql?jql=project+%3D+%22PIPE%22+ORDER+BY+updated+DESC&maxResults=100&fields=summary%2Cstatus%2Cupdated"));
 });

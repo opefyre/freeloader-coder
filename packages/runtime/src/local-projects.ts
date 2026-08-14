@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { projectProgressReconciliationSchema } from "./project-progress-reconciliation.js";
 
 const boundedLabel = z.string().trim().min(1).max(160);
 const opaqueProjectId = z.string().regex(/^project_[a-f0-9]{16}$/);
@@ -90,6 +91,7 @@ export const localProjectSnapshotSchema = z.strictObject({
   resources: z.array(projectResourceBindingSchema).max(100).optional(),
   latestUpdate: projectLatestUpdateSchema.nullable().optional(),
   progress: projectProgressSchema.nullable().optional(),
+  reconciliation: projectProgressReconciliationSchema.optional(),
   state: z.enum(["ready", "warning", "failed"]),
   observedAt: z.number().int().nonnegative(),
   validForMs: z.number().int().min(1_000).max(86_400_000),
