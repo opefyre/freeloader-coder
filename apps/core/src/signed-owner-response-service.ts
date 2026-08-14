@@ -73,6 +73,12 @@ export class SignedOwnerResponseService {
     return this.#apply("discord", parsed.data.data.custom_id.slice("codkesh:".length), parsed.data.channel_id, actorId);
   }
 
+  async acceptRelayed(input: unknown) {
+    const parsed = z.strictObject({ schemaVersion: z.literal(1), relayId: z.string().uuid(), provider: z.enum(["slack", "discord"]), deliveryId: z.string().regex(/^decision_[a-f0-9]{16}$/), channelId: z.string().min(1).max(128), actorId: z.string().min(1).max(128), receivedAt: z.number().int().nonnegative() }).parse(input);
+    if (this.now() - parsed.receivedAt > 600_000 || parsed.receivedAt > this.now() + 60_000) throw new SignedOwnerResponseError("relay_stale", "Relayed owner response is stale.");
+    return this.#apply(parsed.provider, parsed.deliveryId, parsed.channelId, parsed.actorId);
+  }
+
   async #apply(provider: "slack" | "discord", deliveryId: string, channelId: string, actorId: string) {
     const delivery = await this.deliveries.get(provider, deliveryId);
     if (!delivery) throw new SignedOwnerResponseError("delivery_unknown", "Owner response delivery is unknown.");
