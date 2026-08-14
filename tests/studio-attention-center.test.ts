@@ -17,7 +17,7 @@ test("Attention Center has a stable route, lazy workspace, and live global bell"
 });
 
 test("Attention Center exposes truthful badge, popover, lanes, filters, details, acknowledgement, snooze, and quiet hours", () => {
-  for (const phrase of ["Attention Center", "Live canonical attention", "Priority lanes", "Privacy boundary", "Acknowledge", "Snooze 1h", "Quiet hours", "All clear", "No attention matches these filters", "Attention Center is offline", "No sample count is substituted"]) assert.match(source, new RegExp(phrase, "i"));
+  for (const phrase of ["Action Center", "Live canonical attention", "Priority lanes", "Privacy boundary", "Acknowledge", "Snooze 1h", "Quiet hours", "All clear", "No attention matches these filters", "Attention Center is offline", "No sample count is substituted"]) assert.match(source, new RegExp(phrase, "i"));
   assert.match(source, /summary\.badge/);
   assert.match(source, /setInterval\(refresh, 15_000\)/);
   assert.match(source, /previewAttentionAction/);
@@ -25,6 +25,18 @@ test("Attention Center exposes truthful badge, popover, lanes, filters, details,
   assert.match(source, /previewQuietHours/);
   assert.match(source, /updateQuietHours/);
   assert.doesNotMatch(source, /fixture/i);
+});
+
+test("owner decisions are project-filtered and move from the active queue into durable history", () => {
+  assert.match(source, /listLocalProjects/);
+  assert.match(source, /aria-label="Filter by project"/);
+  assert.match(source, /projectId: projectId \|\| null/);
+  assert.match(source, /label="Needs you"/);
+  assert.match(source, /label="History"/);
+  assert.match(source, /\["unread", "snoozed"\]/);
+  assert.match(source, /\["read", "acknowledged"\]/);
+  assert.match(source, /const result = await applyAttentionAction[\s\S]*refresh\(\);/);
+  assert.doesNotMatch(source, /refresh\(result\.snapshot\)/);
 });
 
 test("Attention Center is accessible, responsive, quiet-aware, and explicit about effects", () => {

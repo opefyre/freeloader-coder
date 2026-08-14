@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AttentionAction, AttentionCategory, AttentionDisposition, AttentionItem, AttentionSeverity, AttentionSnapshot, QuietHours } from "../../../../../packages/runtime/src/attention.js";
 import { applyAttentionAction, fetchAttention, previewAttentionAction, previewQuietHours, updateQuietHours } from "../../attention-client.js";
+import { listLocalProjects } from "../../local-project-client.js";
 import { cn } from "../../lib/utils.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -62,19 +63,33 @@ export function AttentionCenter({ endpoint, activate }: { endpoint: string; acti
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState<AttentionSeverity[]>([]);
   const [category, setCategory] = useState<AttentionCategory[]>([]);
-  const [disposition, setDisposition] = useState<AttentionDisposition[]>([]);
+  const [view, setView] = useState<"active" | "history">("active");
+  const [projectId, setProjectId] = useState("");
+  const [projects, setProjects] = useState<readonly { id: string; displayName: string }[]>([]);
   const [pending, setPending] = useState<AttentionAction | null>(null);
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState("");
-  const deferredQuery = useMemo(() => ({ search, severities: severity, categories: category, dispositions: disposition }), [search, severity, category, disposition]);
-  function refresh(next?: AttentionSnapshot) {
-    if (next) { setSnapshot(next); setState("ready"); return; }
+  const deferredQuery = useMemo(() => ({
+    search,
+    severities: severity,
+    categories: category,
+    dispositions: view === "active" ? ["unread", "snoozed"] as AttentionDisposition[] : ["read", "acknowledged"] as AttentionDisposition[],
+    projectId: projectId || null,
+  }), [search, severity, category, view, projectId]);
+  function refresh() {
     const controller = new AbortController();
     setState("loading");
     void fetchAttention({ endpoint, query: deferredQuery, signal: controller.signal }).then((value) => { setSnapshot(value); setState("ready"); setSelectedId((current) => value.items.some((item) => item.id === current) ? current : value.items[0]?.id ?? ""); }).catch(() => setState("offline"));
     return () => controller.abort();
   }
   useEffect(refresh, [endpoint, deferredQuery]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void listLocalProjects({ endpoint, signal: controller.signal })
+      .then((value) => setProjects(value.projects.map(({ id, displayName }) => ({ id, displayName }))))
+      .catch(() => setProjects([]));
+    return () => controller.abort();
+  }, [endpoint]);
   const selected = snapshot?.items.find((item) => item.id === selectedId) ?? snapshot?.items[0] ?? null;
   const groups = useMemo(() => severities.map((value) => [value, snapshot?.items.filter((item) => item.severity === value) ?? []] as const).filter((entry) => entry[1].length), [snapshot]);
   async function confirm() {
@@ -83,7 +98,7 @@ export function AttentionCenter({ endpoint, activate }: { endpoint: string; acti
     try {
       await previewAttentionAction(endpoint, pending);
       const result = await applyAttentionAction(endpoint, pending, `attention.${pending.itemId}.${pending.action}.${pending.expectedRevision}`);
-      refresh(result.snapshot);
+      refresh();
       setNotice(`${readable(pending.action)} recorded locally. Receipt ${result.receipt.id.slice(-8)}.`);
       setPending(null);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Attention action failed."); refresh(); }
@@ -92,22 +107,29 @@ export function AttentionCenter({ endpoint, activate }: { endpoint: string; acti
   return <section className="space-y-4" aria-labelledby="attention-center-title">
     <Card className="overflow-hidden">
       <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div><Badge tone={snapshot?.summary.critical ? "critical" : "positive"}>{snapshot?.summary.critical ? `${snapshot.summary.critical} critical` : "No critical alerts"}</Badge><h2 id="attention-center-title" className="mt-4 text-2xl font-semibold tracking-tight">Attention Center</h2><CardDescription className="mt-2 max-w-2xl">A durable, quiet-aware view of what changed, what needs you, and what can safely wait. Every item comes from canonical local evidence.</CardDescription></div>
+        <div><Badge tone={snapshot?.summary.critical ? "critical" : "positive"}>{snapshot?.summary.critical ? `${snapshot.summary.critical} critical` : "No critical alerts"}</Badge><h2 id="attention-center-title" className="mt-4 text-2xl font-semibold tracking-tight">Action Center</h2><CardDescription className="mt-2 max-w-2xl">Decisions that need you, without duplicate noise.</CardDescription></div>
         <div className="flex flex-wrap gap-2"><Summary label="Unread" value={snapshot?.summary.unread ?? 0} /><Summary label="Snoozed" value={snapshot?.summary.snoozed ?? 0} /><Summary label="Suppressed" value={snapshot?.summary.suppressed ?? 0} /></div>
       </CardHeader>
       <CardContent className="mt-6">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="inline-flex w-fit rounded-full bg-muted p-1" aria-label="Decision queue view">
+            <Filter label="Needs you" pressed={view === "active"} toggle={() => setView("active")} />
+            <Filter label="History" pressed={view === "history"} toggle={() => setView("history")} />
+          </div>
+          <label><span className="sr-only">Filter by project</span><select aria-label="Filter by project" value={projectId} onChange={(event) => setProjectId(event.target.value)} className="h-10 max-w-full rounded-full bg-muted px-4 text-xs font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/30"><option value="">All projects</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.displayName}</option>)}</select></label>
+        </div>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <label className="flex-1"><span className="sr-only">Search attention</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find an alert, project, provider, or next action…" maxLength={80} className="h-11 w-full rounded-full bg-muted px-4 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" /></label>
-          <div className="flex gap-2 overflow-x-auto" aria-label="Attention filters">{severities.map((value) => <Filter key={value} label={`${readable(value)} · ${facetCount(snapshot, "severities", value)}`} pressed={severity.includes(value)} toggle={() => setSeverity(toggle(severity, value))} />)}<Filter label="Unread" pressed={disposition.includes("unread")} toggle={() => setDisposition(toggle(disposition, "unread"))} /></div>
+          <div className="flex gap-2 overflow-x-auto" aria-label="Attention filters">{severities.map((value) => <Filter key={value} label={`${readable(value)} · ${facetCount(snapshot, "severities", value)}`} pressed={severity.includes(value)} toggle={() => setSeverity(toggle(severity, value))} />)}</div>
         </div>
-        <div className="mt-3 flex gap-2 overflow-x-auto" aria-label="Attention categories">{categories.map((value) => <Filter key={value} label={`${readable(value)} · ${facetCount(snapshot, "categories", value)}`} pressed={category.includes(value)} toggle={() => setCategory(toggle(category, value))} />)}{(severity.length + category.length + disposition.length > 0) && <button className="shrink-0 rounded-full px-3 py-2 text-[11px] text-muted-foreground hover:bg-muted" onClick={() => { setSeverity([]); setCategory([]); setDisposition([]); }}>Clear filters</button>}</div>
+        <div className="mt-3 flex gap-2 overflow-x-auto" aria-label="Attention categories">{categories.map((value) => <Filter key={value} label={`${readable(value)} · ${facetCount(snapshot, "categories", value)}`} pressed={category.includes(value)} toggle={() => setCategory(toggle(category, value))} />)}{(severity.length + category.length > 0) && <button className="shrink-0 rounded-full px-3 py-2 text-[11px] text-muted-foreground hover:bg-muted" onClick={() => { setSeverity([]); setCategory([]); }}>Clear filters</button>}</div>
       </CardContent>
     </Card>
 
     {notice && <div role="status" className="rounded-2xl bg-primary/[.08] px-4 py-3 text-xs">{notice}</div>}
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <Card><CardHeader><CardTitle>Priority lanes</CardTitle><CardDescription>Severity is evidence-based. Repeated observations update one stable item.</CardDescription></CardHeader><CardContent className="mt-5 min-h-[28rem]">
-        {state === "loading" && !snapshot ? <Empty icon={<Clock />} title="Refreshing canonical attention…" detail="Current filters are applied locally by the control plane." /> : state === "offline" ? <Empty icon={<Warning />} title="Attention Center is offline" detail="Your last view is not presented as current." /> : !snapshot?.items.length ? <Empty icon={<CheckCircle />} title={search || severity.length || category.length || disposition.length ? "No attention matches these filters" : "All clear"} detail={search || severity.length || category.length || disposition.length ? "Clear a filter to inspect the rest of the bounded current state." : "Nothing currently requires or records your attention."} /> : <div className="space-y-6">{groups.map(([lane, items]) => <section key={lane} aria-labelledby={`attention-${lane}`}><div className="mb-2 flex items-center justify-between"><h3 id={`attention-${lane}`} className="text-[10px] font-semibold uppercase tracking-[.16em] text-muted-foreground">{readable(lane)}</h3><span className="text-[10px] text-muted-foreground">{items.length}</span></div><div className="space-y-1">{items.map((item) => <AttentionRow key={item.id} item={item} selected={selected?.id === item.id} select={() => setSelectedId(item.id)} />)}</div></section>)}</div>}
+        {state === "loading" && !snapshot ? <Empty icon={<Clock />} title="Refreshing canonical attention…" detail="Current filters are applied locally by the control plane." /> : state === "offline" ? <Empty icon={<Warning />} title="Attention Center is offline" detail="Your last view is not presented as current." /> : !snapshot?.items.length ? <Empty icon={<CheckCircle />} title={search || severity.length || category.length || projectId ? "No attention matches these filters" : view === "history" ? "No resolved decisions yet" : "All clear"} detail={search || severity.length || category.length || projectId ? "Clear a filter to inspect the rest of the bounded current state." : view === "history" ? "Resolved decisions will appear here with their evidence." : "Nothing currently requires your attention."} /> : <div className="space-y-6">{groups.map(([lane, items]) => <section key={lane} aria-labelledby={`attention-${lane}`}><div className="mb-2 flex items-center justify-between"><h3 id={`attention-${lane}`} className="text-[10px] font-semibold uppercase tracking-[.16em] text-muted-foreground">{readable(lane)}</h3><span className="text-[10px] text-muted-foreground">{items.length}</span></div><div className="space-y-1">{items.map((item) => <AttentionRow key={item.id} item={item} selected={selected?.id === item.id} select={() => setSelectedId(item.id)} />)}</div></section>)}</div>}
       </CardContent></Card>
       <div className="space-y-4">
         <Card><CardHeader><CardTitle>{selected?.title ?? "Canonical details"}</CardTitle><CardDescription>{selected?.reason ?? "Select an attention item to inspect its evidence."}</CardDescription></CardHeader><CardContent className="mt-5">
@@ -120,13 +142,13 @@ export function AttentionCenter({ endpoint, activate }: { endpoint: string; acti
   </section>;
 }
 
-function QuietHoursCard({ endpoint, snapshot, update, notify }: { endpoint: string; snapshot: AttentionSnapshot; update: (snapshot: AttentionSnapshot) => void; notify: (message: string) => void }) {
+function QuietHoursCard({ endpoint, snapshot, update, notify }: { endpoint: string; snapshot: AttentionSnapshot; update: () => void; notify: (message: string) => void }) {
   const [value, setValue] = useState(snapshot.quietHours);
   const [working, setWorking] = useState(false);
   useEffect(() => setValue(snapshot.quietHours), [snapshot.quietHours]);
   async function save() {
     setWorking(true);
-    try { await previewQuietHours(endpoint, value); const result = await updateQuietHours(endpoint, value, snapshot.revision, `attention.quiet-hours.${snapshot.revision}.${value.enabled}`); update(result.snapshot); notify(`Quiet hours updated. Receipt ${result.receipt.id.slice(-8)}.`); } catch (error) { notify(error instanceof Error ? error.message : "Quiet hours update failed."); } finally { setWorking(false); }
+    try { await previewQuietHours(endpoint, value); const result = await updateQuietHours(endpoint, value, snapshot.revision, `attention.quiet-hours.${snapshot.revision}.${value.enabled}`); update(); notify(`Quiet hours updated. Receipt ${result.receipt.id.slice(-8)}.`); } catch (error) { notify(error instanceof Error ? error.message : "Quiet hours update failed."); } finally { setWorking(false); }
   }
   return <Card><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Quiet hours</CardTitle><CardDescription>Non-critical delivery pauses locally. Critical alerts always bypass.</CardDescription></div><button type="button" role="switch" aria-checked={value.enabled} onClick={() => setValue({ ...value, enabled: !value.enabled })} className={cn("h-7 w-12 rounded-full bg-muted p-1", value.enabled && "bg-primary")}><span className={cn("block size-5 rounded-full bg-background transition-transform", value.enabled && "translate-x-5")} /></button></CardHeader><CardContent className="mt-5"><div className="grid grid-cols-2 gap-2"><TimeInput label="Start" value={value.startMinute} change={(startMinute) => setValue({ ...value, startMinute })} /><TimeInput label="End" value={value.endMinute} change={(endMinute) => setValue({ ...value, endMinute })} /></div><label className="mt-3 block text-[10px] uppercase tracking-wider text-muted-foreground">Timezone<input value={value.timeZone} onChange={(event) => setValue({ ...value, timeZone: event.target.value })} className="mt-1 h-10 w-full rounded-2xl bg-muted px-3 text-xs normal-case tracking-normal outline-none" /></label><div className="mt-4 flex items-center justify-between"><span className="text-[10px] text-muted-foreground">{snapshot.quietHoursActive ? `Active until ${snapshot.nextDeliveryAt ? formatDate(snapshot.nextDeliveryAt) : "next window"}` : "Delivery window open"}</span><Button size="sm" onClick={() => void save()} disabled={working}>{working ? "Saving…" : "Save"}</Button></div></CardContent></Card>;
 }
