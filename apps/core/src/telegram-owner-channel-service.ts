@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { CredentialVault } from "../../../packages/providers/src/lifecycle.js";
 import type { LocalProjectCollection } from "../../../packages/runtime/src/local-projects.js";
 import type { OwnerAnswer, ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
+import { verifyOwnerResponseEnvelope } from "../../../packages/orchestration/src/owner-response-verification.js";
 import { telegramConnectionInputSchema } from "../../../packages/runtime/src/integration-connections.js";
 import { TELEGRAM_CREDENTIAL_REFERENCE } from "./integration-connection-service.js";
 
@@ -19,6 +20,7 @@ const deliverySchema = z.strictObject({
   decision: z.enum(["approved", "declined"]).nullable(),
   artifactDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
   chatId: z.string().min(1).max(100),
+  issuedAt: z.number().int().nonnegative().default(0),
   expiresAt: z.number().int().nonnegative(),
   usedAt: z.number().int().nonnegative().nullable(),
 });
@@ -128,13 +130,40 @@ export class TelegramOwnerChannelService {
     const id = `notice_${match[1]}`;
     const delivery = state.deliveries[id];
     if (!delivery || !timingSafeSignature(match[2]!, this.#signature(delivery, state.signingSecret))) return "This response is not authorized.";
-    if (delivery.chatId !== chatId) return "This chat is not authorized.";
     const credential = await this.#credential();
-    if (!credential || credential.ownerUserId !== actorId) return "This account is not authorized.";
-    if (delivery.usedAt !== null) return "This response was already used.";
-    if (delivery.expiresAt <= this.now()) return "This response expired. Open Studio for the current decision.";
     const lifecycle = await this.lifecycles.get(delivery.projectId);
-    if (!lifecycle || lifecycle.revision !== delivery.revision) return "The project has moved on. Open Studio for the current decision.";
+    if (!credential || !lifecycle) return "This response is not authorized.";
+    try {
+      verifyOwnerResponseEnvelope({
+        schemaVersion: 1,
+        provider: "telegram",
+        deliveryId: delivery.id,
+        projectId: delivery.projectId,
+        expectedRevision: delivery.revision,
+        channelId: chatId,
+        actorId,
+        response: delivery.kind === "solution"
+          ? { kind: "solution", decision: delivery.decision, artifactDigest: delivery.artifactDigest }
+          : { kind: "clarification", questionId: delivery.questionId, optionId: delivery.optionId },
+        issuedAt: delivery.issuedAt,
+        expiresAt: delivery.expiresAt,
+      }, {
+        provider: "telegram",
+        projectId: delivery.projectId,
+        revision: lifecycle.revision,
+        channelId: delivery.chatId,
+        actorId: credential.ownerUserId,
+        consumedDeliveryIds: delivery.usedAt === null ? new Set() : new Set([delivery.id]),
+      }, this.now());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/already been consumed/i.test(message)) return "This response was already used.";
+      if (/expired/i.test(message)) return "This response expired. Open Studio for the current decision.";
+      if (/stale/i.test(message)) return "The project has moved on. Open Studio for the current decision.";
+      if (/channel/i.test(message)) return "This chat is not authorized.";
+      if (/actor/i.test(message)) return "This account is not authorized.";
+      return "This response is not authorized.";
+    }
     if (delivery.kind === "solution" && delivery.decision && delivery.artifactDigest) {
       await this.lifecycles.decideSolution(delivery.projectId, { schemaVersion: 1, expectedRevision: delivery.revision, artifactDigest: delivery.artifactDigest, decision: delivery.decision, feedback: null }, `telegram:${delivery.id}`);
       await this.#consume(delivery.id);
@@ -150,9 +179,10 @@ export class TelegramOwnerChannelService {
     return "Saved. All project questions are answered.";
   }
 
-  #delivery(input: Omit<Delivery, "id" | "expiresAt" | "usedAt">): Delivery {
+  #delivery(input: Omit<Delivery, "id" | "issuedAt" | "expiresAt" | "usedAt">): Delivery {
     const entropy = randomBytes(16).toString("hex");
-    return deliverySchema.parse({ ...input, id: `notice_${createHash("sha256").update(entropy).digest("hex").slice(0, 16)}`, expiresAt: this.now() + 24 * 60 * 60_000, usedAt: null });
+    const issuedAt = this.now();
+    return deliverySchema.parse({ ...input, id: `notice_${createHash("sha256").update(entropy).digest("hex").slice(0, 16)}`, issuedAt, expiresAt: issuedAt + 24 * 60 * 60_000, usedAt: null });
   }
   #callback(delivery: Delivery, secret: string) { return `ps:${delivery.id.slice(7)}:${this.#signature(delivery, secret)}`; }
   #signature(delivery: Delivery, secret: string) { return createHmac("sha256", secret).update(`${delivery.id}:${delivery.projectId}:${delivery.revision}:${delivery.chatId}`).digest("hex").slice(0, 16); }
