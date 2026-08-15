@@ -23,10 +23,9 @@ export class ProjectSolutionService {
     const root = await this.projects.canonicalRoot(projectId);
     await this.artifacts.initialize(root);
     const current = await this.artifacts.read(root, "research");
-    const product = researchEvidenceGraphSchema.parse(input.product.response);
-    const technical = researchEvidenceGraphSchema.parse(input.technical.response);
+    const product = await this.normalizeResearchEvidence(researchEvidenceGraphSchema.parse(input.product.response));
+    const technical = await this.normalizeResearchEvidence(researchEvidenceGraphSchema.parse(input.technical.response));
     if (product.discipline !== "product" || technical.discipline !== "technical") throw new Error("Research specialists returned mismatched disciplines.");
-    await this.verifyResearchSources([...product.sources, ...technical.sources]);
     const body = [
       "# Research", "",
       "## Grounding", "",
@@ -44,21 +43,37 @@ export class ProjectSolutionService {
     });
   }
 
-  private async verifyResearchSources(sources: readonly ResearchEvidenceGraph["sources"][number][]) {
-    for (const source of sources) {
+  private async normalizeResearchEvidence(graph: ResearchEvidenceGraph): Promise<ResearchEvidenceGraph> {
+    const verifiedSourceIds = new Set<string>();
+    for (const source of graph.sources) {
       const url = new URL(source.url);
       if (isPrivateResearchHost(url.hostname)) throw new Error("Research citations cannot target private or loopback hosts.");
-      if (createHash("sha256").update(source.excerpt).digest("hex") !== source.excerptDigest) throw new Error("Research excerpt digest does not match its cited excerpt.");
-      const response = await this.fetcher(url, { method: "GET", redirect: "error", headers: { Accept: "text/html,text/plain,application/json" }, signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) throw new Error(`Research citation could not be verified (${response.status}).`);
-      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-      if (!contentType.includes("text/") && !contentType.includes("json")) throw new Error("Research citation returned an unsupported content type.");
-      const declaredLength = Number(response.headers.get("content-length") ?? "0");
-      if (Number.isFinite(declaredLength) && declaredLength > 1_000_000) throw new Error("Research citation is too large to verify safely.");
-      const body = await response.text();
-      if (body.length > 1_000_000) throw new Error("Research citation is too large to verify safely.");
-      if (!normalizeEvidence(body).includes(normalizeEvidence(source.excerpt))) throw new Error("Research excerpt was not found in the cited source.");
+      if (createHash("sha256").update(source.excerpt).digest("hex") !== source.excerptDigest) continue;
+      try {
+        const response = await this.fetcher(url, { method: "GET", redirect: "error", headers: { Accept: "text/html,text/plain,application/json" }, signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) continue;
+        const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+        if (!contentType.includes("text/") && !contentType.includes("json")) continue;
+        const declaredLength = Number(response.headers.get("content-length") ?? "0");
+        if (Number.isFinite(declaredLength) && declaredLength > 1_000_000) continue;
+        const body = await response.text();
+        if (body.length > 1_000_000 || !normalizeEvidence(body).includes(normalizeEvidence(source.excerpt))) continue;
+        verifiedSourceIds.add(source.sourceId);
+      } catch { /* Public-source outages become explicit evidence gaps below. */ }
     }
+    const sources = graph.sources.filter((source) => verifiedSourceIds.has(source.sourceId));
+    const claims = graph.claims.filter((claim) => claim.sourceIds.every((sourceId) => verifiedSourceIds.has(sourceId)));
+    const claimIds = new Set(claims.map((claim) => claim.claimId));
+    const contradictions = graph.contradictions.filter((entry) => entry.claimIds.every((claimId) => claimIds.has(claimId)));
+    const gaps = [...graph.gaps];
+    const covered = new Set([...claims.map((claim) => claim.topic), ...gaps.map((gap) => gap.topic)]);
+    for (const topic of requiredResearchTopics(graph.discipline)) if (!covered.has(topic)) gaps.push({
+      topic,
+      question: `What verified evidence is available for ${topic.replaceAll("_", " ")}?`,
+      reason: "insufficient_evidence",
+      impact: `No source-bound ${topic.replaceAll("_", " ")} claim passed independent citation verification.`,
+    });
+    return researchEvidenceGraphSchema.parse({ ...graph, sources, claims, contradictions, gaps });
   }
 
   async recordDecision(projectId: string, raw: unknown, idempotencyKey: string, now = Date.now()) {
@@ -278,6 +293,12 @@ async function atomicWrite(path: string, content: string) {
 }
 
 function normalizeEvidence(value: string) { return value.replace(/\s+/g, " ").trim(); }
+
+function requiredResearchTopics(discipline: ResearchEvidenceGraph["discipline"]): readonly ResearchEvidenceGraph["claims"][number]["topic"][] {
+  return discipline === "product"
+    ? ["market", "competitor_features", "competitor_pricing", "public_reviews", "audience", "problem", "product"]
+    : ["architecture", "data", "integrations", "security", "privacy", "reliability", "delivery"];
+}
 
 function isPrivateResearchHost(hostname: string) {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");

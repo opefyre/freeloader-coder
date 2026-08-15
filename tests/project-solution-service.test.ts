@@ -102,7 +102,7 @@ test("solution publication is complete, cited, independently reviewed, atomic, a
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("research publication rejects invented citations and preserves contradictions and browsing gaps", async () => {
+test("research publication rejects unsafe citations, degrades unverifiable public claims to gaps, and preserves verified contradictions", async () => {
   const root = join(process.cwd(), `.test-research-contract-${crypto.randomUUID()}`);
   const workspace = join(root, "product");
   try {
@@ -122,11 +122,14 @@ test("research publication rejects invented citations and preserves contradictio
       product: { providerId: "provider-a", modelId: "product-model", response: researchGraph("product", { sources: [{ ...researchGraph("product").sources[0], url: "http://127.0.0.1/private" }] }) },
       technical: { providerId: "provider-b", modelId: "technical-model", response: researchGraph("technical") },
     }), /private or loopback/);
-    await assert.rejects(() => service.publishResearch(project.id, {
+    await service.publishResearch(project.id, {
       contextDigest: "a".repeat(64),
       product: { providerId: "provider-a", modelId: "product-model", response: researchGraph("product", { sources: [{ ...researchGraph("product").sources[0], excerptDigest: "e".repeat(64) }] }) },
       technical: { providerId: "provider-b", modelId: "technical-model", response: researchGraph("technical") },
-    }), /digest does not match/);
+    });
+    const degraded = await readFile(join(workspace, "RESEARCH.md"), "utf8");
+    assert.doesNotMatch(degraded, /https:\/\/example\.com\/product/);
+    assert.match(degraded, /No source-bound market claim passed independent citation verification/);
     const product = researchGraph("product", {
       claims: [
         ...researchGraph("product").claims,
