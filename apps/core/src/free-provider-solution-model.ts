@@ -9,7 +9,7 @@ import { projectEgressPermitSchema, researchEvidenceGraphSchema } from "../../..
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 1;
+const RESPONSE_CONTRACT_VERSION = 2;
 
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
@@ -101,7 +101,10 @@ function schemaFor(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): Rea
 }
 
 function researchEvidenceResponseSchema(discipline: "product" | "technical"): Readonly<Record<string, unknown>> {
-  const evidenceId = { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$" };
+  // Keep the wire schema to the portable JSON-Schema subset shared by the free
+  // providers. The stricter canonical Zod contract is enforced locally before
+  // any response is persisted or returned to the orchestrator.
+  const evidenceId = { type: "string" };
   const topics = discipline === "product"
     ? ["market", "competitor_features", "competitor_pricing", "public_reviews", "audience", "problem", "product"]
     : ["architecture", "data", "integrations", "security", "privacy", "reliability", "delivery"];
@@ -112,52 +115,46 @@ function researchEvidenceResponseSchema(discipline: "product" | "technical"): Re
     properties: {
       schemaVersion: { const: 1 },
       discipline: { const: discipline },
-      questions: { type: "array", minItems: 1, maxItems: 50, items: { type: "string", minLength: 3, maxLength: 1_000 } },
+      questions: { type: "array", items: { type: "string" } },
       sources: {
-        type: "array", maxItems: 200, items: {
+        type: "array", items: {
           type: "object", additionalProperties: false,
           required: ["sourceId", "url", "title", "retrievedAt", "excerpt", "excerptDigest", "confidence", "relevance", "freshness"],
           properties: {
             sourceId: evidenceId,
-            url: { type: "string", format: "uri", pattern: "^https?://" },
-            title: { type: "string", minLength: 3, maxLength: 300 },
-            retrievedAt: { type: "string", format: "date-time" },
-            excerpt: { type: "string", minLength: 10, maxLength: 8_000 },
-            excerptDigest: { type: "string", pattern: "^[a-f0-9]{64}$" },
-            confidence: { type: "number", minimum: 0, maximum: 1 },
-            relevance: { type: "number", minimum: 0, maximum: 1 },
+            url: { type: "string" }, title: { type: "string" }, retrievedAt: { type: "string" },
+            excerpt: { type: "string" }, excerptDigest: { type: "string" },
+            confidence: { type: "number" }, relevance: { type: "number" },
             freshness: { enum: ["current", "stale"] },
           },
         },
       },
       claims: {
-        type: "array", maxItems: 500, items: {
+        type: "array", items: {
           type: "object", additionalProperties: false,
           required: ["claimId", "topic", "statement", "sourceIds", "confidence", "relevance"],
           properties: {
             claimId: evidenceId,
             topic: { enum: topics },
-            statement: { type: "string", minLength: 10, maxLength: 4_000 },
-            sourceIds: { type: "array", minItems: 1, maxItems: 20, items: evidenceId },
-            confidence: { type: "number", minimum: 0, maximum: 1 },
-            relevance: { type: "number", minimum: 0, maximum: 1 },
+            statement: { type: "string" }, sourceIds: { type: "array", items: evidenceId },
+            confidence: { type: "number" }, relevance: { type: "number" },
           },
         },
       },
       contradictions: {
-        type: "array", maxItems: 100, items: {
+        type: "array", items: {
           type: "object", additionalProperties: false, required: ["claimIds", "summary"],
-          properties: { claimIds: { type: "array", minItems: 2, maxItems: 2, items: evidenceId }, summary: { type: "string", minLength: 10, maxLength: 2_000 } },
+          properties: { claimIds: { type: "array", items: evidenceId }, summary: { type: "string" } },
         },
       },
       gaps: {
-        type: "array", maxItems: 100, items: {
+        type: "array", items: {
           type: "object", additionalProperties: false, required: ["topic", "question", "reason", "impact"],
           properties: {
             topic: { enum: topics },
-            question: { type: "string", minLength: 3, maxLength: 1_000 },
+            question: { type: "string" },
             reason: { enum: ["browsing_unavailable", "no_reliable_source", "insufficient_evidence"] },
-            impact: { type: "string", minLength: 3, maxLength: 2_000 },
+            impact: { type: "string" },
           },
         },
       },
