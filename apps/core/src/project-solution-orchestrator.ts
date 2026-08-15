@@ -130,8 +130,21 @@ function safeJson(value: unknown) {
   return serialized;
 }
 
-function productInstruction() { return "Analyze the grounded context as a product specialist. Return a strict research evidence graph with discipline=product, scoped questions, HTTP(S) sources, retrieval timestamps, SHA-256 excerpt digests, confidence, relevance, source-bound claims, contradictions, and explicit browsing/evidence gaps. Cover market, competitors, users, workflows, UX, rollout, and metrics. Never invent observed facts."; }
-function technicalInstruction() { return "Analyze the grounded context as a senior architect. Return a strict research evidence graph with discipline=technical, scoped questions, HTTP(S) sources, retrieval timestamps, SHA-256 excerpt digests, confidence, relevance, source-bound claims, contradictions, and explicit browsing/evidence gaps. Cover architecture, data, integrations, security, privacy, reliability, and delivery constraints. Distinguish evidence from proposals."; }
+function productInstruction() { return researchInstruction("product", ["market", "competitor_features", "competitor_pricing", "public_reviews", "audience", "problem", "product"]); }
+function technicalInstruction() { return researchInstruction("technical", ["architecture", "data", "integrations", "security", "privacy", "reliability", "delivery"]); }
+function researchInstruction(discipline: "product" | "technical", topics: readonly string[]) {
+  return [
+    `Analyze the grounded context as a ${discipline === "product" ? "product and market specialist" : "senior architect"}.`,
+    "Return exactly one JSON object using these exact top-level keys: schemaVersion, discipline, questions, sources, claims, contradictions, gaps.",
+    `Set schemaVersion=1 and discipline=${discipline}. questions must contain the scoped research questions.`,
+    "Each sources item must use exactly sourceId, url, title, retrievedAt, excerpt, excerptDigest, confidence, relevance, freshness. url must be HTTP(S); retrievedAt must be an offset ISO timestamp; excerptDigest must be the lowercase SHA-256 of excerpt.",
+    "Each claims item must use exactly claimId, topic, statement, sourceIds, confidence, relevance. Never create a claim without a source in sources.",
+    "Each contradictions item must use exactly claimIds and summary. Each gaps item must use exactly topic, question, reason, impact.",
+    `Cover every required topic through either a verified claim or a gap: ${topics.join(", ")}.`,
+    "If browsing or a reliable excerpt is unavailable, do not invent a source or claim: return sources=[] and claims=[], then include one gaps item for every required topic with reason=browsing_unavailable. contradictions may be empty.",
+    "Do not use aliases such as scoped_questions, evidence_gaps, browsing_gaps, retrieval_timestamp, or sha256_digest. Distinguish evidence from proposals and never invent observed facts.",
+  ].join(" ");
+}
 function reconciliationInstruction() { return "Reconcile both specialist analyses into one complete implementable solution. Resolve conflicts using CONTEXT.md as authority, incorporate owner feedback, cite both local://CONTEXT.md and local://RESEARCH.md plus only verified research URLs, record selected and rejected alternatives with rationale, and keep every unresolved blocker explicit with owner, impact, and resolution. Populate every required solution section and return JSON matching the requested schema only."; }
 function revisionScopeInstruction() { return "Compare the owner feedback with the current candidate and CONTEXT.md. Return only the exact solution section keys that must change. Do not include unaffected sections. Return strict structured JSON."; }
 function reviewInstruction(discipline: "product" | "technical") { return `Independently audit the candidate solution from the ${discipline} discipline against CONTEXT.md and owner feedback. Fail on omissions, contradictions, invented facts, unsafe assumptions, or non-implementable guidance. Return a strict verdict and actionable findings.`; }

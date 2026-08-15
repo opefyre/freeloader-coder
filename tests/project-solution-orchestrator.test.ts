@@ -44,12 +44,14 @@ test("solution orchestration uses parallel specialists and independent reviewers
   const roles: SolutionRole[] = [];
   const published: unknown[] = [];
   const research: unknown[] = [];
+  const researchInstructions: string[] = [];
   const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [{ artifactDigest: "c".repeat(64), feedback: "Keep owner actions simple.", requestedAt: 1 }] };
   const model: RoutedSolutionModel = {
     async run(input) {
       roles.push(input.role);
       assert.equal(input.contextDigest, "a".repeat(64));
       assert.ok(input.sources.some((source) => source.name === "CONTEXT.md"));
+      if (input.role === "product_research" || input.role === "technical_research") researchInstructions.push(input.instruction);
       if (input.role === "solution_reconciliation") return evidence("reconciler", content);
       if (input.role === "product_review") return evidence("product-model", { schemaVersion: 1, reviewerId: "review-a", discipline: "product", verdict: "pass", findings: ["Product scope is coherent."] });
       if (input.role === "technical_review") return evidence("technical-model", { schemaVersion: 1, reviewerId: "review-b", discipline: "technical", verdict: "pass", findings: ["Architecture is implementable."] });
@@ -70,6 +72,12 @@ test("solution orchestration uses parallel specialists and independent reviewers
   assert.deepEqual(roles.slice(2), ["solution_reconciliation", "product_review", "technical_review"]);
   assert.equal(published.length, 1);
   assert.equal(research.length, 1);
+  assert.equal(researchInstructions.length, 2);
+  for (const instruction of researchInstructions) {
+    assert.match(instruction, /exact top-level keys: schemaVersion, discipline, questions, sources, claims, contradictions, gaps/);
+    assert.match(instruction, /do not invent a source or claim/);
+    assert.match(instruction, /Do not use aliases such as scoped_questions/);
+  }
   const draft = published[0] as any;
   assert.equal(draft.revision, 1);
   assert.match(draft.reviews[0].reviewerId, /^test\/product-model\/review-a$/);
