@@ -77,6 +77,7 @@ export class FreeProviderSolutionUnavailableError extends Error { constructor(re
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
 function failure(code: string, status: number) { return Object.assign(new Error(code), { code, status }); }
 function schemaFor(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): Readonly<Record<string, unknown>> {
+  if (role === "product_research" || role === "technical_research") return researchEvidenceResponseSchema(role === "product_research" ? "product" : "technical");
   const deliverySchema = role === "delivery_planning" ? deliveryPlanningResponseSchema() : null;
   if (deliverySchema) return deliverySchema;
   if (role === "delivery_review" || role === "technical_delivery_review") return { type: "object", additionalProperties: false, required: ["schemaVersion", "reviewerId", "discipline", "verdict", "findings"], properties: { schemaVersion: { const: 1 }, reviewerId: { type: "string" }, discipline: { enum: ["delivery", "technical"] }, verdict: { enum: ["pass", "fail"] }, findings: { type: "array", items: { type: "string" } } } };
@@ -84,6 +85,71 @@ function schemaFor(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): Rea
   if (role.endsWith("review")) return { type: "object", additionalProperties: false, required: ["schemaVersion", "reviewerId", "discipline", "verdict", "findings"], properties: { schemaVersion: { const: 1 }, reviewerId: { type: "string" }, discipline: { enum: ["product", "technical"] }, verdict: { enum: ["pass", "fail"] }, findings: { type: "array", items: { type: "string" } } } };
   if (role === "solution_reconciliation") { const list = { type: "array", minItems: 1, items: { type: "string" } }; const keys = ["behavior", "architecture", "userExperience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics", "citations"]; return { type: "object", additionalProperties: false, required: ["schemaVersion", "title", "summary", ...keys], properties: { schemaVersion: { const: 1 }, title: { type: "string" }, summary: { type: "string" }, ...Object.fromEntries(keys.map((key) => [key, list])) } }; }
   return { type: "object", additionalProperties: true };
+}
+
+function researchEvidenceResponseSchema(discipline: "product" | "technical"): Readonly<Record<string, unknown>> {
+  const evidenceId = { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$" };
+  const topics = discipline === "product"
+    ? ["market", "competitor_features", "competitor_pricing", "public_reviews", "audience", "problem", "product"]
+    : ["architecture", "data", "integrations", "security", "privacy", "reliability", "delivery"];
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["schemaVersion", "discipline", "questions", "sources", "claims", "contradictions", "gaps"],
+    properties: {
+      schemaVersion: { const: 1 },
+      discipline: { const: discipline },
+      questions: { type: "array", minItems: 1, maxItems: 50, items: { type: "string", minLength: 3, maxLength: 1_000 } },
+      sources: {
+        type: "array", maxItems: 200, items: {
+          type: "object", additionalProperties: false,
+          required: ["sourceId", "url", "title", "retrievedAt", "excerpt", "excerptDigest", "confidence", "relevance", "freshness"],
+          properties: {
+            sourceId: evidenceId,
+            url: { type: "string", format: "uri", pattern: "^https?://" },
+            title: { type: "string", minLength: 3, maxLength: 300 },
+            retrievedAt: { type: "string", format: "date-time" },
+            excerpt: { type: "string", minLength: 10, maxLength: 8_000 },
+            excerptDigest: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            relevance: { type: "number", minimum: 0, maximum: 1 },
+            freshness: { enum: ["current", "stale"] },
+          },
+        },
+      },
+      claims: {
+        type: "array", maxItems: 500, items: {
+          type: "object", additionalProperties: false,
+          required: ["claimId", "topic", "statement", "sourceIds", "confidence", "relevance"],
+          properties: {
+            claimId: evidenceId,
+            topic: { enum: topics },
+            statement: { type: "string", minLength: 10, maxLength: 4_000 },
+            sourceIds: { type: "array", minItems: 1, maxItems: 20, items: evidenceId },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            relevance: { type: "number", minimum: 0, maximum: 1 },
+          },
+        },
+      },
+      contradictions: {
+        type: "array", maxItems: 100, items: {
+          type: "object", additionalProperties: false, required: ["claimIds", "summary"],
+          properties: { claimIds: { type: "array", minItems: 2, maxItems: 2, items: evidenceId }, summary: { type: "string", minLength: 10, maxLength: 2_000 } },
+        },
+      },
+      gaps: {
+        type: "array", maxItems: 100, items: {
+          type: "object", additionalProperties: false, required: ["topic", "question", "reason", "impact"],
+          properties: {
+            topic: { enum: topics },
+            question: { type: "string", minLength: 3, maxLength: 1_000 },
+            reason: { enum: ["browsing_unavailable", "no_reliable_source", "insufficient_evidence"] },
+            impact: { type: "string", minLength: 3, maxLength: 2_000 },
+          },
+        },
+      },
+    },
+  };
 }
 
 function deliveryPlanningResponseSchema(): Readonly<Record<string, unknown>> {

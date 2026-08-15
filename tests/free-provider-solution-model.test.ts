@@ -16,13 +16,17 @@ test("solution model uses only consented free providers and replays durable outp
   try {
     let calls = 0;
     const connections = [connection("groq", "openai/gpt-oss-120b"), connection("mistral", "mistral-small-latest")];
+    let responseSchema: any;
     const model = new FreeProviderSolutionModel(root, { list: async () => connections } as any, { read: async () => "safe-test-credential" }, {
-      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => { calls += 1; return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ findings: ["Grounded product finding."] }), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }; } }) as unknown as ProviderAdapter,
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => { calls += 1; responseSchema = request.responseSchema; return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(researchResponse("product")), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }; } }) as unknown as ProviderAdapter,
     }, () => now);
     const input = { projectId, role: "product_research" as const, contextDigest, instruction: "Analyze product behavior.", sources: [{ name: "CONTEXT.md", content: "# Context\n\nNon-personal test source." }], permit: { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 } };
     const first = await model.run(input);
     assert.equal(first.providerId, "groq");
     assert.equal(calls, 1);
+    assert.equal(responseSchema.additionalProperties, false);
+    assert.equal(responseSchema.properties.discipline.const, "product");
+    assert.deepEqual(responseSchema.required, ["schemaVersion", "discipline", "questions", "sources", "claims", "contradictions", "gaps"]);
     await model.run(input);
     assert.equal(calls, 1);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -45,7 +49,7 @@ test("solution model accepts ISO dates while still rejecting international phone
   try {
     let calls = 0;
     const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
-      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => { calls += 1; return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ findings: ["Grounded finding."] }), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }; } }) as unknown as ProviderAdapter,
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => { calls += 1; return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(researchResponse("product")), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }; } }) as unknown as ProviderAdapter,
     }, () => now);
     const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
     await model.run({ projectId, role: "product_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Last reviewed: 2026-08-12" }], permit });
@@ -62,7 +66,7 @@ test("solution model refreshes stale consented provider evidence before routing"
     let current: ProviderConnection = { ...fresh, state: "stale", cost: { ...fresh.cost, expiresAt: now - 1 }, quota: { ...fresh.quota, expiresAt: now - 1 }, canary: { ...fresh.canary, expiresAt: now - 1 } };
     let refreshes = 0;
     const model = new FreeProviderSolutionModel(root, { list: async () => [current] } as any, { read: async () => "safe-test-credential" }, {
-      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => ({ schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ findings: ["Fresh evidence used."] }), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }) }) as unknown as ProviderAdapter,
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => ({ schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(researchResponse("product")), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }) }) as unknown as ProviderAdapter,
     }, () => now, { reProbe: async () => { refreshes += 1; current = fresh; } });
     const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
     const result = await model.run({ projectId, role: "product_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit });
@@ -74,4 +78,19 @@ test("solution model refreshes stale consented provider evidence before routing"
 function connection(providerId: "groq" | "mistral", modelId: string): ProviderConnection {
   const limits = providerId === "groq" ? { context: 131_072, output: 65_536, url: "https://api.groq.com/openai/v1" } : { context: 256_000, output: 32_000, url: "https://api.mistral.ai/v1" };
   return { schemaVersion: 1, id: `connection-${providerId}`, providerId, modelId, apiBaseUrl: limits.url, credentialReference: `vault:providers/${providerId}/primary`, credentialFingerprint: "012345abcdef", credentialState: "active", state: "ready", privacyClass: "training_eligible", capabilityRoles: ["implementer"], contextWindowTokens: limits.context, maxOutputTokens: limits.output, cost: { access: "account_limited_free", plan: "Free", zeroCost: true, billingEnabled: false, observedAt: now - 1, expiresAt: now + 60_000, source: "account_api" }, quota: { source: "account_api", observedAt: now - 1, expiresAt: now + 60_000, requestsPerMinute: 5, requestsPerDay: 100, tokensPerMinute: 30_000, tokensPerDay: 1_000_000, remainingRequests: 90, remainingTokens: 900_000, resetAt: now + 60_000 }, canary: { status: "passed", observedAt: now - 1, expiresAt: now + 60_000, modelId, capabilities: ["chat", "structured_output"], inputTokens: 1, outputTokens: 1, failureCode: null }, updatedAt: now - 1 };
+}
+
+function researchResponse(discipline: "product" | "technical") {
+  const topics = discipline === "product"
+    ? ["market", "competitor_features", "competitor_pricing", "public_reviews", "audience", "problem", "product"]
+    : ["architecture", "data", "integrations", "security", "privacy", "reliability", "delivery"];
+  return {
+    schemaVersion: 1,
+    discipline,
+    questions: ["What evidence is required?"],
+    sources: [],
+    claims: [],
+    contradictions: [],
+    gaps: topics.map((topic) => ({ topic, question: `What evidence supports ${topic}?`, reason: "browsing_unavailable", impact: `Verified ${topic} evidence is not available.` })),
+  };
 }
