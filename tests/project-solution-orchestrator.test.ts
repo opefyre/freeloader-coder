@@ -102,6 +102,43 @@ test("review dissent fails closed without publishing", async () => {
   assert.equal(published, false);
 });
 
+test("recoverable review dissent is revised and independently re-reviewed before publication", async () => {
+  const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };
+  let productReviews = 0;
+  let reconciliations = 0;
+  let published: any;
+  const healed = { ...content, unresolvedBlockers: [{ blocker: "Public market evidence is unavailable.", impact: "Market claims remain provisional.", owner: "product", resolution: "Collect verified sources before market claims are approved." }] };
+  const service = new ProjectSolutionOrchestrator(
+    { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
+    { publishResearch: async () => ({ body: "# Sanitized research\n" }), publish: async (_id: string, draft: unknown) => { published = draft; return { kind: "solution", digest: "d".repeat(64), revision: 1 }; }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
+    { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
+    { authorize: async () => permit },
+    { run: async ({ role, sources, instruction }) => {
+      if (role === "solution_reconciliation") {
+        reconciliations += 1;
+        if (reconciliations === 2) {
+          assert.ok(sources.some((source) => source.name === "Independent review findings"));
+          assert.match(instruction, /sole evidence authorities/);
+          return evidence("healer", healed);
+        }
+        return evidence("reconciler", content);
+      }
+      if (role === "product_review") {
+        productReviews += 1;
+        return evidence(`product-${productReviews}`, { schemaVersion: 1, reviewerId: `product-reviewer-${productReviews}`, discipline: "product", verdict: productReviews === 1 ? "fail" : "pass", findings: productReviews === 1 ? ["Remove unsupported market claims."] : [] });
+      }
+      if (role === "technical_review") return evidence("technical", { schemaVersion: 1, reviewerId: "technical-reviewer", discipline: "technical", verdict: "pass", findings: [] });
+      return evidence(role, researchEvidence(role));
+    } },
+  );
+  const result = await service.run(lifecycle.projectId);
+  assert.equal(result.stage, "awaiting_design_approval");
+  assert.equal(reconciliations, 2);
+  assert.equal(productReviews, 2);
+  assert.deepEqual(published.unresolvedBlockers, healed.unresolvedBlockers);
+  assert.equal(published.reviews.every((review: any) => review.verdict === "pass"), true);
+});
+
 test("malformed reconciler output fails before review and publication", async () => {
   let published = false;
   const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };

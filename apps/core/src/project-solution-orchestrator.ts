@@ -87,17 +87,37 @@ export class ProjectSolutionOrchestrator {
       sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }], permit,
     });
     const candidate = solutionContentSchema.parse(reconciled.response);
-    const content = existingContent && revisionScope ? mergeScopedRevision(existingContent, candidate, revisionScope.sections) : candidate;
-    const reviewSource = { name: "Candidate solution", content: safeJson(content) };
-    const [productReviewEvidence, technicalReviewEvidence] = await Promise.all([
-      this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...baseSources, reviewSource], permit }),
-      this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...baseSources, reviewSource], permit }),
-    ]);
-    const productReview = solutionReviewResultSchema.parse(productReviewEvidence.response);
-    const technicalReview = solutionReviewResultSchema.parse(technicalReviewEvidence.response);
-    if (productReview.discipline !== "product" || technicalReview.discipline !== "technical") throw new Error("Solution reviewers returned mismatched disciplines.");
-    if (productReview.verdict !== "pass" || technicalReview.verdict !== "pass") {
-      throw new SolutionReviewDissentError([...productReview.findings, ...technicalReview.findings]);
+    let content = existingContent && revisionScope ? mergeScopedRevision(existingContent, candidate, revisionScope.sections) : candidate;
+    let productReviewEvidence: SolutionModelEvidence;
+    let technicalReviewEvidence: SolutionModelEvidence;
+    let productReview;
+    let technicalReview;
+    const maxHealingRounds = 2;
+    for (let round = 0; ; round += 1) {
+      const reviewSource = { name: "Candidate solution", content: safeJson(content) };
+      [productReviewEvidence, technicalReviewEvidence] = await Promise.all([
+        this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
+        this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
+      ]);
+      productReview = solutionReviewResultSchema.parse(productReviewEvidence.response);
+      technicalReview = solutionReviewResultSchema.parse(technicalReviewEvidence.response);
+      if (productReview.discipline !== "product" || technicalReview.discipline !== "technical") throw new Error("Solution reviewers returned mismatched disciplines.");
+      if (productReview.verdict === "pass" && technicalReview.verdict === "pass") break;
+      const findings = [...productReview.findings, ...technicalReview.findings];
+      if (round >= maxHealingRounds) throw new SolutionReviewDissentError(findings);
+      const healed = await this.model.run({
+        projectId, role: "solution_reconciliation", contextDigest: verified.digest,
+        instruction: healingInstruction(),
+        sources: [
+          ...baseSources,
+          { name: "RESEARCH.md", content: researchArtifact.body },
+          reviewSource,
+          { name: "Independent review findings", content: safeJson(findings) },
+        ],
+        permit,
+      });
+      const healedCandidate = solutionContentSchema.parse(healed.response);
+      content = existingContent && revisionScope ? mergeScopedRevision(existingContent, healedCandidate, revisionScope.sections) : healedCandidate;
     }
     const reviewerIds = [reviewerIdentity(productReviewEvidence, productReview.reviewerId), reviewerIdentity(technicalReviewEvidence, technicalReview.reviewerId)];
     if (reviewerIds[0] === reviewerIds[1]) throw new Error("Solution review requires independent reviewer identities.");
@@ -146,6 +166,7 @@ function researchInstruction(discipline: "product" | "technical", topics: readon
   ].join(" ");
 }
 function reconciliationInstruction() { return "Reconcile the sanitized RESEARCH.md and grounded CONTEXT.md into one complete implementable solution. Resolve conflicts using CONTEXT.md as authority and incorporate owner feedback. Cite both local://CONTEXT.md and local://RESEARCH.md; cite an HTTP(S) URL only when it appears in sanitized RESEARCH.md. Return schemaVersion=1 as a number. Populate every required section. alternatives must contain at least one selected and one rejected item, each with option, disposition, and rationale. unresolvedBlockers must be an array whose items use blocker, impact, owner, and resolution; use an empty array when none remain. Return JSON matching the requested schema only."; }
+function healingInstruction() { return "Revise the candidate only enough to resolve every independent review finding. CONTEXT.md and sanitized RESEARCH.md are the sole evidence authorities. Remove invented facts and unsupported citations; represent unresolved evidence as explicit unresolvedBlockers instead of guessing. Keep already-correct requirements and implementable guidance intact. Cite local://CONTEXT.md and local://RESEARCH.md only when those named sources are supplied, and cite HTTP(S) sources only when present in sanitized RESEARCH.md. Return a complete solution with schemaVersion=1 as a number, every required section, at least one selected and one rejected alternative, and the exact requested JSON schema only."; }
 function revisionScopeInstruction() { return "Compare the owner feedback with the current candidate and CONTEXT.md. Return only the exact solution section keys that must change. Do not include unaffected sections. Return strict structured JSON."; }
 function reviewInstruction(discipline: "product" | "technical") { return `Independently audit the candidate solution from the ${discipline} discipline against CONTEXT.md and owner feedback. Fail on omissions, contradictions, invented facts, unsafe assumptions, or non-implementable guidance. Return a strict verdict and actionable findings.`; }
 
