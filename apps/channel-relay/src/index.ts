@@ -26,7 +26,7 @@ async function receiveSlack(request: Request, env: Env) {
   if (!await verifySlack(raw, timestamp, signature, env.SLACK_SIGNING_SECRET)) return json({ error: "Invalid signature." }, 401);
   let payload: any; try { payload = JSON.parse(new URLSearchParams(raw).get("payload") ?? "null"); } catch { return json({ error: "Invalid payload." }, 400); }
   const action = Array.isArray(payload?.actions) && payload.actions.length === 1 ? payload.actions[0] : null;
-  if (payload?.type !== "block_actions" || action?.action_id !== "codkesh_owner_response" || !decisionId(action.value) || typeof payload?.channel?.id !== "string" || typeof payload?.user?.id !== "string") return json({ error: "Unsupported interaction." }, 400);
+  if (payload?.type !== "block_actions" || !/^codkesh_owner_response:(approve|decline)$/.test(action?.action_id ?? "") || !decisionId(action.value) || typeof payload?.channel?.id !== "string" || typeof payload?.user?.id !== "string") return json({ error: "Unsupported interaction." }, 400);
   await enqueue(env, { schemaVersion: 1, provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, receivedAt: Date.now() });
   return new Response("", { status: 200, headers: securityHeaders });
 }

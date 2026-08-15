@@ -1,1 +1,9 @@
-{"name":"@codkesh/channel-relay","version":"0.0.0","private":true,"type":"module"}
+{
+  "name": "@codkesh/channel-relay",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy --config wrangler.jsonc"
+  }
+}
