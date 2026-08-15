@@ -50,7 +50,7 @@ export class SignedOwnerResponseService {
       type: z.literal("block_actions"),
       user: z.strictObject({ id: z.string().min(1).max(128) }).passthrough(),
       channel: z.strictObject({ id: z.string().min(1).max(128) }).passthrough(),
-      actions: z.array(z.object({ action_id: z.literal("codkesh_owner_response"), value: z.string().regex(/^decision_[a-f0-9]{16}$/) }).passthrough()).length(1),
+      actions: z.array(z.object({ action_id: z.string().regex(/^codkesh_owner_response:(approve|decline)$/), value: z.string().regex(/^decision_[a-f0-9]{16}$/) }).passthrough()).length(1),
     }).passthrough().safeParse(payload);
     if (!parsed.success) throw new SignedOwnerResponseError("payload_invalid", "Slack response payload is not a Codkesh owner decision.");
     return this.#apply("slack", parsed.data.actions[0]!.value, parsed.data.channel.id, parsed.data.user.id);
