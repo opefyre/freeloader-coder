@@ -123,8 +123,8 @@ export class ProjectSolutionOrchestrator {
     if (reviewerIds[0] === reviewerIds[1]) throw new Error("Solution review requires independent reviewer identities.");
     const artifact = await this.solutions.publish(projectId, {
       ...content, revision, reviews: [
-        { ...productReview, reviewerId: reviewerIds[0], verdict: "pass" },
-        { ...technicalReview, reviewerId: reviewerIds[1], verdict: "pass" },
+        { reviewerId: reviewerIds[0], discipline: productReview.discipline, verdict: "pass", findings: productReview.findings },
+        { reviewerId: reviewerIds[1], discipline: technicalReview.discipline, verdict: "pass", findings: technicalReview.findings },
       ],
     }, this.now());
     return this.lifecycles.publishSolution(projectId, artifact);

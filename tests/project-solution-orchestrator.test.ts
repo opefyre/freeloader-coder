@@ -84,6 +84,8 @@ test("solution orchestration uses parallel specialists and independent reviewers
   }
   const draft = published[0] as any;
   assert.equal(draft.revision, 1);
+  assert.equal("schemaVersion" in draft.reviews[0], false);
+  assert.equal("schemaVersion" in draft.reviews[1], false);
   assert.match(draft.reviews[0].reviewerId, /^test\/product-model\/review-a$/);
   assert.match(draft.reviews[1].reviewerId, /^test\/technical-model\/review-b$/);
 });
