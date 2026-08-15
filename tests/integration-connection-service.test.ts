@@ -59,6 +59,27 @@ test("Jira remains usable when the optional profile endpoint is unavailable", as
   assert.equal(jira?.resources[0]?.label, "PIPE · Coding Pipeline");
 });
 
+test("broker-issued Jira OAuth migrates its refresh token to a sealed rotating grant", async () => {
+  const stored = new Map<string, string>();
+  const vault = { async write(reference: string, value: string) { stored.set(reference, value); }, async read(reference: string) { return stored.get(reference) ?? null; }, async delete(reference: string) { stored.delete(reference); } };
+  let refreshRequest: Record<string, unknown> | null = null;
+  const service = new IntegrationConnectionService(undefined, vault, async (input, init) => {
+    const url = String(input);
+    if (url.endsWith("/v1/oauth/exchange")) return Response.json({ credential: { access_token: "initial-access", refresh_token: "legacy-refresh-token-value", expires_in: -1 } });
+    if (url.endsWith("/v1/oauth/refresh")) { refreshRequest = JSON.parse(String(init?.body)); return Response.json({ credential: { access_token: "renewed-access", refresh_grant: "sealed.rotated", expires_in: 3600 } }); }
+    assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer renewed-access");
+    if (url.endsWith("/oauth/token/accessible-resources")) return Response.json([{ id: "cloud-1", name: "Opefyre", url: "https://opefyre.atlassian.net" }]);
+    if (url.endsWith("/rest/api/3/myself")) return Response.json({ displayName: "Opefyre" });
+    if (url.includes("/rest/api/3/project/search")) return Response.json({ values: [{ id: "10132", key: "PIPE", name: "Coding Pipeline" }] });
+    return new Response("not found", { status: 404 });
+  });
+  await service.completeBrokerOAuth("jira", "x".repeat(40));
+  assert.deepEqual(refreshRequest, { provider: "jira", refreshToken: "legacy-refresh-token-value" });
+  assert.equal(stored.get("vault:providers/jira/refresh"), JSON.stringify({ brokerRefreshGrant: "sealed.rotated" }));
+  assert.equal([...stored.values()].some((value) => value.includes("legacy-refresh-token-value")), false);
+  assert.equal((await service.list()).connections.find((connection) => connection.provider === "jira")?.state, "ready");
+});
+
 test("Telegram connection verifies the bot and selected chat without exposing its token", async () => {
   const stored = new Map<string, string>();
   const vault = {

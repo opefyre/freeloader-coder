@@ -1,0 +1,9 @@
+{
+  "name": "@codkesh/oauth-broker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy --config wrangler.jsonc"
+  }
+}
