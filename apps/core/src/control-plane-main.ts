@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createControlPlaneServer } from "./control-plane.js";
 import { LocalProjectRegistry } from "./local-project-registry.js";
 import { NativePicker } from "./native-picker.js";
+import { NativePickerEvidenceStore } from "./native-picker-evidence-store.js";
 import { IntegrationConnectionService } from "./integration-connection-service.js";
 import { ProjectContextService } from "./project-context-service.js";
 import { ProjectIntakeCoordinator } from "./project-intake-coordinator.js";
@@ -79,7 +80,8 @@ const projectSolutions = new ProjectSolutionService(localProjects);
 const projectDeliveryPlans = new ProjectDeliveryPlanService(localProjects);
 const projectLifecycles = new ProjectLifecycleService(stateDirectory);
 const projectIntakes = new ProjectIntakeStore(stateDirectory);
-const nativePicker = new NativePicker();
+const nativePickerEvidence = new NativePickerEvidenceStore(stateDirectory);
+const nativePicker = new NativePicker(undefined, Date.now, (evidence) => nativePickerEvidence.record(evidence));
 const localRequests = new LocalRequestStore(
   stateDirectory,
   (projectId) => localProjects.has(projectId),

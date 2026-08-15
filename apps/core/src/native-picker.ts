@@ -9,6 +9,7 @@ import {
   nativePickerResponseSchema,
   type NativePickerResponse,
 } from "../../../packages/runtime/src/native-picker.js";
+import type { NativePickerEvidence } from "./native-picker-evidence-store.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +19,7 @@ export class NativePicker {
   constructor(
     private readonly picker: (kind: "folder" | "files") => Promise<string[]> = platformPick,
     private readonly now: () => number = Date.now,
+    private readonly evidence: (input: NativePickerEvidence) => Promise<void> = async () => undefined,
   ) {}
 
   async folder(): Promise<NativePickerResponse> {
@@ -42,21 +44,31 @@ export class NativePicker {
           this.#selections.set(handle, { kind, path: canonicalPath, expiresAt: this.now() + 10 * 60_000 });
           return { path: handle, label: basename(canonicalPath) };
         }));
-      return nativePickerResponseSchema.parse({
+      const response = nativePickerResponseSchema.parse({
         schemaVersion: 1,
         outcome: selections.length > 0 ? "selected" : "cancelled",
         selections,
       });
+      await this.#record(kind, response.outcome, selections.length);
+      return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (/user canceled|cancelled|canceled/i.test(message)) {
+        await this.#record(kind, "cancelled", 0);
         return nativePickerResponseSchema.parse({ schemaVersion: 1, outcome: "cancelled", selections: [] });
       }
       if (/not readable|not a regular|not a folder|symbolic link/i.test(message)) {
+        await this.#record(kind, /not readable/i.test(message) ? "denied" : "invalid", 0);
         throw new Error(message);
       }
+      await this.#record(kind, "unavailable", 0);
       throw new Error("The native picker could not be opened on this device. Check Files and Folders access, then try again.");
     }
+  }
+
+  async #record(kind: "folder" | "files", outcome: NativePickerEvidence["outcome"], selectionCount: number) {
+    const platform = process.platform === "darwin" || process.platform === "linux" || process.platform === "win32" ? process.platform : "other";
+    await this.evidence({ schemaVersion: 1, kind, outcome, selectionCount, platform, observedAt: this.now() }).catch(() => undefined);
   }
 
   resolveFolder(handle: string): string { return this.#resolve(handle, "folder"); }

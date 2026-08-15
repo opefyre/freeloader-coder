@@ -45,6 +45,9 @@ test("native picker rejects symbolic links and selections of the wrong kind befo
 });
 
 test("native picker cancellation returns no handles", async () => {
-  const picker = new NativePicker(async () => []);
+  const evidence: any[] = [];
+  const picker = new NativePicker(async () => [], Date.now, async (item) => { evidence.push(item); });
   assert.deepEqual(await picker.folder(), { schemaVersion: 1, outcome: "cancelled", selections: [] });
+  assert.equal(evidence[0]?.outcome, "cancelled");
+  assert.equal(evidence[0]?.selectionCount, 0);
 });
