@@ -11,6 +11,11 @@ import type { ProjectDeliveryPlanService } from "./project-delivery-plan-service
 import { assertDeliveryPlanningEligible, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
 
 const stateSchema = z.strictObject({ schemaVersion: z.literal(1), projects: z.record(z.string(), projectExecutionRecordSchema) });
+const reviewRepairSchema = z.strictObject({
+  approvalId: z.string().regex(/^approval_[a-f0-9]{20}$/),
+  expectedRevision: z.number().int().nonnegative(),
+  rationale: z.string().trim().min(10).max(2_000),
+});
 type JiraReceipt = { completed: boolean; planDigest: string; issues: Record<string, { issueKey: string }> };
 
 export class ProjectExecutionService {
@@ -135,6 +140,49 @@ export class ProjectExecutionService {
       const now = this.now();
       const tasks = record.tasks.map((task): ExecutionTask => task.lease && task.lease.expiresAt <= now ? { ...task, status: "needs_user", lease: null, revision: task.revision + 1, safeMessage: "The worker lease expired with an unknown outcome. Inspect preserved evidence before retrying.", updatedAt: now } : task);
       return { record: projectState({ ...record, tasks, revision: record.revision + 1, updatedAt: now }, now), result: tasks.filter((task) => task.status === "needs_user") };
+    });
+  }
+
+  async authorizeReviewRepair(projectId: string, taskId: string, input: unknown) {
+    const approval = reviewRepairSchema.parse(input);
+    return this.#mutateProject(projectId, (record) => {
+      const task = record.tasks.find((candidate) => candidate.id === taskId);
+      if (!task) throw new ProjectExecutionError("not_found", "Execution task was not found.");
+      if (task.reviewAttempts?.some((attempt) => attempt.approvalId === approval.approvalId)) return { record, result: task };
+      if (task.revision !== approval.expectedRevision) throw new ProjectExecutionError("stale_revision", "Review evidence changed. Review the latest findings before authorizing repair.");
+      if (!["needs_user", "quarantined"].includes(task.status) || task.reviews.length === 0 || task.reviews.every((review) => review.verdict === "pass")) {
+        throw new ProjectExecutionError("repair_denied", "Owner-authorized review repair requires current dissent or unresolved review evidence.");
+      }
+      if (task.attempt >= 20) throw new ProjectExecutionError("repair_budget_exhausted", "The bounded repair history is full; create a revised delivery task instead.");
+      const now = this.now();
+      const archived = {
+        approvalId: approval.approvalId,
+        priorRevision: task.revision,
+        implementerProviderId: task.assignment?.providerId ?? null,
+        implementationEvidence: task.implementationEvidence,
+        validations: task.validations,
+        reviews: task.reviews,
+        rationale: approval.rationale,
+        decidedAt: now,
+      };
+      const updated: ExecutionTask = {
+        ...task,
+        status: "queued",
+        revision: task.revision + 1,
+        attempt: task.attempt + 1,
+        assignment: null,
+        lease: null,
+        implementationEvidence: [],
+        validations: [],
+        reviews: [],
+        reviewAttempts: [...(task.reviewAttempts ?? []), archived],
+        commitDigest: null,
+        integrationDigest: null,
+        failureClass: "product_decision",
+        safeMessage: "The owner authorized a bounded repair; implementation, validation, independent review, and integration must run again.",
+        updatedAt: now,
+      };
+      return { record: projectState(replaceTask(record, updated), now), result: updated };
     });
   }
 

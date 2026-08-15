@@ -96,6 +96,39 @@ test("protected paths are rejected before execution and reviewer dissent cannot 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner-authorized dissent repair preserves rejected evidence and reruns every delivery gate", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-review-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const firstClaim = await service.claim(projectId, "worker-a", [candidate]);
+    const firstLease = firstClaim.task!.lease!;
+    await service.recordImplementation(projectId, taskId, firstLease.leaseId, "worker-a", evidence);
+    await service.recordValidation(projectId, taskId, firstLease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: true, exitCode: 0, evidenceDigest: evidence });
+    await service.recordValidation(projectId, taskId, firstLease.leaseId, "worker-a", { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: evidence });
+    const dissent = await service.recordReviews(projectId, taskId, firstLease.leaseId, "worker-a", [review("functional-reviewer", "gemini", "functional"), { ...review("design-reviewer", "cloudflare", "design"), verdict: "fail" as const }]);
+    const approval = { approvalId: "approval_11111111111111111111", expectedRevision: dissent.revision, rationale: "Repair the independently observed design issue without bypassing any gate." };
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, approval);
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.reviewAttempts?.[0]?.reviews.some((item) => item.verdict === "fail"), true);
+    assert.equal(repaired.reviews.length, 0);
+    assert.equal(repaired.implementationEvidence.length, 0);
+    assert.equal((await service.authorizeReviewRepair(projectId, taskId, approval)).revision, repaired.revision);
+
+    const restarted = makeService(root, () => 101);
+    const secondClaim = await restarted.claim(projectId, "worker-b", [candidate]);
+    const secondLease = secondClaim.task!.lease!;
+    await restarted.recordImplementation(projectId, taskId, secondLease.leaseId, "worker-b", "f".repeat(64));
+    await restarted.recordValidation(projectId, taskId, secondLease.leaseId, "worker-b", { tier: "fast", commandLabel: "typecheck", passed: true, exitCode: 0, evidenceDigest: "f".repeat(64) });
+    await restarted.recordValidation(projectId, taskId, secondLease.leaseId, "worker-b", { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: "f".repeat(64) });
+    await restarted.recordReviews(projectId, taskId, secondLease.leaseId, "worker-b", [review("functional-reviewer-2", "gemini", "functional"), review("design-reviewer-2", "cloudflare", "design")]);
+    const completed = await restarted.recordIntegration(projectId, taskId, secondLease.leaseId, "worker-b", { commitDigest: "1".repeat(40), integrationDigest: "2".repeat(64), validation: { tier: "integration", commandLabel: "post integration", passed: true, exitCode: 0, evidenceDigest: "f".repeat(64) } });
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.reviewAttempts?.length, 1);
+    assert.equal(completed.reviewAttempts?.[0]?.reviews.some((item) => item.verdict === "fail"), true);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("repeated validation failures exhaust the bounded repair budget and quarantine once", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-budget-"));
   try {

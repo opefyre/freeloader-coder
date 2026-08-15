@@ -41,6 +41,17 @@ export const executionReviewSchema = z.strictObject({
   observedAt: z.number().int().nonnegative(),
 });
 
+export const executionAttemptSchema = z.strictObject({
+  approvalId: z.string().regex(/^approval_[a-f0-9]{20}$/),
+  priorRevision: z.number().int().nonnegative(),
+  implementerProviderId: z.string().trim().min(1).max(100).nullable(),
+  implementationEvidence: z.array(digest).max(100),
+  validations: z.array(executionValidationSchema).max(100),
+  reviews: z.array(executionReviewSchema).min(1).max(20),
+  rationale: z.string().trim().min(10).max(2_000),
+  decidedAt: z.number().int().nonnegative(),
+});
+
 export const executionTaskSchema = z.strictObject({
   id: planItemId,
   jiraIssueKey: z.string().trim().min(2).max(100),
@@ -59,6 +70,7 @@ export const executionTaskSchema = z.strictObject({
   implementationEvidence: z.array(digest).max(100),
   validations: z.array(executionValidationSchema).max(100),
   reviews: z.array(executionReviewSchema).max(20),
+  reviewAttempts: z.array(executionAttemptSchema).max(20).optional(),
   commitDigest: gitDigest.nullable(),
   integrationDigest: digest.nullable(),
   failureClass: z.enum(["implementation", "environment", "flaky", "provider", "contract", "product_decision", "unsafe"]).nullable(),
