@@ -9,6 +9,7 @@ import { projectEgressPermitSchema, researchEvidenceGraphSchema } from "../../..
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
+const RESPONSE_CONTRACT_VERSION = 1;
 
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
@@ -26,7 +27,7 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
     if (payload.length > 500_000 || SENSITIVE.test(payload)) throw new Error("Project context contains sensitive or personal material and must remain local.");
     const now = this.now();
     const responseSchema = schemaFor(input.role);
-    const requestDigest = hash(JSON.stringify({ ...input, permit: { ...permit, approvedAt: 0 }, responseSchema }));
+    const requestDigest = hash(JSON.stringify({ ...input, permit: { ...permit, approvedAt: 0 }, responseSchema, responseContractVersion: RESPONSE_CONTRACT_VERSION }));
     const directory = resolve(this.stateDirectory, "solution-model-artifacts", input.projectId, input.role);
     let connections = await this.connections.list();
     const stale = connections.filter((connection) => permit.providerIds.includes(connection.providerId) && (connection.state === "stale" || connection.cost.expiresAt <= now || connection.quota.expiresAt <= now || connection.canary.expiresAt <= now));
