@@ -43,7 +43,7 @@ export class ProjectSolutionCoordinator {
       if (error instanceof FreeProviderSolutionUnavailableError && error.retryAt !== null) {
         await this.#set({ schemaVersion: 1, projectId, state: "deferred", attempts, retryAt: error.retryAt, safeMessage: error.message, updatedAt: this.now() }); this.#scheduleRetry(projectId, error.retryAt); return;
       }
-      const message = error instanceof ProjectEgressDeniedError || error instanceof SolutionReviewDissentError || error instanceof FreeProviderSolutionUnavailableError ? error.message : "Solution research stopped safely. Review provider and project evidence before retrying.";
+      const message = error instanceof ProjectEgressDeniedError || error instanceof SolutionReviewDissentError || error instanceof FreeProviderSolutionUnavailableError ? error.message : safeUnexpectedMessage(error);
       await this.#set({ schemaVersion: 1, projectId, state: "needs_user", attempts, retryAt: null, safeMessage: message, updatedAt: this.now() });
     }
   }
@@ -52,5 +52,11 @@ export class ProjectSolutionCoordinator {
   async #set(run: SolutionRun) { return this.#mutate(async (state) => ({ state: { ...state, runs: { ...state.runs, [run.projectId]: solutionRunSchema.parse(run) } }, result: run })); }
   async #mutate<T>(operation: (state: z.infer<typeof stateSchema>) => Promise<{ state: z.infer<typeof stateSchema>; result: T }>) { let result!: T; const next = this.#mutation.then(async () => { const outcome = await operation(await this.#load()); await atomicWrite(this.#path, `${JSON.stringify(stateSchema.parse(outcome.state), null, 2)}\n`); result = outcome.result; }); this.#mutation = next.catch(() => undefined); await next; return result; }
   async #load() { try { return stateSchema.parse(JSON.parse(await readFile(this.#path, "utf8"))); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return stateSchema.parse({ schemaVersion: 1, runs: {} }); throw new Error("Solution coordinator state is corrupt."); } }
+}
+function safeUnexpectedMessage(error: unknown) {
+  if (error instanceof z.ZodError) return "Solution evidence did not match the required structure. Review provider output before retrying.";
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (/^(?:Project context|Project provider consent|CONTEXT\.md|Solution research|Research context|Solution artifacts)\b/.test(message) && message.length <= 240 && !/[\r\n]/.test(message)) return message;
+  return "Solution research stopped safely. Review provider and project evidence before retrying.";
 }
 async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }

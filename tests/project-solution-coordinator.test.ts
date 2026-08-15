@@ -42,6 +42,23 @@ test("solution coordinator projects owner-safe consent failures without retry lo
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution coordinator explains safe preparation failures without leaking unknown errors", async () => {
+  const contextRoot = await mkdtemp(join(tmpdir(), "solution-coordinator-context-failure-"));
+  const unknownRoot = await mkdtemp(join(tmpdir(), "solution-coordinator-unknown-failure-"));
+  try {
+    const contextFailure = new ProjectSolutionCoordinator(contextRoot, { run: async () => { throw new Error("Project context contains sensitive or personal material and must remain local."); } } as any, () => 100);
+    await contextFailure.schedule(projectId);
+    await waitFor(async () => (await contextFailure.get(projectId))?.state === "needs_user");
+    assert.equal((await contextFailure.get(projectId))?.safeMessage, "Project context contains sensitive or personal material and must remain local.");
+
+    const unknownFailure = new ProjectSolutionCoordinator(unknownRoot, { run: async () => { throw new Error("credential=do-not-leak"); } } as any, () => 100);
+    await unknownFailure.schedule(projectId);
+    await waitFor(async () => (await unknownFailure.get(projectId))?.state === "needs_user");
+    assert.equal((await unknownFailure.get(projectId))?.safeMessage, "Solution research stopped safely. Review provider and project evidence before retrying.");
+    await contextFailure.shutdown(); await unknownFailure.shutdown();
+  } finally { await rm(contextRoot, { recursive: true, force: true }); await rm(unknownRoot, { recursive: true, force: true }); }
+});
+
 test("solution coordinator defers a free-provider outage and recovers without duplicate work", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-coordinator-provider-recovery-"));
   let now = 100;
