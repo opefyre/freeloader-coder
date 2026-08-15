@@ -12,6 +12,7 @@ export const ownerResponseEnvelopeSchema = z.strictObject({
   response: z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("solution"), decision: z.enum(["approved", "declined"]), artifactDigest: z.string().regex(/^[a-f0-9]{64}$/) }),
     z.strictObject({ kind: z.literal("clarification"), questionId: z.string().min(1).max(128), optionId: z.string().min(1).max(128) }),
+    z.strictObject({ kind: z.literal("verification"), decision: z.enum(["approved", "declined"]), nonce: z.string().regex(/^[a-f0-9]{16}$/) }),
   ]),
   issuedAt: z.number().int().nonnegative(),
   expiresAt: z.number().int().positive(),

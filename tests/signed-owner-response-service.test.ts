@@ -84,3 +84,21 @@ test("a downstream reconciliation failure leaves the signed response retryable",
     /consumed/i,
   );
 });
+
+test("a signed verification response is consumed without mutating the project", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codkesh-owner-verification-"));
+  const verification = { ...delivery, response: { kind: "verification" as const, decision: "approved" as const, nonce: "0123456789abcdef" } };
+  let mutations = 0;
+  let reconciliations = 0;
+  const service = new SignedOwnerResponseService(
+    root,
+    { get: async () => verification },
+    { get: async () => ({ revision: 4 }), answer: async () => { mutations += 1; }, decideSolution: async () => { mutations += 1; } },
+    async () => { reconciliations += 1; },
+    () => now,
+  );
+  await service.acceptRelayed({ schemaVersion: 1, relayId: "01234567-89ab-4def-8123-456789abcdef", provider: "slack", deliveryId: verification.deliveryId, channelId: verification.channelId, actorId: verification.ownerActorId, receivedAt: now });
+  assert.equal(mutations, 0);
+  assert.equal(reconciliations, 0);
+  await assert.rejects(() => service.acceptRelayed({ schemaVersion: 1, relayId: "abcdef01-2345-4abc-8123-456789abcdef", provider: "slack", deliveryId: verification.deliveryId, channelId: verification.channelId, actorId: verification.ownerActorId, receivedAt: now }), /consumed/i);
+});

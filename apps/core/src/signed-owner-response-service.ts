@@ -15,6 +15,7 @@ export const ownerResponseDeliverySchema = z.strictObject({
   response: z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("solution"), decision: z.enum(["approved", "declined"]), artifactDigest: z.string().regex(/^[a-f0-9]{64}$/) }),
     z.strictObject({ kind: z.literal("clarification"), questionId: z.string().min(1).max(128), optionId: z.string().min(1).max(128) }),
+    z.strictObject({ kind: z.literal("verification"), decision: z.enum(["approved", "declined"]), nonce: z.string().regex(/^[a-f0-9]{16}$/) }),
   ]),
   issuedAt: z.number().int().nonnegative(),
   expiresAt: z.number().int().positive(),
@@ -91,10 +92,10 @@ export class SignedOwnerResponseService {
     } catch (error) { throw new SignedOwnerResponseError("authorization_denied", error instanceof Error ? error.message : "Owner response was denied."); }
     if (delivery.response.kind === "solution") {
       await this.lifecycles.decideSolution(delivery.projectId, { schemaVersion: 1, expectedRevision: delivery.revision, artifactDigest: delivery.response.artifactDigest, decision: delivery.response.decision, feedback: null }, verified.idempotencyKey);
-    } else {
+    } else if (delivery.response.kind === "clarification") {
       await this.lifecycles.answer(delivery.projectId, { schemaVersion: 1, expectedRevision: delivery.revision, answers: [{ questionId: delivery.response.questionId, optionId: delivery.response.optionId, customAnswer: null, answeredAt: this.now() }] }, verified.idempotencyKey);
     }
-    await this.onAccepted(delivery.projectId);
+    if (delivery.response.kind !== "verification") await this.onAccepted(delivery.projectId);
     // A response is terminal only after every durable downstream projection has
     // reconciled. If Jira or the Action Center is temporarily unavailable, leave
     // the delivery retryable; lifecycle mutation is protected by the same
