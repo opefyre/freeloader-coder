@@ -5,6 +5,8 @@ import { z } from "zod";
 
 import type { CredentialVault } from "../../../packages/providers/src/lifecycle.js";
 import type { ExecutionTask, ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
+import type { DeliveryPlanDraft } from "../../../packages/orchestration/src/delivery-plan.js";
+import { assertJiraClosureEligible, JiraClosurePolicyError, type JiraClosureEvidence } from "../../../packages/orchestration/src/jira-closure-policy.js";
 import { JIRA_CREDENTIAL_REFERENCE } from "./jira-delivery-service.js";
 
 const receiptSchema = z.strictObject({
@@ -29,14 +31,15 @@ export class ProjectExecutionJiraObserver {
     stateDirectory: string,
     private readonly executions: { get(projectId: string): Promise<ProjectExecutionRecord | null> },
     private readonly delivery: { get(projectId: string): Promise<DeliveryReceipt | null> },
+    private readonly plans: { readDraft(projectId: string): Promise<{ draft: DeliveryPlanDraft }> },
     private readonly vault: Pick<CredentialVault, "read">,
     private readonly fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now
   ) { this.#path = resolve(stateDirectory, "project-execution-jira-receipts.json"); }
 
   async synchronize(projectId: string) {
-    const [execution, delivery, secret] = await Promise.all([
-      this.executions.get(projectId), this.delivery.get(projectId), this.vault.read(JIRA_CREDENTIAL_REFERENCE),
+    const [execution, delivery, plan, secret] = await Promise.all([
+      this.executions.get(projectId), this.delivery.get(projectId), this.plans.readDraft(projectId), this.vault.read(JIRA_CREDENTIAL_REFERENCE),
     ]);
     if (!execution || !delivery?.completed) return { synchronized: 0, pending: 0 };
     if (!secret) throw new ProjectExecutionJiraObserverError("jira_disconnected", "Reconnect Jira to publish implementation evidence.");
@@ -51,6 +54,15 @@ export class ProjectExecutionJiraObserver {
       const stored = (await this.#load()).receipts[marker];
       if (stored?.commentObserved && stored.transitionObserved) continue;
       const desiredStatus = jiraStatus(task.status);
+      if (desiredStatus === "Done") {
+        const item = plan.draft.items.find((candidate) => candidate.id === task.id);
+        if (!item) throw new ProjectExecutionJiraObserverError("closure_plan_missing", `${issueKey} cannot close because its reviewed plan item is missing.`);
+        try { assertJiraClosureEligible(closureCandidate(task, item.acceptanceCriteria)); }
+        catch (error) {
+          if (error instanceof JiraClosurePolicyError) throw new ProjectExecutionJiraObserverError("closure_evidence_incomplete", error.message);
+          throw error;
+        }
+      }
       const commentObserved = stored?.commentObserved || await client.hasMarker(issueKey, marker);
       if (!commentObserved) await client.comment(issueKey, marker, evidenceSummary(task));
       let transitionObserved = stored?.transitionObserved ?? false;
@@ -98,7 +110,27 @@ class ExecutionJiraClient {
 function jiraStatus(status: ExecutionTask["status"]): string | null { if (["running", "validating", "healing"].includes(status)) return "In Progress"; if (["reviewing", "integrating"].includes(status)) return "In Review"; if (status === "completed") return "Done"; return null; }
 function safePredecessors(desired: string) { if (desired === "In Progress") return ["to do", "open", "selected for development"]; if (desired === "In Review") return ["in progress"]; if (desired === "Done") return ["in progress", "in review"]; return []; }
 function markerFor(task: ExecutionTask) { return `pipeline_exec_${hash(`${task.id}:${task.revision}:${task.status}`).slice(0, 24)}`; }
-function evidenceSummary(task: ExecutionTask) { const passed = task.validations.filter((item) => item.passed).map((item) => item.tier).join(", ") || "none"; const reviewers = task.reviews.map((item) => `${item.role}:${item.verdict}`).join(", ") || "none"; return `Codkesh · ${task.status.replaceAll("_", " ")} · attempt ${task.attempt + 1}. Checks: ${passed}. Reviews: ${reviewers}. Commit: ${task.commitDigest?.slice(0, 12) ?? "pending"}. ${task.safeMessage}`; }
+function evidenceSummary(task: ExecutionTask) { const passed = task.validations.filter((item) => item.passed).map((item) => item.tier).join(", ") || "none"; const reviewers = task.reviews.map((item) => `${item.role}:${item.verdict}`).join(", ") || "none"; return `Codkesh acceptance evidence · ${task.status.replaceAll("_", " ")} · attempt ${task.attempt + 1}. Deterministic validation: ${passed}. Independent reviews: ${reviewers}. Commit: ${task.commitDigest?.slice(0, 12) ?? "pending"}. ${task.safeMessage}`; }
+function closureCandidate(task: ExecutionTask, criteria: readonly string[]) {
+  const integration = task.validations.findLast((item) => item.tier === "integration" && item.passed);
+  const acceptanceCriteria = criteria.map((text, index) => ({ id: `AC-${index + 1}`, text }));
+  const evidence: JiraClosureEvidence[] = acceptanceCriteria.flatMap((criterion): JiraClosureEvidence[] => [
+    ...(integration ? [{ criterionId: criterion.id, kind: "deterministic_test" as const, reference: `validation://${task.jiraIssueKey}/${criterion.id}`, digest: integration.evidenceDigest, observedAt: integration.observedAt, provenance: "observed" as const, resolved: true }] : []),
+    ...task.reviews.filter((review) => review.verdict === "pass").map((review) => ({ criterionId: criterion.id, kind: "independent_review" as const, reference: `review://${task.jiraIssueKey}/${criterion.id}/${encodeURIComponent(review.reviewerId)}`, digest: review.evidenceDigest, observedAt: review.observedAt, provenance: "observed" as const, resolved: true })),
+  ]);
+  if (task.commitDigest && acceptanceCriteria[0]) evidence.push({ criterionId: acceptanceCriteria[0].id, kind: "commit", reference: `commit://${task.jiraIssueKey}/${task.commitDigest}`, digest: task.commitDigest, observedAt: task.updatedAt, provenance: "observed", resolved: true });
+  if (integration && task.validationProfiles.includes("visual") && acceptanceCriteria[0]) evidence.push({ criterionId: acceptanceCriteria[0].id, kind: "live_journey", reference: `validation://${task.jiraIssueKey}/live-journey`, digest: integration.evidenceDigest, observedAt: integration.observedAt, provenance: "observed", resolved: true });
+  return {
+    issueKey: task.jiraIssueKey, kind: "work_item" as const, acceptanceCriteria, evidence,
+    requiredValidationProfiles: ["fast", "full", "integration"],
+    passedValidationProfiles: task.validations.filter((item) => item.passed).map((item) => item.tier),
+    reviewerIds: task.reviews.filter((review) => review.verdict === "pass").map((review) => review.providerId),
+    implementerId: task.assignment?.providerId ?? "missing-implementer",
+    commitDigest: task.commitDigest,
+    liveJourneyRequired: task.validationProfiles.includes("visual"),
+    closureComment: evidenceSummary(task), children: [], priorTransitions: [],
+  };
+}
 function parseCredential(value: string) { let parsed: Record<string, unknown>; try { parsed = JSON.parse(value) as Record<string, unknown>; } catch { throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); } if (typeof parsed.siteUrl !== "string" || typeof parsed.email !== "string" || typeof parsed.apiToken !== "string") throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); const site = new URL(parsed.siteUrl); if (site.protocol !== "https:" || !site.hostname.endsWith(".atlassian.net") || site.port) throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira site is invalid."); return { siteUrl: site.origin, email: parsed.email, apiToken: parsed.apiToken }; }
 function document(lines: readonly string[]) { return { type: "doc", version: 1, content: lines.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) }; }
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }

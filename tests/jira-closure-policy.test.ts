@@ -10,7 +10,7 @@ function candidate() {
   return {
     issueKey: "PIPE-1", kind: "work_item" as const,
     acceptanceCriteria: [{ id: "AC-1", text: "The owner can complete the journey." }, { id: "AC-2", text: "The result remains accessible." }],
-    evidence: [observed("AC-1"), observed("AC-2"), observed("AC-1", "commit"), observed("AC-2", "live_journey")],
+    evidence: [observed("AC-1", "deterministic_test"), observed("AC-1", "independent_review"), observed("AC-2", "deterministic_test"), observed("AC-2", "independent_review"), observed("AC-1", "commit"), observed("AC-2", "live_journey")],
     requiredValidationProfiles: ["unit", "build", "visual"], passedValidationProfiles: ["unit", "build", "visual"],
     reviewerIds: ["reviewer-functional", "reviewer-design"], implementerId: "worker-implementation",
     commitDigest: digest, liveJourneyRequired: true,

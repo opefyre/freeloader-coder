@@ -34,6 +34,7 @@ export const jiraClosureCandidateSchema = z.strictObject({
 });
 
 export type JiraClosureCandidate = z.infer<typeof jiraClosureCandidateSchema>;
+export type JiraClosureEvidence = z.infer<typeof closureEvidenceSchema>;
 export type JiraClosureDecision = { eligible: boolean; blockers: readonly string[]; preservedHistory: JiraClosureCandidate["priorTransitions"] };
 
 export function evaluateJiraClosure(input: unknown): JiraClosureDecision {
@@ -43,6 +44,8 @@ export function evaluateJiraClosure(input: unknown): JiraClosureDecision {
   const covered = new Set(realEvidence.map((item) => item.criterionId));
   for (const criterion of candidate.acceptanceCriteria) {
     if (!covered.has(criterion.id)) blockers.push(`Acceptance criterion ${criterion.id} has no resolved observed evidence.`);
+    if (!realEvidence.some((item) => item.criterionId === criterion.id && item.kind === "deterministic_test")) blockers.push(`Acceptance criterion ${criterion.id} has no deterministic validation evidence.`);
+    if (!realEvidence.some((item) => item.criterionId === criterion.id && item.kind === "independent_review")) blockers.push(`Acceptance criterion ${criterion.id} has no independent review evidence.`);
   }
   const passed = new Set(candidate.passedValidationProfiles);
   for (const profile of candidate.requiredValidationProfiles) {

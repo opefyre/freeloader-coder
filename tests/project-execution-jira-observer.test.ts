@@ -31,6 +31,7 @@ test("Jira observer publishes verified completion once and reconciles remote sta
       root,
       { get: async () => record },
       { get: async () => ({ completed: true, issues: { [taskId]: { issueKey: "PIPE-4" } } }) },
+      plans(),
       { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) },
       fetcher,
       () => 200
@@ -62,12 +63,33 @@ test("Jira observer detects an external workflow edit instead of overwriting it"
       root,
       { get: async () => completedRecord() },
       { get: async () => ({ completed: true, issues: { [taskId]: { issueKey: "PIPE-4" } } }) },
+      plans(),
       { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) },
       fetcher,
       () => 200
     );
     await assert.rejects(() => observer.synchronize(projectId), /will not overwrite that external change/);
     assert.equal(transitionPosts, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("Jira observer rejects false completion before any Jira comment or transition", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-jira-false-closure-"));
+  try {
+    const record = completedRecord();
+    record.tasks[0]!.reviews = record.tasks[0]!.reviews.slice(0, 1);
+    let jiraRequests = 0;
+    const observer = new ProjectExecutionJiraObserver(
+      root,
+      { get: async () => record },
+      { get: async () => ({ completed: true, issues: { [taskId]: { issueKey: "PIPE-4" } } }) },
+      plans(),
+      { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) },
+      async () => { jiraRequests += 1; return json({}); },
+      () => 200
+    );
+    await assert.rejects(() => observer.synchronize(projectId), /closure blocked.*Two independent reviewers/i);
+    assert.equal(jiraRequests, 0, "false completion must not comment on or transition Jira");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -83,6 +105,10 @@ function completedRecord(): ProjectExecutionRecord {
       commitDigest: digest, integrationDigest: digest, failureClass: null, safeMessage: "All gates passed.", updatedAt: 100,
     }],
   };
+}
+
+function plans() {
+  return { readDraft: async () => ({ draft: { items: [{ id: taskId, acceptanceCriteria: ["The feature works for the approved owner journey.", "The verified result remains accessible after refresh."] }] } as any }) };
 }
 
 function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } }); }
