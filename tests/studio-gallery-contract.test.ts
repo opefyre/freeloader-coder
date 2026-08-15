@@ -9,6 +9,9 @@ test("Studio uses a React landmark, skip link, and labeled shadcn tabs", async (
   assert.match(html, /src="\/src\/main\.tsx"/);
   assert.match(entry, /createRoot/);
   assert.match(source, /href="#workspace"/);
+  assert.match(source, /className="skip-link/);
+  assert.doesNotMatch(source, /-translate-y-20[^\"]*focus:translate-y-0/);
+  assert.match(await readFile("apps/studio/src/globals.css", "utf8"), /\.skip-link:focus-visible[\s\S]*transform: translateY\(0\)/);
   assert.match(source, /<main id="workspace"/);
   assert.match(source, /aria-label="Control center views"/);
   assert.match(source, /TabsTrigger value="overview"/);

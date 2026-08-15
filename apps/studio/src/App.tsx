@@ -287,7 +287,8 @@ const providerColor: Record<string, string> = {
   cloudflare: "bg-chart-2",
   gemini: "bg-chart-3",
   openrouter: "bg-chart-5",
-  cerebras: "bg-chart-4",
+  "nvidia-nim": "bg-chart-4",
+  huggingface: "bg-chart-5",
   mistral: "bg-chart-2",
   zhipu: "bg-chart-3",
   sambanova: "bg-chart-1",
@@ -308,7 +309,7 @@ function App() {
   const [selectedProvider, setSelectedProvider] = useState(
     providerTelemetry[0]?.providerId ?? ""
   );
-  const [selectedConnection, setSelectedConnection] = useState("cerebras");
+  const [selectedConnection, setSelectedConnection] = useState("nvidia-nim");
   const [costOpen, setCostOpen] = useState(false);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [simulateRouteFailure, setSimulateRouteFailure] = useState(false);
@@ -379,7 +380,7 @@ function App() {
     <div className="min-h-screen lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
       <a
         href="#workspace"
-        className="fixed left-4 top-4 z-50 -translate-y-20 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground focus:translate-y-0"
+        className="skip-link rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
       >
         Skip to workspace
       </a>
@@ -387,11 +388,11 @@ function App() {
       <aside className="hidden min-h-screen bg-sidebar px-4 py-5 lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="flex items-center gap-3 px-2">
           <span className="grid size-10 place-items-center text-primary">
-            <PipelineMark className="size-8" title="Pipeline Studio mark" />
+            <PipelineMark className="size-8" title="Codkesh mark" />
           </span>
           <div>
-            <strong className="block text-sm font-semibold">Pipeline Studio</strong>
-            <span className="text-xs text-muted-foreground">Freeloader Coder</span>
+            <strong className="block text-sm font-semibold">Codkesh</strong>
+            <span className="text-xs text-muted-foreground">Autonomous product studio</span>
           </div>
         </div>
 
@@ -426,9 +427,9 @@ function App() {
         <header className="sticky top-0 z-30 flex h-18 items-center justify-between bg-background/88 px-4 backdrop-blur-xl sm:px-7 lg:px-9">
           <div className="flex items-center gap-3 lg:hidden">
             <span className="grid size-9 place-items-center text-primary">
-              <PipelineMark className="size-7" title="Pipeline Studio mark" />
+              <PipelineMark className="size-7" title="Codkesh mark" />
             </span>
-            <strong className="text-sm">Pipeline Studio</strong>
+            <strong className="text-sm">Codkesh</strong>
           </div>
           <button
             type="button"
@@ -702,15 +703,15 @@ function App() {
                     <CardContent className="mt-5">
                       <div className="space-y-2">
                         <Choice
-                          label="Pipeline Studio"
+                          label="Codkesh"
                           note="Clear and credible"
-                          selected={productChoice === "Pipeline Studio"}
+                          selected={productChoice === "Codkesh"}
                           onSelect={setProductChoice}
                         />
                         <Choice
-                          label="Freeloader Coder"
+                          label="Pipeline OS"
                           note="Matches the repository"
-                          selected={productChoice === "Freeloader Coder"}
+                          selected={productChoice === "Pipeline OS"}
                           onSelect={setProductChoice}
                         />
                       </div>
@@ -1713,7 +1714,7 @@ function OnboardingWorkspace() {
                     <CheckCircle size={34} className="mx-auto text-emerald-700 dark:text-emerald-300" weight="duotone" />
                     <strong className="mt-4 block">Ready for your next request</strong>
                     <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                      Pipeline Studio now understands the project, its safeguards, and how to validate future work.
+                      Codkesh now understands the project, its safeguards, and how to validate future work.
                     </p>
                   </div>
                 )}
@@ -1745,7 +1746,7 @@ function OnboardingWorkspace() {
             <CardContent className="mt-5">
               <div className="rounded-2xl bg-muted/50 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold">Before Pipeline Studio</span>
+                  <span className="text-xs font-semibold">Before Codkesh</span>
                   <Badge tone="positive">Restorable</Badge>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -1820,28 +1821,14 @@ function SettingsWorkspace({
   selectedConnection: string;
   setSelectedConnection: (provider: string) => void;
 }) {
-  const [permissions, setPermissions] = useState<readonly PermissionProfile[]>(
-    recommendedPermissionProfiles
-  );
-  const [selectedPermissionId, setSelectedPermissionId] = useState("project-folder");
-  const [privacyScreen, setPrivacyScreen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("connections");
-  const [preset, setPreset] = useState<"Guided" | "Balanced" | "Autonomous">("Balanced");
-  const [permissionNotice, setPermissionNotice] = useState(
-    "Permissions are scoped to Main project."
-  );
-  const selectedPermission =
-    permissions.find((permission) => permission.id === selectedPermissionId) ??
-    permissions[0]!;
-
-  const applyAction = (action: PermissionAction) => {
-    const result = applyPermissionAction(selectedPermission, action);
-    setPermissions((current) =>
-      current.map((permission) =>
-        permission.id === result.profile.id ? result.profile : permission
-      )
-    );
-    setPermissionNotice(result.notice);
+  const [defaultAutonomy, setDefaultAutonomy] = useState(() => localStorage.getItem("pipeline-studio.default-autonomy") ?? "Balanced");
+  const [notifyAttention, setNotifyAttention] = useState(() => localStorage.getItem("pipeline-studio.notify-attention") !== "false");
+  const [runtimeCheck, setRuntimeCheck] = useState<"idle" | "checking" | "ready" | "unavailable">("idle");
+  const savePreferences = (autonomy: string, notifications = notifyAttention) => {
+    setDefaultAutonomy(autonomy); setNotifyAttention(notifications);
+    localStorage.setItem("pipeline-studio.default-autonomy", autonomy);
+    localStorage.setItem("pipeline-studio.notify-attention", String(notifications));
   };
 
   return (
@@ -1854,189 +1841,17 @@ function SettingsWorkspace({
           <TabsTrigger value="permissions">Preferences</TabsTrigger>
           <TabsTrigger value="system">Advanced</TabsTrigger>
         </TabsList>
-        <Button
-          variant={privacyScreen ? "default" : "secondary"}
-          size="sm"
-          aria-pressed={privacyScreen}
-          onClick={() => setPrivacyScreen((current) => !current)}
-        >
-          <ShieldCheck />
-          {privacyScreen ? "Privacy screen on" : "Mask for screen sharing"}
-        </Button>
       </div>
 
       <TabsContent value="permissions">
-        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Project permission posture</CardTitle>
-                <CardDescription>
-                  One canonical policy controls models, plugins, tools, and connected services.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="mt-6">
-                <div className="grid gap-2 sm:grid-cols-3" role="group" aria-label="Approval preset">
-                  {(["Guided", "Balanced", "Autonomous"] as const).map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      aria-pressed={preset === option}
-                      onClick={() => {
-                        setPreset(option);
-                        setPermissionNotice(
-                          `${option} is now the project preset. Credential, destructive, permission-expanding, and paid safeguards remain enforced.`
-                        );
-                      }}
-                      className={cn(
-                        "rounded-2xl bg-muted/50 p-4 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
-                        preset === option && "bg-primary/[.09]"
-                      )}
-                    >
-                      <strong className="block text-sm">{option}</strong>
-                      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                        {
-                          {
-                            Guided: "Ask before every change.",
-                            Balanced: "Automate safe local work.",
-                            Autonomous: "Automate reversible work within grants.",
-                          }[option]
-                        }
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                  Models and plugins cannot grant themselves access. Project overrides can tighten
-                  policy but cannot auto-approve credentials, destructive changes, or paid use.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Who can access what</CardTitle>
-                <CardDescription>
-                  Review project folders, providers, connectors, tools, external effects, and paid permissions.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="mt-6 grid gap-2 md:grid-cols-2">
-                {permissions.map((permission) => (
-                  <button
-                    key={permission.id}
-                    type="button"
-                    aria-pressed={selectedPermission.id === permission.id}
-                    onClick={() => setSelectedPermissionId(permission.id)}
-                    className={cn(
-                      "rounded-3xl bg-muted/45 p-5 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
-                      selectedPermission.id === permission.id && "bg-primary/[.09]"
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                        {permission.kind}
-                      </span>
-                      <Badge tone={permissionTone(permission.state)}>{permission.state}</Badge>
-                    </div>
-                    <strong className="mt-3 block text-sm">{permission.name}</strong>
-                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                      {permission.summary}
-                    </span>
-                    <span className="mt-4 block truncate text-xs font-semibold">
-                      {visiblePermissionTarget(permission, privacyScreen)}
-                    </span>
-                  </button>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle>{selectedPermission.name}</CardTitle>
-                  <Badge tone={permissionTone(selectedPermission.state)}>
-                    {selectedPermission.state}
-                  </Badge>
-                </div>
-                <CardDescription>{selectedPermission.summary}</CardDescription>
-              </CardHeader>
-              <CardContent className="mt-6 space-y-4">
-                <PermissionFact
-                  label="Project"
-                  value={privacyScreen ? "Project · ••••" : selectedPermission.project}
-                />
-                <PermissionFact
-                  label="Target"
-                  value={visiblePermissionTarget(selectedPermission, privacyScreen)}
-                />
-                <PermissionFact label="Allowed effect" value={selectedPermission.access} />
-                <PermissionFact
-                  label="Expiry"
-                  value={selectedPermission.expiresAt ?? "No automatic expiry"}
-                />
-                <details className="rounded-2xl bg-muted/45 p-4">
-                  <summary className="cursor-pointer text-xs font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/30">
-                    Advanced · technical scopes
-                  </summary>
-                  <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
-                    {selectedPermission.technicalScopes.map((scope) => (
-                      <li key={scope}>{scope}</li>
-                    ))}
-                  </ul>
-                </details>
-                <div className="grid gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => applyAction("expire")}
-                  >
-                    Expire in 24 hours
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => applyAction("reset")}
-                  >
-                    Reset to recommended
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => applyAction("revoke")}
-                    disabled={selectedPermission.state === "Revoked"}
-                  >
-                    Revoke now
-                  </Button>
-                </div>
-                <p
-                  className="rounded-2xl bg-primary/[.07] p-3 text-xs leading-5"
-                  aria-live="polite"
-                >
-                  {permissionNotice}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent use</CardTitle>
-                <CardDescription>
-                  Privacy-safe activity for this permission.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="mt-5">
-                <p className="text-xs leading-5">{selectedPermission.recentUse}</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {selectedPermission.activeWork > 0
-                    ? `${selectedPermission.activeWork} active task will pause after its current safe step if revoked.`
-                    : "No active work requires reconciliation."}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        <Card className="max-w-3xl">
+          <CardHeader><CardTitle>Defaults</CardTitle><CardDescription>Applied to new projects. Each project can tighten these choices in Build.</CardDescription></CardHeader>
+          <CardContent className="mt-6 space-y-5">
+            <div className="grid gap-2 sm:grid-cols-3">{["Guided", "Balanced", "Autonomous"].map((option) => <button key={option} type="button" aria-pressed={defaultAutonomy === option} onClick={() => savePreferences(option)} className={cn("rounded-2xl bg-muted/50 p-4 text-left text-sm font-semibold", defaultAutonomy === option && "bg-primary/[.12]")}>{option}</button>)}</div>
+            <label className="flex items-center justify-between rounded-2xl bg-muted/45 p-4 text-sm"><span>Notify me when a project needs attention</span><input type="checkbox" checked={notifyAttention} onChange={(event) => savePreferences(defaultAutonomy, event.target.checked)} className="size-4 accent-primary" /></label>
+            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Paid AI usage</span><Badge tone="positive">Always off</Badge></div>
+          </CardContent>
+        </Card>
       </TabsContent>
 
       <TabsContent value="connections">
@@ -2046,10 +1861,15 @@ function SettingsWorkspace({
         <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
       </TabsContent>
       <TabsContent value="system">
-        <div className="space-y-4">
-          <RuntimeSetupPanel />
-          <ResilienceCenter />
-        </div>
+        <Card className="max-w-3xl">
+          <CardHeader><CardTitle>This computer</CardTitle><CardDescription>Codkesh runs locally and keeps credentials in the system vault.</CardDescription></CardHeader>
+          <CardContent className="mt-6 space-y-3">
+            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Local service</span><Badge tone={runtimeCheck === "unavailable" ? "caution" : "positive"}>{runtimeCheck === "checking" ? "Checking" : runtimeCheck === "unavailable" ? "Needs attention" : "Ready"}</Badge></div>
+            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Credentials</span><span className="text-xs font-semibold">System vault</span></div>
+            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Network access</span><span className="text-xs font-semibold">This computer only</span></div>
+            <Button variant="secondary" size="sm" disabled={runtimeCheck === "checking"} onClick={() => { setRuntimeCheck("checking"); void fetch(`${controlPlaneEndpoint}/api/v1/health`, { cache: "no-store", credentials: "omit" }).then((response) => setRuntimeCheck(response.ok ? "ready" : "unavailable")).catch(() => setRuntimeCheck("unavailable")); }}>Check health</Button>
+          </CardContent>
+        </Card>
       </TabsContent>
     </Tabs>
     </>

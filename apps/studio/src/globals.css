@@ -190,6 +190,18 @@
   }
 }
 
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 50;
+  transform: translateY(calc(-100% - 1rem));
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
 @media (forced-colors: active) {
   [data-slot="card"],
   button,
