@@ -94,8 +94,12 @@ export class SignedOwnerResponseService {
     } else {
       await this.lifecycles.answer(delivery.projectId, { schemaVersion: 1, expectedRevision: delivery.revision, answers: [{ questionId: delivery.response.questionId, optionId: delivery.response.optionId, customAnswer: null, answeredAt: this.now() }] }, verified.idempotencyKey);
     }
-    await this.#consume(deliveryId);
     await this.onAccepted(delivery.projectId);
+    // A response is terminal only after every durable downstream projection has
+    // reconciled. If Jira or the Action Center is temporarily unavailable, leave
+    // the delivery retryable; lifecycle mutation is protected by the same
+    // idempotency key on the next attempt.
+    await this.#consume(deliveryId);
     return { projectId: delivery.projectId, deliveryId, applied: true as const };
   }
 

@@ -625,6 +625,7 @@ autonomy.start();
 const executionJiraTimer = setInterval(() => {
   void localProjects.list().then(async ({ projects }) => {
     for (const project of projects) {
+      await jiraDelivery.synchronize(project.id).catch(() => undefined);
       if (await projectExecutions.get(project.id)) await projectExecutionJira.synchronize(project.id).catch(() => undefined);
     }
   }).catch(() => undefined);

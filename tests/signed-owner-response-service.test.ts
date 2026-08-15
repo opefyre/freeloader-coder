@@ -39,3 +39,48 @@ test("signed Discord interaction applies through the same canonical boundary", a
   await service.acceptDiscord(raw, { timestamp, signature }, publicKey); assert.equal(decisions, 1);
   await assert.rejects(() => service.acceptDiscord(`${raw} `, { timestamp, signature }, publicKey), /signature/i);
 });
+
+test("a downstream reconciliation failure leaves the signed response retryable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codkesh-owner-reconcile-retry-"));
+  const applied = new Set<string>();
+  let reconciliations = 0;
+  const service = new SignedOwnerResponseService(
+    root,
+    { get: async () => delivery },
+    {
+      get: async () => ({ revision: 4 }),
+      answer: async () => undefined,
+      decideSolution: async (_project, _input, key) => {
+        applied.add(key);
+      },
+    },
+    async () => {
+      reconciliations += 1;
+      if (reconciliations === 1) throw new Error("Jira temporarily unavailable");
+    },
+    () => now,
+  );
+  const payload = {
+    type: "block_actions",
+    user: { id: "U-owner" },
+    channel: { id: "C-owner" },
+    actions: [{ action_id: "codkesh_owner_response:approve", value: delivery.deliveryId }],
+  };
+  const raw = new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
+  const timestamp = String(now / 1_000);
+  const secret = "slack-signing-secret-123456789";
+  const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${raw}`).digest("hex")}`;
+
+  await assert.rejects(
+    () => service.acceptSlack(raw, { timestamp, signature }, secret),
+    /temporarily unavailable/,
+  );
+  assert.equal(applied.size, 1, "the lifecycle effect remains idempotent");
+  await assert.doesNotReject(() => service.acceptSlack(raw, { timestamp, signature }, secret));
+  assert.equal(applied.size, 1, "retry does not duplicate the owner decision");
+  assert.equal(reconciliations, 2);
+  await assert.rejects(
+    () => service.acceptSlack(raw, { timestamp, signature }, secret),
+    /consumed/i,
+  );
+});
