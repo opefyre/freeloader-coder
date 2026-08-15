@@ -13,7 +13,8 @@ const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secr
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
   readonly #capacity: ProviderCapacityStore;
-  constructor(private readonly stateDirectory: string, private readonly connections: ProviderConnectionRepository, private readonly vault: Pick<CredentialVault, "read">, private readonly adapters: { adapter(providerId: string): ProviderAdapter | null }, private readonly now: () => number = Date.now) {
+  #refreshInFlight: Promise<void> | null = null;
+  constructor(private readonly stateDirectory: string, private readonly connections: ProviderConnectionRepository, private readonly vault: Pick<CredentialVault, "read">, private readonly adapters: { adapter(providerId: string): ProviderAdapter | null }, private readonly now: () => number = Date.now, private readonly refresher?: { reProbe(id: string, now?: number): Promise<unknown> }) {
     this.#runtime = new ProviderRuntimeService(stateDirectory);
     this.#capacity = new ProviderCapacityStore(resolve(stateDirectory, "provider-capacity.json"));
   }
@@ -26,7 +27,12 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
     const now = this.now();
     const requestDigest = hash(JSON.stringify({ ...input, permit: { ...permit, approvedAt: 0 } }));
     const directory = resolve(this.stateDirectory, "solution-model-artifacts", input.projectId, input.role);
-    const connections = await this.connections.list();
+    let connections = await this.connections.list();
+    const stale = connections.filter((connection) => permit.providerIds.includes(connection.providerId) && (connection.state === "stale" || connection.cost.expiresAt <= now || connection.quota.expiresAt <= now || connection.canary.expiresAt <= now));
+    if (stale.length && this.refresher) {
+      await this.#refresh(stale.map((connection) => connection.id), now);
+      connections = await this.connections.list();
+    }
     const capacity = await this.#capacity.snapshot(connections.map((connection) => connection.id), now);
     const byId = new Map(connections.map((connection) => [connection.id, connection]));
     const outcome = await this.#runtime.executeAdmitted({
@@ -59,6 +65,11 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
     const digest = outcome.result.projection.outputDigest?.replace(/^sha256:/, "");
     if (!attempt || !digest) throw new Error("Free-provider solution evidence is incomplete.");
     return { providerId: attempt.providerId, modelId: attempt.modelId, response: JSON.parse(await readPrivateProposalArtifact({ directory, digest })) };
+  }
+
+  async #refresh(ids: readonly string[], now: number) {
+    if (!this.#refreshInFlight) this.#refreshInFlight = Promise.allSettled([...new Set(ids)].map((id) => this.refresher!.reProbe(id, now))).then(() => undefined).finally(() => { this.#refreshInFlight = null; });
+    await this.#refreshInFlight;
   }
 }
 

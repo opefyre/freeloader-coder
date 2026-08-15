@@ -158,7 +158,7 @@ const projectIntake = new ProjectIntakeCoordinator(
   new FreeProviderProjectKindAssistant(intakeGateway)
 );
 const projectEgress = new ProjectEgressPolicyService(stateDirectory);
-const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry);
+const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry, Date.now, providerConnectionService);
 const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new ProjectSolutionOrchestrator(projectLifecycles, projectSolutions, projectContexts, projectEgress, solutionModel));
 const jiraDelivery = new JiraDeliveryService(stateDirectory, localProjects, projectDeliveryPlans, projectLifecycles, credentialVault);
 const projectExecutions = new ProjectExecutionService(stateDirectory, projectDeliveryPlans, jiraDelivery, Date.now, projectLifecycles);

@@ -41,7 +41,8 @@ export class ProjectSolutionCoordinator {
       await this.#set({ schemaVersion: 1, projectId, state: "completed", attempts, retryAt: null, safeMessage: "Reviewed solution is ready for owner approval.", updatedAt: this.now() });
     } catch (error) {
       if (error instanceof FreeProviderSolutionUnavailableError && error.retryAt !== null) {
-        await this.#set({ schemaVersion: 1, projectId, state: "deferred", attempts, retryAt: error.retryAt, safeMessage: error.message, updatedAt: this.now() }); this.#scheduleRetry(projectId, error.retryAt); return;
+        const retryAt = error.retryAt > this.now() ? error.retryAt : this.now() + 60_000;
+        await this.#set({ schemaVersion: 1, projectId, state: "deferred", attempts, retryAt, safeMessage: error.message, updatedAt: this.now() }); this.#scheduleRetry(projectId, retryAt); return;
       }
       const message = error instanceof ProjectEgressDeniedError || error instanceof SolutionReviewDissentError || error instanceof FreeProviderSolutionUnavailableError ? error.message : safeUnexpectedMessage(error);
       await this.#set({ schemaVersion: 1, projectId, state: "needs_user", attempts, retryAt: null, safeMessage: message, updatedAt: this.now() });

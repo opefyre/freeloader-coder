@@ -91,4 +91,20 @@ test("solution coordinator defers a free-provider outage and recovers without du
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution coordinator never hot-loops when a provider returns a retry time in the past", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-coordinator-past-retry-"));
+  let calls = 0;
+  try {
+    const coordinator = new ProjectSolutionCoordinator(root, { run: async () => { calls += 1; throw new FreeProviderSolutionUnavailableError(50, "Provider evidence is stale."); } } as any, () => 100);
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "deferred");
+    const run = await coordinator.get(projectId);
+    assert.equal(run?.retryAt, 60_100);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(calls, 1);
+    assert.equal((await coordinator.get(projectId))?.attempts, 1);
+    await coordinator.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 async function waitFor(predicate: () => Promise<boolean>) { for (let index = 0; index < 100; index += 1) { if (await predicate()) return; await new Promise((resolve) => setTimeout(resolve, 2)); } throw new Error("Timed out waiting for coordinator state."); }
