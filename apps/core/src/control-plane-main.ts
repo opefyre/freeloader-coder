@@ -60,6 +60,8 @@ import { SignedOwnerResponseService } from "./signed-owner-response-service.js";
 import { OAuthOwnerIdentityResolver } from "./oauth-owner-identity-resolver.js";
 import { ChannelRelayClient } from "./channel-relay-client.js";
 import { OwnerChannelRuntime } from "./owner-channel-runtime.js";
+import { SlackOwnerNotificationTransport } from "./oauth-owner-notification-transport.js";
+import { resolveChannelRelayRuntimeConfig } from "./channel-relay-runtime-config.js";
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
@@ -258,15 +260,14 @@ const signedOwnerResponses = new SignedOwnerResponseService(
     await jiraDelivery.synchronize(projectId).catch(() => undefined);
   },
 );
-const channelRelayEndpoint = process.env.CODKESH_CHANNEL_RELAY_URL?.trim() ?? "";
-const channelRelayToken = process.env.CODKESH_CHANNEL_RELAY_TOKEN?.trim() ?? "";
-const channelRelay = channelRelayEndpoint && channelRelayToken
-  ? new ChannelRelayClient(channelRelayEndpoint, channelRelayToken, signedOwnerResponses)
+const channelRelayConfig = await resolveChannelRelayRuntimeConfig(credentialVault);
+const channelRelay = channelRelayConfig
+  ? new ChannelRelayClient(channelRelayConfig.endpoint, channelRelayConfig.token, signedOwnerResponses)
   : null;
 const ownerChannelRuntime = new OwnerChannelRuntime(
   stateDirectory,
   ownerResponsePlanner,
-  [],
+  [new SlackOwnerNotificationTransport(credentialVault)],
   channelRelay,
   async () => undefined,
 );
