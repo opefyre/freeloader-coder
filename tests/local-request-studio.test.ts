@@ -126,3 +126,20 @@ test("Studio separates real request state from guided orchestration examples", a
   const controlPlane = await readFile("apps/core/src/control-plane.ts", "utf8");
   assert.equal(controlPlane.includes("const MAX_REQUEST_BYTES = 900_000"), true);
 });
+
+test("native workspace and attachment controls expose keyboard and screen-reader recovery", async () => {
+  const panel = await readFile(
+    "apps/studio/src/components/conversation/local-request-panel.tsx",
+    "utf8",
+  );
+  const client = await readFile(
+    "apps/studio/src/native-picker-client.ts",
+    "utf8",
+  );
+
+  assert.match(panel, /type="button"[\s\S]*onClick=\{\(\) => void chooseFolder\(\)\}/);
+  assert.match(panel, /aria-label="Attach files"[\s\S]*onClick=\{\(\) => void chooseFiles\(\)\}/);
+  assert.match(panel, /aria-live="polite"[\s\S]*\{notice\}/);
+  assert.match(client, /Files and Folders settings/);
+  assert.match(client, /Nothing was changed/);
+});

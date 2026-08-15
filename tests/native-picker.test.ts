@@ -51,3 +51,24 @@ test("native picker cancellation returns no handles", async () => {
   assert.equal(evidence[0]?.outcome, "cancelled");
   assert.equal(evidence[0]?.selectionCount, 0);
 });
+
+test("native picker records denied access without issuing a handle", async () => {
+  const evidence: any[] = [];
+  const picker = new NativePicker(
+    async () => {
+      throw new Error("The selected folder is not readable and writable.");
+    },
+    () => 2_000,
+    async (item) => { evidence.push(item); },
+  );
+
+  await assert.rejects(() => picker.folder(), /not readable and writable/);
+  assert.deepEqual(evidence, [{
+    schemaVersion: 1,
+    kind: "folder",
+    outcome: "denied",
+    selectionCount: 0,
+    platform: process.platform,
+    observedAt: 2_000,
+  }]);
+});
