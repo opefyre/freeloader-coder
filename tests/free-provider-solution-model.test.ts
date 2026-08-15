@@ -75,6 +75,17 @@ test("solution model refreshes stale consented provider evidence before routing"
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution model rejects structurally incomplete research before it becomes durable evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-contract-"));
+  try {
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => ({ schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ schemaVersion: 1, discipline: "product", questions: [], sources: [], claims: [], contradictions: [], gaps: [] }), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }) }) as unknown as ProviderAdapter,
+    }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    await assert.rejects(() => model.run({ projectId, role: "product_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit }));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 function connection(providerId: "groq" | "mistral", modelId: string): ProviderConnection {
   const limits = providerId === "groq" ? { context: 131_072, output: 65_536, url: "https://api.groq.com/openai/v1" } : { context: 256_000, output: 32_000, url: "https://api.mistral.ai/v1" };
   return { schemaVersion: 1, id: `connection-${providerId}`, providerId, modelId, apiBaseUrl: limits.url, credentialReference: `vault:providers/${providerId}/primary`, credentialFingerprint: "012345abcdef", credentialState: "active", state: "ready", privacyClass: "training_eligible", capabilityRoles: ["implementer"], contextWindowTokens: limits.context, maxOutputTokens: limits.output, cost: { access: "account_limited_free", plan: "Free", zeroCost: true, billingEnabled: false, observedAt: now - 1, expiresAt: now + 60_000, source: "account_api" }, quota: { source: "account_api", observedAt: now - 1, expiresAt: now + 60_000, requestsPerMinute: 5, requestsPerDay: 100, tokensPerMinute: 30_000, tokensPerDay: 1_000_000, remainingRequests: 90, remainingTokens: 900_000, resetAt: now + 60_000 }, canary: { status: "passed", observedAt: now - 1, expiresAt: now + 60_000, modelId, capabilities: ["chat", "structured_output"], inputTokens: 1, outputTokens: 1, failureCode: null }, updatedAt: now - 1 };
