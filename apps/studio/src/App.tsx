@@ -1284,7 +1284,15 @@ function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) =
       </div>
       {surface === "canvas" ? (
         <div className="overflow-hidden rounded-[1.4rem] bg-[#0b0e14] shadow-[0_24px_80px_rgba(0,0,0,0.2)]">
-          <iframe title="Codkesh coding canvas" src={`${import.meta.env.VITE_PIPELINE_CANVAS_URL ?? "http://127.0.0.1:8001"}/?pipeline=1`} className="block h-[calc(100vh-13.5rem)] min-h-[42rem] w-full border-0" allow="clipboard-read; clipboard-write" />
+          <div className="grid min-h-72 place-items-center px-6 py-12 text-center text-white md:hidden">
+            <div className="max-w-xs">
+              <Desktop className="mx-auto size-8 text-primary" weight="duotone" />
+              <strong className="mt-4 block text-base">Canvas needs a wider screen</strong>
+              <p className="mt-2 text-sm leading-6 text-white/60">Projects, approvals, and progress remain available here.</p>
+              <Button className="mt-5" onClick={() => setSurface("projects")}>Open projects</Button>
+            </div>
+          </div>
+          <iframe title="Codkesh coding canvas" src={`${import.meta.env.VITE_PIPELINE_CANVAS_URL ?? "http://127.0.0.1:8001"}/?pipeline=1`} className="hidden h-[calc(100vh-13.5rem)] min-h-[42rem] w-full border-0 md:block" allow="clipboard-read; clipboard-write" />
         </div>
       ) : (
         <div className="mx-auto max-w-6xl space-y-10">
