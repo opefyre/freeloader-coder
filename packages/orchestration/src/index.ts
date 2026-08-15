@@ -12,6 +12,7 @@ export * from "./provider-runtime.js";
 export * from "./provider-scheduler.js";
 export * from "./quality-review.js";
 export * from "./readiness.js";
+export * from "./resilience-certification.js";
 export * from "./retry.js";
 export * from "./reviews.js";
 export * from "./task-planner.js";
