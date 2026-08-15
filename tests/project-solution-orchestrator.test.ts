@@ -52,6 +52,10 @@ test("solution orchestration uses parallel specialists and independent reviewers
       assert.equal(input.contextDigest, "a".repeat(64));
       assert.ok(input.sources.some((source) => source.name === "CONTEXT.md"));
       if (input.role === "product_research" || input.role === "technical_research") researchInstructions.push(input.instruction);
+      if (input.role === "solution_reconciliation") {
+        assert.ok(input.sources.some((source) => source.name === "RESEARCH.md" && source.content === "# Sanitized research\n"));
+        assert.ok(!input.sources.some((source) => source.name === "Product research" || source.name === "Technical research"));
+      }
       if (input.role === "solution_reconciliation") return evidence("reconciler", content);
       if (input.role === "product_review") return evidence("product-model", { schemaVersion: 1, reviewerId: "review-a", discipline: "product", verdict: "pass", findings: ["Product scope is coherent."] });
       if (input.role === "technical_review") return evidence("technical-model", { schemaVersion: 1, reviewerId: "review-b", discipline: "technical", verdict: "pass", findings: ["Architecture is implementable."] });
@@ -60,7 +64,7 @@ test("solution orchestration uses parallel specialists and independent reviewers
   };
   const service = new ProjectSolutionOrchestrator(
     { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
-    { publishResearch: async (_id: string, evidence: unknown) => { research.push(evidence); }, publish: async (_id: string, draft: unknown) => { published.push(draft); return { kind: "solution", digest: "b".repeat(64), revision: 1 }; }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
+    { publishResearch: async (_id: string, evidence: unknown) => { research.push(evidence); return { body: "# Sanitized research\n" }; }, publish: async (_id: string, draft: unknown) => { published.push(draft); return { kind: "solution", digest: "b".repeat(64), revision: 1 }; }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
     { authorize: async () => permit },
     model,
@@ -89,7 +93,7 @@ test("review dissent fails closed without publishing", async () => {
   const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };
   const service = new ProjectSolutionOrchestrator(
     { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async () => { throw new Error("must not publish"); } },
-    { publishResearch: async () => undefined, publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
+    { publishResearch: async () => ({ body: "# Sanitized research\n" }), publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
     { authorize: async () => permit },
     { run: async ({ role }) => role === "solution_reconciliation" ? evidence("reconciler", content) : role === "product_review" ? evidence("review-a", { schemaVersion: 1, reviewerId: "a-reviewer", discipline: "product", verdict: "fail", findings: ["User workflow is incomplete."] }) : role === "technical_review" ? evidence("review-b", { schemaVersion: 1, reviewerId: "b-reviewer", discipline: "technical", verdict: "pass", findings: [] }) : evidence(role, researchEvidence(role)) },
@@ -103,7 +107,7 @@ test("malformed reconciler output fails before review and publication", async ()
   const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };
   const service = new ProjectSolutionOrchestrator(
     { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async () => { throw new Error("must not publish"); } },
-    { publishResearch: async () => undefined, publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
+    { publishResearch: async () => ({ body: "# Sanitized research\n" }), publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
     { authorize: async () => permit },
     { run: async ({ role }) => evidence(role, role === "solution_reconciliation" ? { summary: "incomplete" } : researchEvidence(role)) },
@@ -121,7 +125,7 @@ test("owner revision feedback changes only explicitly scoped solution sections",
     {
       read: async () => ({ digest: "b".repeat(64), revision: 1 }),
       readContent: async () => current,
-      publishResearch: async () => undefined,
+      publishResearch: async () => ({ body: "# Sanitized research\n" }),
       publish: async (_id: string, draft: unknown) => { published = draft; return { kind: "solution", digest: "c".repeat(64), revision: 2 }; },
     } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },

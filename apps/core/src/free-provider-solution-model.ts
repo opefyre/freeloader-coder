@@ -5,7 +5,7 @@ import type { ProviderConnectionRepository, CredentialVault } from "../../../pac
 import { readPrivateProposalArtifact, writePrivateProposalArtifact } from "./local-proposal.js";
 import { ProviderCapacityStore } from "./provider-capacity-store.js";
 import { ProviderRuntimeService } from "./provider-service.js";
-import { projectEgressPermitSchema, researchEvidenceGraphSchema } from "../../../packages/orchestration/src/solution-design.js";
+import { projectEgressPermitSchema, researchEvidenceGraphSchema, solutionContentSchema, solutionReviewResultSchema, solutionRevisionScopeSchema } from "../../../packages/orchestration/src/solution-design.js";
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
@@ -81,13 +81,27 @@ function failure(code: string, status: number) { return Object.assign(new Error(
 function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"], content: string): unknown {
   let parsed: unknown;
   try { parsed = JSON.parse(content); } catch { throw failure("malformed-response", 400); }
+  if (typeof parsed === "object" && parsed !== null && "schemaVersion" in parsed && parsed.schemaVersion === "1") parsed = { ...parsed, schemaVersion: 1 };
   if (role === "product_research" || role === "technical_research") {
     const result = researchEvidenceGraphSchema.safeParse(parsed);
     const discipline = role === "product_research" ? "product" : "technical";
     if (!result.success || result.data.discipline !== discipline) throw failure("response-contract-rejected", 400);
     return result.data;
   }
+  if (role === "solution_reconciliation") return parseContract(solutionContentSchema, parsed);
+  if (role === "solution_revision_scope") return parseContract(solutionRevisionScopeSchema, parsed);
+  if (role === "product_review" || role === "technical_review") {
+    const result = parseContract(solutionReviewResultSchema, parsed);
+    const discipline = role === "product_review" ? "product" : "technical";
+    if (result.discipline !== discipline) throw failure("response-contract-rejected", 400);
+    return result;
+  }
   return parsed;
+}
+function parseContract<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (!result.success) throw failure("response-contract-rejected", 400);
+  return result.data;
 }
 function schemaFor(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): Readonly<Record<string, unknown>> {
   if (role === "product_research" || role === "technical_research") return researchEvidenceResponseSchema(role === "product_research" ? "product" : "technical");
@@ -96,7 +110,21 @@ function schemaFor(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): Rea
   if (role === "delivery_review" || role === "technical_delivery_review") return { type: "object", additionalProperties: false, required: ["schemaVersion", "reviewerId", "discipline", "verdict", "findings"], properties: { schemaVersion: { const: 1 }, reviewerId: { type: "string" }, discipline: { enum: ["delivery", "technical"] }, verdict: { enum: ["pass", "fail"] }, findings: { type: "array", items: { type: "string" } } } };
   if (role === "delivery_planning") { const list = { type: "array", items: { type: "string" } }; return { type: "object", additionalProperties: false, required: ["schemaVersion", "title", "objective", "contextDigest", "solutionDigest", "items", "risks", "assumptions", "citations"], properties: { schemaVersion: { const: 1 }, title: { type: "string" }, objective: { type: "string" }, contextDigest: { type: "string" }, solutionDigest: { type: "string" }, items: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "type", "parentId", "title", "description", "storyPoints", "estimatedMinutes", "priority", "dependencies", "acceptanceCriteria", "definitionOfDone", "implementationNotes", "allowedFiles", "validationProfiles", "citations"], properties: { id: { type: "string" }, type: { enum: ["epic", "story", "task", "subtask"] }, parentId: { type: ["string", "null"] }, title: { type: "string" }, description: { type: "string" }, storyPoints: { type: ["number", "null"] }, estimatedMinutes: { type: "number" }, priority: { enum: ["highest", "high", "medium", "low", "lowest"] }, dependencies: list, acceptanceCriteria: list, definitionOfDone: list, implementationNotes: list, allowedFiles: list, validationProfiles: { type: "array", items: { enum: ["format", "lint", "typecheck", "unit", "integration", "build", "visual"] } }, citations: list } } }, risks: list, assumptions: list, citations: list } } };
   if (role.endsWith("review")) return { type: "object", additionalProperties: false, required: ["schemaVersion", "reviewerId", "discipline", "verdict", "findings"], properties: { schemaVersion: { const: 1 }, reviewerId: { type: "string" }, discipline: { enum: ["product", "technical"] }, verdict: { enum: ["pass", "fail"] }, findings: { type: "array", items: { type: "string" } } } };
-  if (role === "solution_reconciliation") { const list = { type: "array", minItems: 1, items: { type: "string" } }; const keys = ["behavior", "architecture", "userExperience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics", "citations"]; return { type: "object", additionalProperties: false, required: ["schemaVersion", "title", "summary", ...keys], properties: { schemaVersion: { const: 1 }, title: { type: "string" }, summary: { type: "string" }, ...Object.fromEntries(keys.map((key) => [key, list])) } }; }
+  if (role === "solution_reconciliation") {
+    const list = { type: "array", minItems: 1, items: { type: "string" } };
+    const sectionKeys = ["behavior", "architecture", "userExperience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics"];
+    return {
+      type: "object", additionalProperties: false,
+      required: ["schemaVersion", "title", "summary", ...sectionKeys, "alternatives", "unresolvedBlockers", "citations"],
+      properties: {
+        schemaVersion: { const: 1 }, title: { type: "string" }, summary: { type: "string" },
+        ...Object.fromEntries(sectionKeys.map((key) => [key, list])),
+        alternatives: { type: "array", minItems: 2, items: { type: "object", additionalProperties: false, required: ["option", "disposition", "rationale"], properties: { option: { type: "string" }, disposition: { enum: ["selected", "rejected", "deferred"] }, rationale: { type: "string" } } } },
+        unresolvedBlockers: { type: "array", items: { type: "object", additionalProperties: false, required: ["blocker", "impact", "owner", "resolution"], properties: { blocker: { type: "string" }, impact: { type: "string" }, owner: { type: "string" }, resolution: { type: "string" } } } },
+        citations: list,
+      },
+    };
+  }
   return { type: "object", additionalProperties: true };
 }
 

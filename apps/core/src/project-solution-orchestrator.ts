@@ -76,7 +76,7 @@ export class ProjectSolutionOrchestrator {
       this.model.run({ projectId, role: "product_research", contextDigest: verified.digest, instruction: productInstruction(), sources: baseSources, permit }),
       this.model.run({ projectId, role: "technical_research", contextDigest: verified.digest, instruction: technicalInstruction(), sources: baseSources, permit }),
     ]);
-    await this.solutions.publishResearch(projectId, {
+    const researchArtifact = await this.solutions.publishResearch(projectId, {
       contextDigest: verified.digest,
       product,
       technical,
@@ -84,7 +84,7 @@ export class ProjectSolutionOrchestrator {
     const reconciled = await this.model.run({
       projectId, role: "solution_reconciliation", contextDigest: verified.digest,
       instruction: reconciliationInstruction(),
-      sources: [...baseSources, { name: "Product research", content: safeJson(product.response) }, { name: "Technical research", content: safeJson(technical.response) }], permit,
+      sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }], permit,
     });
     const candidate = solutionContentSchema.parse(reconciled.response);
     const content = existingContent && revisionScope ? mergeScopedRevision(existingContent, candidate, revisionScope.sections) : candidate;
@@ -145,7 +145,7 @@ function researchInstruction(discipline: "product" | "technical", topics: readon
     "Do not use aliases such as scoped_questions, evidence_gaps, browsing_gaps, retrieval_timestamp, or sha256_digest. Distinguish evidence from proposals and never invent observed facts.",
   ].join(" ");
 }
-function reconciliationInstruction() { return "Reconcile both specialist analyses into one complete implementable solution. Resolve conflicts using CONTEXT.md as authority, incorporate owner feedback, cite both local://CONTEXT.md and local://RESEARCH.md plus only verified research URLs, record selected and rejected alternatives with rationale, and keep every unresolved blocker explicit with owner, impact, and resolution. Populate every required solution section and return JSON matching the requested schema only."; }
+function reconciliationInstruction() { return "Reconcile the sanitized RESEARCH.md and grounded CONTEXT.md into one complete implementable solution. Resolve conflicts using CONTEXT.md as authority and incorporate owner feedback. Cite both local://CONTEXT.md and local://RESEARCH.md; cite an HTTP(S) URL only when it appears in sanitized RESEARCH.md. Return schemaVersion=1 as a number. Populate every required section. alternatives must contain at least one selected and one rejected item, each with option, disposition, and rationale. unresolvedBlockers must be an array whose items use blocker, impact, owner, and resolution; use an empty array when none remain. Return JSON matching the requested schema only."; }
 function revisionScopeInstruction() { return "Compare the owner feedback with the current candidate and CONTEXT.md. Return only the exact solution section keys that must change. Do not include unaffected sections. Return strict structured JSON."; }
 function reviewInstruction(discipline: "product" | "technical") { return `Independently audit the candidate solution from the ${discipline} discipline against CONTEXT.md and owner feedback. Fail on omissions, contradictions, invented facts, unsafe assumptions, or non-implementable guidance. Return a strict verdict and actionable findings.`; }
 

@@ -86,6 +86,21 @@ test("solution model rejects structurally incomplete research before it becomes 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution reconciliation requests and locally validates the complete canonical solution contract", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-reconciliation-"));
+  try {
+    let required: string[] = [];
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => { required = request.responseSchema.required; return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(solutionResponse()), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }; } }) as unknown as ProviderAdapter,
+    }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const result = await model.run({ projectId, role: "solution_reconciliation", contextDigest, instruction: "Reconcile.", sources: [{ name: "RESEARCH.md", content: "# Sanitized research" }], permit });
+    assert.ok(required.includes("alternatives"));
+    assert.ok(required.includes("unresolvedBlockers"));
+    assert.equal((result.response as any).schemaVersion, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 function connection(providerId: "groq" | "mistral", modelId: string): ProviderConnection {
   const limits = providerId === "groq" ? { context: 131_072, output: 65_536, url: "https://api.groq.com/openai/v1" } : { context: 256_000, output: 32_000, url: "https://api.mistral.ai/v1" };
   return { schemaVersion: 1, id: `connection-${providerId}`, providerId, modelId, apiBaseUrl: limits.url, credentialReference: `vault:providers/${providerId}/primary`, credentialFingerprint: "012345abcdef", credentialState: "active", state: "ready", privacyClass: "training_eligible", capabilityRoles: ["implementer"], contextWindowTokens: limits.context, maxOutputTokens: limits.output, cost: { access: "account_limited_free", plan: "Free", zeroCost: true, billingEnabled: false, observedAt: now - 1, expiresAt: now + 60_000, source: "account_api" }, quota: { source: "account_api", observedAt: now - 1, expiresAt: now + 60_000, requestsPerMinute: 5, requestsPerDay: 100, tokensPerMinute: 30_000, tokensPerDay: 1_000_000, remainingRequests: 90, remainingTokens: 900_000, resetAt: now + 60_000 }, canary: { status: "passed", observedAt: now - 1, expiresAt: now + 60_000, modelId, capabilities: ["chat", "structured_output"], inputTokens: 1, outputTokens: 1, failureCode: null }, updatedAt: now - 1 };
@@ -103,5 +118,19 @@ function researchResponse(discipline: "product" | "technical") {
     claims: [],
     contradictions: [],
     gaps: topics.map((topic) => ({ topic, question: `What evidence supports ${topic}?`, reason: "browsing_unavailable", impact: `Verified ${topic} evidence is not available.` })),
+  };
+}
+
+function solutionResponse() {
+  const section = ["Implement the complete grounded requirement."];
+  return {
+    schemaVersion: "1", title: "Grounded product solution", summary: "A complete grounded product solution ready for independent review.",
+    behavior: section, architecture: section, userExperience: section, data: section, integrations: section,
+    security: section, privacy: section, reliability: section, rollout: section, metrics: section,
+    alternatives: [
+      { option: "Use the grounded architecture.", disposition: "selected", rationale: "It satisfies the verified context." },
+      { option: "Replace the established architecture.", disposition: "rejected", rationale: "It would add unsupported scope." },
+    ],
+    unresolvedBlockers: [], citations: ["local://CONTEXT.md", "local://RESEARCH.md"],
   };
 }
