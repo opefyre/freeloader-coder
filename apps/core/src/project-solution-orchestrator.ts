@@ -87,7 +87,7 @@ export class ProjectSolutionOrchestrator {
       sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }], permit,
     });
     const candidate = solutionContentSchema.parse(reconciled.response);
-    let content = existingContent && revisionScope ? mergeScopedRevision(existingContent, candidate, revisionScope.sections) : candidate;
+    let content = groundSolutionCitations(existingContent && revisionScope ? mergeScopedRevision(existingContent, candidate, revisionScope.sections) : candidate, researchArtifact.body);
     let productReviewEvidence: SolutionModelEvidence;
     let technicalReviewEvidence: SolutionModelEvidence;
     let productReview;
@@ -117,7 +117,7 @@ export class ProjectSolutionOrchestrator {
         permit,
       });
       const healedCandidate = solutionContentSchema.parse(healed.response);
-      content = existingContent && revisionScope ? mergeScopedRevision(existingContent, healedCandidate, revisionScope.sections) : healedCandidate;
+      content = groundSolutionCitations(existingContent && revisionScope ? mergeScopedRevision(existingContent, healedCandidate, revisionScope.sections) : healedCandidate, researchArtifact.body);
     }
     const reviewerIds = [reviewerIdentity(productReviewEvidence, productReview.reviewerId), reviewerIdentity(technicalReviewEvidence, technicalReview.reviewerId)];
     if (reviewerIds[0] === reviewerIds[1]) throw new Error("Solution review requires independent reviewer identities.");
@@ -148,6 +148,15 @@ function safeJson(value: unknown) {
   const serialized = JSON.stringify(value);
   if (!serialized || serialized.length > 500_000) throw new Error("Solution research output is not safely bounded.");
   return serialized;
+}
+
+function groundSolutionCitations(content: SolutionContent, research: string): SolutionContent {
+  const citations = [
+    "local://CONTEXT.md",
+    "local://RESEARCH.md",
+    ...content.citations.filter((citation) => /^https?:\/\//i.test(citation) && research.includes(citation)),
+  ];
+  return solutionContentSchema.parse({ ...content, citations: [...new Set(citations)] });
 }
 
 function productInstruction() { return researchInstruction("product", ["market", "competitor_features", "competitor_pricing", "public_reviews", "audience", "problem", "product"]); }
