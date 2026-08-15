@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import test from "node:test";
 
-import relay from "../apps/channel-relay/src/index.js";
+import relay, { updateSlackSourceMessage } from "../apps/channel-relay/src/index.js";
 
 test("relay authenticates Slack, stores only opaque decision metadata, and permits one authorized pull", async () => {
   const entries = new Map<string, string>(); const secret = "slack-signing-secret-123456789"; const token = "relay-pull-token-123456789";
@@ -22,4 +22,19 @@ test("relay rejects a tampered Slack body before durable storage", async () => {
   let writes = 0; const secret = "slack-signing-secret-123456789"; const timestamp = String(Math.floor(Date.now() / 1000)); const original = "payload=%7B%7D"; const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${original}`).digest("hex")}`;
   const env = { OWNER_RESPONSES: { get: async () => null, put: async () => { writes += 1; }, delete: async () => undefined, list: async () => ({ keys: [] }) }, CHANNEL_RELAY_TOKEN: "token", SLACK_SIGNING_SECRET: secret, DISCORD_PUBLIC_KEY: "0".repeat(64) } as any;
   const response = await relay.fetch(new Request("https://relay.test/v1/channels/slack/interactions", { method: "POST", headers: { "X-Slack-Request-Timestamp": timestamp, "X-Slack-Signature": signature }, body: `${original}x` }), env); assert.equal(response.status, 401); assert.equal(writes, 0);
+});
+
+test("Slack source-message acknowledgement is visible, bounded, and origin locked", async () => {
+  const requests: Array<{ url: string; body: any }> = [];
+  const updated = await updateSlackSourceMessage("https://hooks.slack.com/actions/T/B/opaque", async (input, init) => {
+    requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    return new Response("ok", { status: 200 });
+  });
+  assert.equal(updated, true);
+  assert.equal(requests[0]?.url, "https://hooks.slack.com/actions/T/B/opaque");
+  assert.deepEqual(requests[0]?.body, { replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." });
+  let calls = 0;
+  assert.equal(await updateSlackSourceMessage("https://example.com/actions/T/B/secret", async () => { calls += 1; return new Response(); }), false);
+  assert.equal(await updateSlackSourceMessage("https://hooks.slack.com/actions/T/B/secret?leak=yes", async () => { calls += 1; return new Response(); }), false);
+  assert.equal(calls, 0);
 });

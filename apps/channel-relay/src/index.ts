@@ -28,6 +28,10 @@ async function receiveSlack(request: Request, env: Env) {
   const action = Array.isArray(payload?.actions) && payload.actions.length === 1 ? payload.actions[0] : null;
   if (payload?.type !== "block_actions" || !/^codkesh_owner_response:(approve|decline)$/.test(action?.action_id ?? "") || !decisionId(action.value) || typeof payload?.channel?.id !== "string" || typeof payload?.user?.id !== "string") return json({ error: "Unsupported interaction." }, 400);
   await enqueue(env, { schemaVersion: 1, provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, receivedAt: Date.now() });
+  // Acknowledge visibly without storing the short-lived response URL. The
+  // durable relay still applies the decision locally before acknowledging its
+  // queue entry, while Slack immediately removes buttons that were clicked.
+  await updateSlackSourceMessage(payload.response_url).catch(() => undefined);
   return new Response("", { status: 200, headers: securityHeaders });
 }
 
@@ -63,6 +67,19 @@ async function boundedText(request: Request) { const length = Number(request.hea
 async function verifySlack(body: string, timestamp: string, signature: string, secret: string) { if (!/^\d{10}$/.test(timestamp) || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300 || !/^v0=[a-f0-9]{64}$/.test(signature) || secret.length < 16) return false; const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`v0:${timestamp}:${body}`)); return constantTimeEqual(signature, `v0=${hex(new Uint8Array(digest))}`); }
 async function verifyDiscord(body: string, timestamp: string, signature: string, publicKey: string) { if (!/^\d{10,13}$/.test(timestamp) || !/^[a-f0-9]{128}$/.test(signature) || !/^[a-f0-9]{64}$/.test(publicKey)) return false; const at = timestamp.length === 10 ? Number(timestamp) * 1000 : Number(timestamp); if (Math.abs(Date.now() - at) > 300_000) return false; try { const key = await crypto.subtle.importKey("raw", bytes(publicKey), { name: "Ed25519" }, false, ["verify"]); return crypto.subtle.verify("Ed25519", key, bytes(signature), new TextEncoder().encode(`${timestamp}${body}`)); } catch { return false; } }
 function decisionId(value: unknown): value is string { return typeof value === "string" && /^decision_[a-f0-9]{16}$/.test(value); }
+export async function updateSlackSourceMessage(input: unknown, fetcher: typeof fetch = fetch) {
+  if (typeof input !== "string") return false;
+  let url: URL;
+  try { url = new URL(input); } catch { return false; }
+  if (url.protocol !== "https:" || url.hostname !== "hooks.slack.com" || !url.pathname.startsWith("/actions/") || url.username || url.password || url.search || url.hash) return false;
+  const response = await fetcher(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    redirect: "error",
+    body: JSON.stringify({ replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." }),
+  });
+  return response.ok;
+}
 function authorized(request: Request, env: Env) { return Boolean(env.CHANNEL_RELAY_TOKEN) && constantTimeEqual(request.headers.get("Authorization") ?? "", `Bearer ${env.CHANNEL_RELAY_TOKEN}`); }
 function constantTimeEqual(left: string, right: string) { if (left.length !== right.length) return false; let difference = 0; for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index); return difference === 0; }
 function bytes(value: string) { return Uint8Array.from(value.match(/.{2}/g)?.map((item) => Number.parseInt(item, 16)) ?? []); }
