@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 
@@ -74,6 +74,22 @@ export class ProjectLifecycleCoordinator {
     this.#inFlight.add(projectId);
     let lease: z.infer<typeof leaseSchema> | null = null;
     try {
+      const observedLifecycle = await this.lifecycles.get(projectId);
+      if (!observedLifecycle) throw new Error("Project lifecycle was not found.");
+      const observedState = await this.#load(projectId);
+      const observedKind = actionForStage(observedLifecycle.stage);
+      const observedActionId = observedKind
+        ? `${projectId}:${observedKind}:revision-${observedLifecycle.revision}`
+        : null;
+      if (
+        observedActionId &&
+        !(await pathExists(this.#leasePath(projectId))) &&
+        observedState.checkpoint?.stage === observedLifecycle.stage &&
+        observedState.checkpoint.lifecycleRevision === observedLifecycle.revision &&
+        observedState.dispatches[observedActionId]?.state === "completed"
+      ) {
+        return "checkpointed";
+      }
       lease = await this.#acquire(projectId);
       if (!lease) return "busy";
       const lifecycle = await this.lifecycles.get(projectId);
@@ -197,5 +213,6 @@ function dispatch(workers: StageWorkers, kind: ActionKind, projectId: string, ac
 
 async function readLease(lock: string) { try { return leaseSchema.parse(JSON.parse(await readFile(resolve(lock, "owner.json"), "utf8"))); } catch { return null; } }
 async function readHeartbeat(lock: string, token: string) { try { return z.strictObject({ at: z.number().int().nonnegative() }).parse(JSON.parse(await readFile(resolve(lock, `heartbeat-${token}.json`), "utf8"))).at; } catch { return null; } }
+async function pathExists(path: string) { try { await access(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; } }
 function assertProjectId(projectId: string) { if (!/^project_[a-f0-9]{16}$/.test(projectId)) throw new Error("Project identity is invalid."); }
 async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }

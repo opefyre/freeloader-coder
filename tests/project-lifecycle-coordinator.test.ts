@@ -46,6 +46,9 @@ test("restart resumes an exact dispatched checkpoint with the same idempotency a
   assert.deepEqual(received, [actionId]);
   assert.equal((await restarted.get(projectA)).dispatches[actionId]?.state, "completed");
   assert.equal(await restarted.reconcile(projectA), "checkpointed");
+  const stable = await restarted.get(projectA);
+  assert.equal(await restarted.reconcile(projectA), "checkpointed");
+  assert.equal((await restarted.get(projectA)).revision, stable.revision);
   assert.deepEqual(received, [actionId]);
 });
 
