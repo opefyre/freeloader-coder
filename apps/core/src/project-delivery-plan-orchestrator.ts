@@ -29,6 +29,7 @@ export class ProjectDeliveryPlanOrchestrator {
       projectId,
       assessment: lifecycle.assessment,
       now: this.now(),
+      allowExpiredIfAssessmentCurrent: true,
     });
     const [context, solution] = await Promise.all([this.context.readVerified(projectId), this.solutions.read(projectId)]);
     if (lifecycle.designApproval.artifactDigest !== solution.digest) throw new Error("Approved solution digest does not match the verified solution artifact.");

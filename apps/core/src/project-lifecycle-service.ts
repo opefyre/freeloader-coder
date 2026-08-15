@@ -322,6 +322,7 @@ function requireCurrentEligibility(
     projectId: record.projectId,
     assessment: record.assessment,
     now,
+    allowExpiredIfAssessmentCurrent: true,
   });
   return decision;
 }

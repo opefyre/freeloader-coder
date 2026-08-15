@@ -57,6 +57,7 @@ export class ProjectSolutionOrchestrator {
       projectId,
       assessment: lifecycle.assessment,
       now: this.now(),
+      allowExpiredIfAssessmentCurrent: true,
     });
     const verified = await this.context.readVerified(projectId);
     const permit = await this.egress.authorize(projectId, verified.digest);

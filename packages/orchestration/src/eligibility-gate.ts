@@ -81,6 +81,7 @@ export function assertDeliveryPlanningEligible(
     assessment?: MajorWorkAssessment | null;
     now?: number;
     validityMs?: number;
+    allowExpiredIfAssessmentCurrent?: boolean;
   } = {},
 ) {
   if (!decision.eligible) throw new Error("Jira delivery planning and execution are blocked until major-work eligibility passes.");
@@ -89,5 +90,6 @@ export function assertDeliveryPlanningEligible(
   if (input.assessment && JSON.stringify(input.assessment) !== JSON.stringify(decision.assessment)) throw new Error("Eligibility authority was superseded by a newer scope assessment.");
   const now = input.now ?? Date.now();
   const validityMs = input.validityMs ?? ELIGIBILITY_VALIDITY_MS;
-  if (!Number.isInteger(validityMs) || validityMs < 1 || decision.decidedAt + validityMs < now) throw new Error("Eligibility authority expired; reassess the current project scope.");
+  if (!Number.isInteger(validityMs) || validityMs < 1) throw new Error("Eligibility validity is invalid.");
+  if (decision.decidedAt + validityMs < now && !(input.allowExpiredIfAssessmentCurrent === true && input.assessment)) throw new Error("Eligibility authority expired; reassess the current project scope.");
 }
