@@ -364,9 +364,11 @@ export class LocalProjectRegistry {
     await mkdir(staging, { recursive: true, mode: 0o700 });
     await cleanupInterruptedInputImports(destination);
     const imported: Array<{ label: string; projectRelativePath: string; bytes: number; evidence: { status: "extracted" | "unsupported" | "encrypted" | "corrupt" | "limit_exceeded"; mediaType: string; sourceDigest: string; unitCount: number; warning: string | null; preview: string | null } }> = [];
+    const createdPaths: string[] = [];
     let totalBytes = 0;
     const importedDigests = new Set<string>();
-    for (const requestedPath of request.paths) {
+    try {
+      for (const requestedPath of request.paths) {
       if (!isAbsolute(requestedPath) || requestedPath.includes("\0")) {
         throw new LocalProjectError("invalid_path", "Choose regular local files.");
       }
@@ -401,18 +403,28 @@ export class LocalProjectRegistry {
       }
       const stagedEvidence = `${stagedPath}.evidence.json`;
       await writeFile(stagedEvidence, `${JSON.stringify(extraction)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
-      await rename(stagedPath, storedPath).catch(async (error) => {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        await rm(stagedPath, { force: true });
-      });
-      await rename(stagedEvidence, `${storedPath}.evidence.json`).catch(async (error) => {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        await rm(stagedEvidence, { force: true });
-      });
-      imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size, evidence: { status: extraction.status, mediaType: extraction.mediaType, sourceDigest: extraction.sourceDigest, unitCount: extraction.units.length, warning: extraction.warning, preview: extraction.units.length > 0 ? redactEvidencePreview(extraction.units.map((unit) => unit.content).join("\n")) : null } });
+        const storedEvidence = `${storedPath}.evidence.json`;
+        const fileExisted = await pathExists(storedPath);
+        const evidenceExisted = await pathExists(storedEvidence);
+        await rename(stagedPath, storedPath).catch(async (error) => {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          await rm(stagedPath, { force: true });
+        });
+        if (!fileExisted) createdPaths.push(storedPath);
+        await rename(stagedEvidence, storedEvidence).catch(async (error) => {
+          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          await rm(stagedEvidence, { force: true });
+        });
+        if (!evidenceExisted) createdPaths.push(storedEvidence);
+        imported.push({ label: basename(source), projectRelativePath: `.pipeline/inputs/${storedName}`, bytes: info.size, evidence: { status: extraction.status, mediaType: extraction.mediaType, sourceDigest: extraction.sourceDigest, unitCount: extraction.units.length, warning: extraction.warning, preview: extraction.units.length > 0 ? redactEvidencePreview(extraction.units.map((unit) => unit.content).join("\n")) : null } });
+      }
+      return localProjectFileImportResponseSchema.parse({ schemaVersion: 1, outcome: "imported", files: imported });
+    } catch (error) {
+      await Promise.all(createdPaths.map((path) => rm(path, { force: true })));
+      throw error;
+    } finally {
+      await rm(staging, { recursive: true, force: true });
     }
-    await rm(staging, { recursive: true, force: true });
-    return localProjectFileImportResponseSchema.parse({ schemaVersion: 1, outcome: "imported", files: imported });
   }
 
   async addFileContent(projectId: string, input: unknown): Promise<LocalProjectFileImportResponse> {
@@ -540,6 +552,11 @@ export class LocalProjectRegistry {
       await unlink(temporary).catch(() => undefined);
     }
   }
+}
+
+async function pathExists(path: string) {
+  try { await stat(path); return true; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
 }
 
 async function cleanupInterruptedInputImports(destination: string): Promise<void> {

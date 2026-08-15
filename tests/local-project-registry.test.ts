@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -7,6 +7,7 @@ import {
   LocalProjectError,
   LocalProjectRegistry,
 } from "../apps/core/src/local-project-registry.js";
+import { PROJECT_ARTIFACT_KINDS, ProjectArtifactStore } from "../apps/core/src/project-artifact-store.js";
 
 test("registry persists an idempotent bounded repository observation across restart", async () => {
   const fixture = await createRepositoryFixture();
@@ -24,6 +25,10 @@ test("registry persists an idempotent bounded repository observation across rest
     assert.equal(first.displayName, "sample-app");
     assert.equal(first.facts.some((fact) => fact.value.includes("TypeScript")), true);
     assert.equal(first.warnings.some((warning) => warning.includes("never executes Git")), true);
+    const artifacts = await new ProjectArtifactStore().list(fixture.repository);
+    assert.equal(artifacts.length, PROJECT_ARTIFACT_KINDS.length);
+    assert.equal(artifacts.every((artifact) => artifact.metadata.revision === 1), true);
+    assert.equal((await readdir(fixture.repository)).includes("CONTEXT.md"), true);
 
     const restarted = new LocalProjectRegistry(fixture.state);
     await restarted.setResources(first.id, {
@@ -71,6 +76,25 @@ test("registry persists an idempotent bounded repository observation across rest
   }
 });
 
+test("registry preserves and versions an existing project context during first registration", async () => {
+  const fixture = await createRepositoryFixture();
+  try {
+    const legacy = "# Existing context\n\nOwner-authored product facts.\n";
+    await writeFile(join(fixture.repository, "CONTEXT.md"), legacy, "utf8");
+    const registry = new LocalProjectRegistry(fixture.state);
+    await registry.register({ schemaVersion: 1, path: fixture.repository });
+
+    const context = await new ProjectArtifactStore().read(fixture.repository, "context");
+    assert.equal(context.body, legacy.trim());
+    assert.equal(context.metadata.revision, 1);
+    assert.equal(context.metadata.producer, "codkesh:project-intake");
+    const history = await readdir(join(fixture.repository, ".codkesh", "artifacts", "CONTEXT.md"));
+    assert.equal(history.some((name) => name.startsWith("000000-legacy-")), true);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("registry creates a private Git workspace from a plain-language product idea", async () => {
   const fixture = await createRepositoryFixture();
   try {
@@ -112,6 +136,24 @@ test("registry safely copies picker-selected attachments into the private projec
     assert.equal(await readFile(join(fixture.repository, result.files[0]!.projectRelativePath), "utf8"), "# Product brief\n");
     assert.match(await readFile(join(fixture.repository, `${result.files[0]!.projectRelativePath}.evidence.json`), "utf8"), /untrusted_evidence/);
     assert.equal(JSON.stringify(result).includes(fixture.root), false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("attachment import rolls back the whole batch when a later file is invalid", async () => {
+  const fixture = await createRepositoryFixture();
+  try {
+    const valid = join(fixture.root, "valid.md");
+    const corrupt = join(fixture.root, "corrupt.png");
+    await writeFile(valid, "# Valid first file\n", "utf8");
+    await writeFile(corrupt, "not a png", "utf8");
+    const registry = new LocalProjectRegistry(fixture.state);
+    const project = await registry.register({ schemaVersion: 1, path: fixture.repository });
+    await assert.rejects(() => registry.addFiles(project.id, { schemaVersion: 1, paths: [valid, corrupt] }), /does not match its format|corrupt/);
+    const inputs = join(fixture.repository, ".pipeline", "inputs");
+    assert.deepEqual((await readdir(inputs)).filter((name) => name !== ".staging"), []);
+    await assert.rejects(() => stat(join(inputs, ".staging")), /ENOENT/);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
