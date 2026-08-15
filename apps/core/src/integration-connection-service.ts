@@ -171,7 +171,10 @@ export class IntegrationConnectionService {
     }
     if (provider === "slack") {
       if (await this.#vault.read(SLACK_CREDENTIAL_REFERENCE)) await this.#vault.delete(SLACK_CREDENTIAL_REFERENCE);
-      await this.#vault.write(SLACK_CREDENTIAL_REFERENCE, JSON.stringify({ accessToken: credential.access_token }));
+      const ownerActorId = credential.authed_user && typeof credential.authed_user === "object" && typeof (credential.authed_user as Record<string, unknown>).id === "string"
+        ? (credential.authed_user as Record<string, unknown>).id
+        : null;
+      await this.#vault.write(SLACK_CREDENTIAL_REFERENCE, JSON.stringify({ accessToken: credential.access_token, ownerActorId }));
       this.#slack = await this.#probeStoredSlack();
       return;
     }

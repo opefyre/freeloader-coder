@@ -11,11 +11,12 @@ test("relay authenticates Slack, stores only opaque decision metadata, and permi
   const payload = { type: "block_actions", user: { id: "U-owner", name: "personal-name" }, channel: { id: "C-owner", name: "private-name" }, actions: [{ action_id: "codkesh_owner_response:approve", value: "decision_0123456789abcdef" }], message: { text: "private project source" } };
   const body = new URLSearchParams({ payload: JSON.stringify(payload) }).toString(); const timestamp = String(Math.floor(Date.now() / 1000)); const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${body}`).digest("hex")}`;
   const accepted = await relay.fetch(new Request("https://relay.test/v1/channels/slack/interactions", { method: "POST", headers: { "X-Slack-Request-Timestamp": timestamp, "X-Slack-Signature": signature }, body }), env); assert.equal(accepted.status, 200);
-  const stored = [...entries.values()].join(""); assert.doesNotMatch(stored, /personal-name|private-name|project source/i); assert.match(stored, /decision_0123456789abcdef/);
+  const acknowledgement = await accepted.json() as any; assert.equal(acknowledgement.replace_original, true); assert.doesNotMatch(acknowledgement.text, /private|source/i);
+  const stored = [...entries.values()].join(""); assert.doesNotMatch(stored, /personal-name|private-name|project source/i); assert.match(stored, /decision_0123456789abcdef/); assert.ok(entries.has("audit:decision_0123456789abcdef"));
   assert.equal((await relay.fetch(new Request("https://relay.test/v1/channels/responses/pull", { method: "POST" }), env)).status, 401);
-  const pulled = await relay.fetch(new Request("https://relay.test/v1/channels/responses/pull", { method: "POST", headers: { Authorization: `Bearer ${token}` } }), env); assert.equal(pulled.status, 200); const firstPull = (await pulled.json()) as any; assert.equal(firstPull.responses.length, 1); assert.equal(entries.size, 1);
+  const pulled = await relay.fetch(new Request("https://relay.test/v1/channels/responses/pull", { method: "POST", headers: { Authorization: `Bearer ${token}` } }), env); assert.equal(pulled.status, 200); const firstPull = (await pulled.json()) as any; assert.equal(firstPull.responses.length, 1); assert.equal(entries.size, 2);
   const replay = await relay.fetch(new Request("https://relay.test/v1/channels/responses/pull", { method: "POST", headers: { Authorization: `Bearer ${token}` } }), env); assert.equal(((await replay.json()) as any).responses.length, 1);
-  const ack = await relay.fetch(new Request("https://relay.test/v1/channels/responses/ack", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ relayIds: [firstPull.responses[0].relayId] }) }), env); assert.equal(ack.status, 200); assert.equal(entries.size, 0);
+  const ack = await relay.fetch(new Request("https://relay.test/v1/channels/responses/ack", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ relayIds: [firstPull.responses[0].relayId] }) }), env); assert.equal(ack.status, 200); assert.equal(entries.size, 1); assert.ok(entries.has("audit:decision_0123456789abcdef"));
 });
 
 test("relay rejects a tampered Slack body before durable storage", async () => {
@@ -37,4 +38,23 @@ test("Slack source-message acknowledgement is visible, bounded, and origin locke
   assert.equal(await updateSlackSourceMessage("https://example.com/actions/T/B/secret", async () => { calls += 1; return new Response(); }), false);
   assert.equal(await updateSlackSourceMessage("https://hooks.slack.com/actions/T/B/secret?leak=yes", async () => { calls += 1; return new Response(); }), false);
   assert.equal(calls, 0);
+});
+
+test("Slack interaction responds with a visible replacement and records a durable bounded audit", async () => {
+  const entries = new Map<string, string>();
+  const secret = "slack-signing-secret-123456789";
+  const pending: Promise<unknown>[] = [];
+  const env = { OWNER_RESPONSES: { get: async () => null, put: async (key: string, value: string) => { entries.set(key, value); }, delete: async () => undefined, list: async () => ({ keys: [] }) }, CHANNEL_RELAY_TOKEN: "token", SLACK_SIGNING_SECRET: secret, DISCORD_PUBLIC_KEY: "0".repeat(64) } as any;
+  const payload = { type: "block_actions", user: { id: "U-owner" }, channel: { id: "C-owner" }, response_url: "https://example.com/not-allowed", actions: [{ action_id: "codkesh_owner_response:approve", value: "decision_0123456789abcdef" }] };
+  const body = new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${body}`).digest("hex")}`;
+  const response = await relay.fetch(new Request("https://relay.test/v1/channels/slack/interactions", { method: "POST", headers: { "X-Slack-Request-Timestamp": timestamp, "X-Slack-Signature": signature }, body }), env, { waitUntil: (promise) => { pending.push(promise); } });
+  assert.equal(response.status, 200);
+  assert.ok([...entries.keys()].some((key) => key.startsWith("response:")));
+  assert.equal(pending.length, 1);
+  assert.deepEqual(await response.json(), { replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." });
+  await Promise.all(pending);
+  assert.equal(entries.size, 2);
+  assert.match(entries.get("audit:decision_0123456789abcdef") ?? "", /U-owner/);
 });

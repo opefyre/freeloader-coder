@@ -149,7 +149,7 @@ test("Slack OAuth verifies the workspace and exposes selectable channels without
   };
   const service = new IntegrationConnectionService(undefined, vault, async (input) => {
     const url = String(input);
-    if (url.endsWith("/v1/oauth/exchange")) return Response.json({ credential: { access_token: "slack-access-token" } });
+    if (url.endsWith("/v1/oauth/exchange")) return Response.json({ credential: { access_token: "slack-access-token", authed_user: { id: "U-human-owner" } } });
     if (url.endsWith("/auth.test")) return Response.json({ ok: true, team_id: "T1", team: "Opefyre", url: "https://opefyre.slack.com/" });
     if (url.includes("conversations.list")) return Response.json({ ok: true, channels: [{ id: "C1", name: "pipeline", is_private: false }] });
     return new Response("not found", { status: 404 });
@@ -158,5 +158,6 @@ test("Slack OAuth verifies the workspace and exposes selectable channels without
   const result = await service.list(); const slack = result.connections.find((connection) => connection.provider === "slack");
   assert.equal(slack?.state, "ready");
   assert.deepEqual(slack?.resources.map((resource) => resource.kind), ["slack_workspace", "slack_channel"]);
+  assert.equal(JSON.parse(stored.get("vault:providers/slack/default") ?? "{}").ownerActorId, "U-human-owner");
   assert.equal(JSON.stringify(result).includes("slack-access-token"), false);
 });

@@ -5,7 +5,7 @@ import { ownerChannelIdentitySchema } from "./owner-response-delivery-planner.js
 
 const SLACK_CREDENTIAL_REFERENCE = "vault:providers/slack/default";
 const DISCORD_CREDENTIAL_REFERENCE = "vault:providers/discord/default";
-const credentialSchema = z.object({ accessToken: z.string().min(8).max(16_384) }).passthrough();
+const credentialSchema = z.object({ accessToken: z.string().min(8).max(16_384), ownerActorId: z.string().min(1).max(128).nullable().optional() }).passthrough();
 
 export class OAuthOwnerIdentityResolver {
   constructor(
@@ -27,9 +27,9 @@ export class OAuthOwnerIdentityResolver {
         redirect: "error",
       });
       const body = await boundedJson(response);
-      if (!response.ok || body.ok !== true || typeof body.user_id !== "string" || typeof body.team_id !== "string") return [];
+      if (!response.ok || body.ok !== true || typeof body.team_id !== "string" || typeof credential.ownerActorId !== "string") return [];
       const aliases = new Set([`slack:${body.team_id}`, ...(typeof body.team === "string" ? [`slack:${body.team}`] : [])]);
-      return [...aliases].map((connectionId) => ({ provider: "slack" as const, connectionId, ownerActorId: body.user_id as string }));
+      return [...aliases].map((connectionId) => ({ provider: "slack" as const, connectionId, ownerActorId: credential.ownerActorId as string }));
     } catch { return []; }
   }
 

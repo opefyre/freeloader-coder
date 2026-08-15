@@ -5,15 +5,16 @@ interface KVNamespace {
   list(options?: { prefix?: string; limit?: number }): Promise<{ keys: Array<{ name: string }> }>;
 }
 interface Env { OWNER_RESPONSES: KVNamespace; CHANNEL_RELAY_TOKEN: string; SLACK_SIGNING_SECRET: string; DISCORD_PUBLIC_KEY: string }
+interface ExecutionContext { waitUntil(promise: Promise<unknown>): void }
 
 const securityHeaders = { "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" };
 type RelayResponse = { schemaVersion: 1; relayId: string; provider: "slack" | "discord"; deliveryId: string; channelId: string; actorId: string; receivedAt: number };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, context?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") return json({ status: "ready" });
-    if (request.method === "POST" && url.pathname === "/v1/channels/slack/interactions") return receiveSlack(request, env);
+    if (request.method === "POST" && url.pathname === "/v1/channels/slack/interactions") return receiveSlack(request, env, context);
     if (request.method === "POST" && url.pathname === "/v1/channels/discord/interactions") return receiveDiscord(request, env);
     if (request.method === "POST" && url.pathname === "/v1/channels/responses/pull") return pull(request, env);
     if (request.method === "POST" && url.pathname === "/v1/channels/responses/ack") return acknowledge(request, env);
@@ -21,18 +22,22 @@ export default {
   },
 };
 
-async function receiveSlack(request: Request, env: Env) {
+async function receiveSlack(request: Request, env: Env, context?: ExecutionContext) {
   const raw = await boundedText(request); const timestamp = request.headers.get("X-Slack-Request-Timestamp") ?? ""; const signature = request.headers.get("X-Slack-Signature") ?? "";
   if (!await verifySlack(raw, timestamp, signature, env.SLACK_SIGNING_SECRET)) return json({ error: "Invalid signature." }, 401);
   let payload: any; try { payload = JSON.parse(new URLSearchParams(raw).get("payload") ?? "null"); } catch { return json({ error: "Invalid payload." }, 400); }
   const action = Array.isArray(payload?.actions) && payload.actions.length === 1 ? payload.actions[0] : null;
   if (payload?.type !== "block_actions" || !/^codkesh_owner_response:(approve|decline)$/.test(action?.action_id ?? "") || !decisionId(action.value) || typeof payload?.channel?.id !== "string" || typeof payload?.user?.id !== "string") return json({ error: "Unsupported interaction." }, 400);
   await enqueue(env, { schemaVersion: 1, provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, receivedAt: Date.now() });
-  // Acknowledge visibly without storing the short-lived response URL. The
-  // durable relay still applies the decision locally before acknowledging its
-  // queue entry, while Slack immediately removes buttons that were clicked.
-  await updateSlackSourceMessage(payload.response_url).catch(() => undefined);
-  return new Response("", { status: 200, headers: securityHeaders });
+  // Keep a bounded diagnostic that the local poller never consumes. This is
+  // deliberately limited to opaque IDs and lets operators distinguish Slack
+  // delivery from local application without retaining the signed payload.
+  const audit = env.OWNER_RESPONSES.put(`audit:${action.value}`, JSON.stringify({ provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, receivedAt: Date.now() }), { expirationTtl: 3_600 });
+  if (context) context.waitUntil(audit.catch(() => undefined)); else await audit;
+  // Slack accepts a message replacement directly in the interaction response.
+  // This avoids a second response_url request and removes the buttons within
+  // the same acknowledged request.
+  return json({ replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." });
 }
 
 async function receiveDiscord(request: Request, env: Env) {

@@ -13,7 +13,13 @@ export class ChannelRelayClient {
   }
   async synchronize() {
     const pulled = collectionSchema.parse(await this.#json("/v1/channels/responses/pull")); const acknowledged: string[] = []; const failed: string[] = [];
-    for (const item of pulled.responses) { try { await this.responses.acceptRelayed(item); acknowledged.push(item.relayId); } catch { failed.push(item.relayId); } }
+    for (const item of pulled.responses) {
+      try { await this.responses.acceptRelayed(item); acknowledged.push(item.relayId); }
+      catch (error) {
+        failed.push(item.relayId);
+        console.error("owner_response_relay_rejected", { relayId: item.relayId, deliveryId: item.deliveryId, provider: item.provider, reason: error instanceof Error ? error.message : "unknown" });
+      }
+    }
     if (acknowledged.length) await this.#json("/v1/channels/responses/ack", { relayIds: acknowledged });
     return { applied: acknowledged.length, pending: failed.length };
   }
