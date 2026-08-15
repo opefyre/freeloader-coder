@@ -2,19 +2,23 @@ import { z } from "zod";
 
 import type { SignedOwnerResponseService } from "./signed-owner-response-service.js";
 
-const responseSchema = z.strictObject({ schemaVersion: z.literal(1), relayId: z.string().uuid(), provider: z.enum(["slack", "discord"]), deliveryId: z.string().regex(/^decision_[a-f0-9]{16}$/), channelId: z.string().min(1).max(128), actorId: z.string().min(1).max(128), receivedAt: z.number().int().nonnegative() });
+const responseSchema = z.strictObject({ schemaVersion: z.literal(1), relayId: z.string().uuid(), provider: z.enum(["slack", "discord"]), deliveryId: z.string().regex(/^decision_[a-f0-9]{16}$/), channelId: z.string().min(1).max(128), actorId: z.string().min(1).max(128), messageTs: z.string().regex(/^\d{10,20}\.\d{1,10}$/).nullable(), receivedAt: z.number().int().nonnegative() });
 const collectionSchema = z.strictObject({ schemaVersion: z.literal(1), responses: z.array(responseSchema).max(50) });
 
 export class ChannelRelayClient {
   readonly #origin: string;
-  constructor(endpoint: string, private readonly token: string, private readonly responses: Pick<SignedOwnerResponseService, "acceptRelayed">, private readonly fetcher: typeof fetch = fetch) {
+  constructor(endpoint: string, private readonly token: string, private readonly responses: Pick<SignedOwnerResponseService, "acceptRelayed">, private readonly acknowledgeSource: (input: z.infer<typeof responseSchema>) => Promise<void> = async () => undefined, private readonly fetcher: typeof fetch = fetch) {
     const url = new URL(endpoint); if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error("Channel relay must use a clean HTTPS endpoint."); this.#origin = url.origin;
     if (token.length < 24 || token.length > 500) throw new Error("Channel relay token is invalid.");
   }
   async synchronize() {
     const pulled = collectionSchema.parse(await this.#json("/v1/channels/responses/pull")); const acknowledged: string[] = []; const failed: string[] = [];
     for (const item of pulled.responses) {
-      try { await this.responses.acceptRelayed(item); acknowledged.push(item.relayId); }
+      try {
+        await this.responses.acceptRelayed({ schemaVersion: item.schemaVersion, relayId: item.relayId, provider: item.provider, deliveryId: item.deliveryId, channelId: item.channelId, actorId: item.actorId, receivedAt: item.receivedAt });
+        await this.acknowledgeSource(item);
+        acknowledged.push(item.relayId);
+      }
       catch (error) {
         failed.push(item.relayId);
         console.error("owner_response_relay_rejected", { relayId: item.relayId, deliveryId: item.deliveryId, provider: item.provider, reason: error instanceof Error ? error.message : "unknown" });

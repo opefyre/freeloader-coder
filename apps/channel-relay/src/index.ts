@@ -8,7 +8,7 @@ interface Env { OWNER_RESPONSES: KVNamespace; CHANNEL_RELAY_TOKEN: string; SLACK
 interface ExecutionContext { waitUntil(promise: Promise<unknown>): void }
 
 const securityHeaders = { "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" };
-type RelayResponse = { schemaVersion: 1; relayId: string; provider: "slack" | "discord"; deliveryId: string; channelId: string; actorId: string; receivedAt: number };
+type RelayResponse = { schemaVersion: 1; relayId: string; provider: "slack" | "discord"; deliveryId: string; channelId: string; actorId: string; messageTs: string | null; receivedAt: number };
 
 export default {
   async fetch(request: Request, env: Env, context?: ExecutionContext): Promise<Response> {
@@ -28,16 +28,23 @@ async function receiveSlack(request: Request, env: Env, context?: ExecutionConte
   let payload: any; try { payload = JSON.parse(new URLSearchParams(raw).get("payload") ?? "null"); } catch { return json({ error: "Invalid payload." }, 400); }
   const action = Array.isArray(payload?.actions) && payload.actions.length === 1 ? payload.actions[0] : null;
   if (payload?.type !== "block_actions" || !/^codkesh_owner_response:(approve|decline)$/.test(action?.action_id ?? "") || !decisionId(action.value) || typeof payload?.channel?.id !== "string" || typeof payload?.user?.id !== "string") return json({ error: "Unsupported interaction." }, 400);
-  await enqueue(env, { schemaVersion: 1, provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, receivedAt: Date.now() });
+  const messageTs = typeof payload?.message?.ts === "string" && /^\d{10,20}\.\d{1,10}$/.test(payload.message.ts) ? payload.message.ts : null;
+  await enqueue(env, { schemaVersion: 1, provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, messageTs, receivedAt: Date.now() });
   // Keep a bounded diagnostic that the local poller never consumes. This is
   // deliberately limited to opaque IDs and lets operators distinguish Slack
   // delivery from local application without retaining the signed payload.
-  const audit = env.OWNER_RESPONSES.put(`audit:${action.value}`, JSON.stringify({ provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, receivedAt: Date.now() }), { expirationTtl: 3_600 });
-  if (context) context.waitUntil(audit.catch(() => undefined)); else await audit;
-  // Slack accepts a message replacement directly in the interaction response.
-  // This avoids a second response_url request and removes the buttons within
-  // the same acknowledged request.
-  return json({ replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." });
+  // Slack ignores message-replacement fields in the immediate acknowledgement
+  // for block actions. Acknowledge within three seconds, then use Slack's
+  // signed, single-message response URL to replace the source message and
+  // remove both buttons. The URL is origin locked before any outbound request.
+  const visibleAcknowledgement = updateSlackSourceMessage(payload?.response_url).catch(() => false);
+  const background = visibleAcknowledgement.then((sourceMessageUpdated) => env.OWNER_RESPONSES.put(
+    `audit:${action.value}`,
+    JSON.stringify({ provider: "slack", deliveryId: action.value, channelId: payload.channel.id, actorId: payload.user.id, receivedAt: Date.now(), messageTsPresent: messageTs !== null, responseUrlPresent: typeof payload?.response_url === "string", sourceMessageUpdated }),
+    { expirationTtl: 3_600 },
+  )).catch(() => undefined);
+  if (context) context.waitUntil(background); else await background;
+  return new Response(null, { status: 200, headers: securityHeaders });
 }
 
 async function receiveDiscord(request: Request, env: Env) {
@@ -47,7 +54,7 @@ async function receiveDiscord(request: Request, env: Env) {
   if (payload?.type === 1) return json({ type: 1 });
   const deliveryId = typeof payload?.data?.custom_id === "string" && payload.data.custom_id.startsWith("codkesh:") ? payload.data.custom_id.slice(8) : ""; const actorId = payload?.member?.user?.id ?? payload?.user?.id;
   if (payload?.type !== 3 || !decisionId(deliveryId) || typeof payload?.channel_id !== "string" || typeof actorId !== "string") return json({ error: "Unsupported interaction." }, 400);
-  await enqueue(env, { schemaVersion: 1, provider: "discord", deliveryId, channelId: payload.channel_id, actorId, receivedAt: Date.now() });
+  await enqueue(env, { schemaVersion: 1, provider: "discord", deliveryId, channelId: payload.channel_id, actorId, messageTs: null, receivedAt: Date.now() });
   return json({ type: 4, data: { content: "Decision received by Codkesh.", flags: 64 } });
 }
 
@@ -76,12 +83,21 @@ export async function updateSlackSourceMessage(input: unknown, fetcher: typeof f
   if (typeof input !== "string") return false;
   let url: URL;
   try { url = new URL(input); } catch { return false; }
-  if (url.protocol !== "https:" || url.hostname !== "hooks.slack.com" || !url.pathname.startsWith("/actions/") || url.username || url.password || url.search || url.hash) return false;
+  // Slack response URLs are webhook URLs under /services/. Older Slack
+  // interaction payloads can still use /actions/. Accept only those exact,
+  // tokenized path shapes on Slack's HTTPS webhook origin.
+  const responsePath = /^\/(?:services|actions)\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/;
+  if (url.protocol !== "https:" || url.hostname !== "hooks.slack.com" || !responsePath.test(url.pathname) || url.username || url.password || url.search || url.hash) return false;
   const response = await fetcher(url.toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     redirect: "error",
-    body: JSON.stringify({ replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." }),
+    body: JSON.stringify({
+      replace_original: true,
+      text: "Decision received by Codkesh. The signed response is queued for local verification.",
+      blocks: [],
+      attachments: [],
+    }),
   });
   return response.ok;
 }

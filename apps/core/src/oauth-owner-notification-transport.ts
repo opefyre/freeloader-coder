@@ -38,6 +38,20 @@ export class SlackOwnerNotificationTransport implements OwnerNotificationTranspo
     if (!response.ok || !body.ok || body.channel !== plan.channelId || !body.ts) throw new Error(`Slack delivery failed${body.error ? `: ${body.error}` : "."}`);
   }
 
+  async acknowledge(channelId: string, messageTs: string): Promise<void> {
+    if (!/^\d{10,20}\.\d{1,10}$/.test(messageTs)) throw new Error("Slack source message timestamp is invalid.");
+    const credential = await this.#credential();
+    if (!credential) throw new Error("Slack is not connected.");
+    const response = await this.fetcher("https://slack.com/api/chat.update", {
+      method: "POST",
+      headers: { Accept: "application/json", Authorization: `Bearer ${credential.accessToken}`, "Content-Type": "application/json; charset=utf-8" },
+      redirect: "error",
+      body: JSON.stringify({ channel: channelId, ts: messageTs, text: "Decision received by Codkesh. The signed response was verified.", blocks: [], attachments: [] }),
+    });
+    const body = slackResponseSchema.parse(await boundedJson(response));
+    if (!response.ok || !body.ok || body.channel !== channelId || body.ts !== messageTs) throw new Error(`Slack source-message update failed${body.error ? `: ${body.error}` : "."}`);
+  }
+
   async #credential() {
     const stored = await this.vault.read(SLACK_CREDENTIAL_REFERENCE);
     if (!stored) return null;

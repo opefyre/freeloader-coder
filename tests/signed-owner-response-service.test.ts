@@ -17,7 +17,7 @@ test("signed Slack response applies once to the exact owner, channel, revision, 
   const raw = new URLSearchParams({ payload: JSON.stringify(payload) }).toString(); const timestamp = String(now / 1_000); const secret = "slack-signing-secret-123456789"; const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${raw}`).digest("hex")}`;
   assert.deepEqual(await service.acceptSlack(raw, { timestamp, signature }, secret), { projectId: delivery.projectId, deliveryId: delivery.deliveryId, applied: true });
   assert.equal(decisions, 1); assert.equal(reconciled, 1);
-  await assert.rejects(() => service.acceptSlack(raw, { timestamp, signature }, secret), /consumed/i);
+  assert.deepEqual(await service.acceptSlack(raw, { timestamp, signature }, secret), { projectId: delivery.projectId, deliveryId: delivery.deliveryId, applied: true, replay: true });
   assert.equal(decisions, 1);
 });
 
@@ -79,10 +79,7 @@ test("a downstream reconciliation failure leaves the signed response retryable",
   await assert.doesNotReject(() => service.acceptSlack(raw, { timestamp, signature }, secret));
   assert.equal(applied.size, 1, "retry does not duplicate the owner decision");
   assert.equal(reconciliations, 2);
-  await assert.rejects(
-    () => service.acceptSlack(raw, { timestamp, signature }, secret),
-    /consumed/i,
-  );
+  assert.deepEqual(await service.acceptSlack(raw, { timestamp, signature }, secret), { projectId: delivery.projectId, deliveryId: delivery.deliveryId, applied: true, replay: true });
 });
 
 test("a signed verification response is consumed without mutating the project", async () => {
@@ -100,5 +97,5 @@ test("a signed verification response is consumed without mutating the project", 
   await service.acceptRelayed({ schemaVersion: 1, relayId: "01234567-89ab-4def-8123-456789abcdef", provider: "slack", deliveryId: verification.deliveryId, channelId: verification.channelId, actorId: verification.ownerActorId, receivedAt: now });
   assert.equal(mutations, 0);
   assert.equal(reconciliations, 0);
-  await assert.rejects(() => service.acceptRelayed({ schemaVersion: 1, relayId: "abcdef01-2345-4abc-8123-456789abcdef", provider: "slack", deliveryId: verification.deliveryId, channelId: verification.channelId, actorId: verification.ownerActorId, receivedAt: now }), /consumed/i);
+  assert.deepEqual(await service.acceptRelayed({ schemaVersion: 1, relayId: "abcdef01-2345-4abc-8123-456789abcdef", provider: "slack", deliveryId: verification.deliveryId, channelId: verification.channelId, actorId: verification.ownerActorId, receivedAt: now }), { projectId: delivery.projectId, deliveryId: delivery.deliveryId, applied: true, replay: true });
 });

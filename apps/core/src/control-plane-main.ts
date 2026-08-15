@@ -262,14 +262,20 @@ const signedOwnerResponses = new SignedOwnerResponseService(
     await jiraDelivery.synchronize(projectId).catch(() => undefined);
   },
 );
+const slackOwnerTransport = new SlackOwnerNotificationTransport(credentialVault);
 const channelRelayConfig = await resolveChannelRelayRuntimeConfig(credentialVault);
 const channelRelay = channelRelayConfig
-  ? new ChannelRelayClient(channelRelayConfig.endpoint, channelRelayConfig.token, signedOwnerResponses)
+  ? new ChannelRelayClient(channelRelayConfig.endpoint, channelRelayConfig.token, signedOwnerResponses, async (item) => {
+      if (item.provider === "slack") {
+        if (!item.messageTs) throw new Error("Slack relay response omitted the source message timestamp.");
+        await slackOwnerTransport.acknowledge(item.channelId, item.messageTs);
+      }
+    })
   : null;
 const ownerChannelRuntime = new OwnerChannelRuntime(
   stateDirectory,
   ownerResponsePlanner,
-  [new SlackOwnerNotificationTransport(credentialVault)],
+  [slackOwnerTransport],
   channelRelay,
   async () => undefined,
 );

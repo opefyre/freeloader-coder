@@ -87,9 +87,11 @@ export class SignedOwnerResponseService {
     if (!lifecycle) throw new SignedOwnerResponseError("project_unknown", "Owner response project is unavailable.");
     const state = await this.#load();
     let verified;
+    const replay = Object.hasOwn(state.consumed, deliveryId);
     try {
-      verified = verifyOwnerResponseEnvelope({ schemaVersion: 1, provider, deliveryId, projectId: delivery.projectId, expectedRevision: delivery.revision, channelId, actorId, response: delivery.response, issuedAt: delivery.issuedAt, expiresAt: delivery.expiresAt }, { provider, projectId: delivery.projectId, revision: lifecycle.revision, channelId: delivery.channelId, actorId: delivery.ownerActorId, consumedDeliveryIds: new Set(Object.keys(state.consumed)) }, this.now());
+      verified = verifyOwnerResponseEnvelope({ schemaVersion: 1, provider, deliveryId, projectId: delivery.projectId, expectedRevision: delivery.revision, channelId, actorId, response: delivery.response, issuedAt: delivery.issuedAt, expiresAt: delivery.expiresAt }, { provider, projectId: delivery.projectId, revision: lifecycle.revision, channelId: delivery.channelId, actorId: delivery.ownerActorId, consumedDeliveryIds: replay ? new Set() : new Set(Object.keys(state.consumed)) }, this.now());
     } catch (error) { throw new SignedOwnerResponseError("authorization_denied", error instanceof Error ? error.message : "Owner response was denied."); }
+    if (replay) return { projectId: delivery.projectId, deliveryId, applied: true as const, replay: true as const };
     if (delivery.response.kind === "solution") {
       await this.lifecycles.decideSolution(delivery.projectId, { schemaVersion: 1, expectedRevision: delivery.revision, artifactDigest: delivery.response.artifactDigest, decision: delivery.response.decision, feedback: null }, verified.idempotencyKey);
     } else if (delivery.response.kind === "clarification") {

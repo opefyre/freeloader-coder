@@ -24,3 +24,17 @@ test("Slack transport fails closed for missing credentials, wrong provider, deni
   await assert.rejects(() => new SlackOwnerNotificationTransport({ read: async () => JSON.stringify({ accessToken: "valid-token-value" }) }, async () => Response.json({ ok: false, error: "not_in_channel" })).send(plan), /not_in_channel/i);
   await assert.rejects(() => new SlackOwnerNotificationTransport({ read: async () => JSON.stringify({ accessToken: "valid-token-value" }) }, async () => Response.json({ ok: true, channel: "C-other", ts: "123.456" })).send(plan), /failed/i);
 });
+
+test("Slack transport removes owner-decision buttons with authenticated chat.update", async () => {
+  const requests: Array<{ url: string; body: any }> = [];
+  const transport = new SlackOwnerNotificationTransport(
+    { read: async () => JSON.stringify({ accessToken: "slack-secret-access-token" }) },
+    async (input, init) => {
+      requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+      return Response.json({ ok: true, channel: plan.channelId, ts: "1234567890.123456" });
+    },
+  );
+  await transport.acknowledge(plan.channelId, "1234567890.123456");
+  assert.equal(requests[0]?.url, "https://slack.com/api/chat.update");
+  assert.deepEqual(requests[0]?.body, { channel: plan.channelId, ts: "1234567890.123456", text: "Decision received by Codkesh. The signed response was verified.", blocks: [], attachments: [] });
+});

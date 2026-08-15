@@ -11,7 +11,7 @@ test("relay authenticates Slack, stores only opaque decision metadata, and permi
   const payload = { type: "block_actions", user: { id: "U-owner", name: "personal-name" }, channel: { id: "C-owner", name: "private-name" }, actions: [{ action_id: "codkesh_owner_response:approve", value: "decision_0123456789abcdef" }], message: { text: "private project source" } };
   const body = new URLSearchParams({ payload: JSON.stringify(payload) }).toString(); const timestamp = String(Math.floor(Date.now() / 1000)); const signature = `v0=${createHmac("sha256", secret).update(`v0:${timestamp}:${body}`).digest("hex")}`;
   const accepted = await relay.fetch(new Request("https://relay.test/v1/channels/slack/interactions", { method: "POST", headers: { "X-Slack-Request-Timestamp": timestamp, "X-Slack-Signature": signature }, body }), env); assert.equal(accepted.status, 200);
-  const acknowledgement = await accepted.json() as any; assert.equal(acknowledgement.replace_original, true); assert.doesNotMatch(acknowledgement.text, /private|source/i);
+  assert.equal(await accepted.text(), "");
   const stored = [...entries.values()].join(""); assert.doesNotMatch(stored, /personal-name|private-name|project source/i); assert.match(stored, /decision_0123456789abcdef/); assert.ok(entries.has("audit:decision_0123456789abcdef"));
   assert.equal((await relay.fetch(new Request("https://relay.test/v1/channels/responses/pull", { method: "POST" }), env)).status, 401);
   const pulled = await relay.fetch(new Request("https://relay.test/v1/channels/responses/pull", { method: "POST", headers: { Authorization: `Bearer ${token}` } }), env); assert.equal(pulled.status, 200); const firstPull = (await pulled.json()) as any; assert.equal(firstPull.responses.length, 1); assert.equal(entries.size, 2);
@@ -27,20 +27,27 @@ test("relay rejects a tampered Slack body before durable storage", async () => {
 
 test("Slack source-message acknowledgement is visible, bounded, and origin locked", async () => {
   const requests: Array<{ url: string; body: any }> = [];
-  const updated = await updateSlackSourceMessage("https://hooks.slack.com/actions/T/B/opaque", async (input, init) => {
+  const updated = await updateSlackSourceMessage("https://hooks.slack.com/services/T/B/opaque", async (input, init) => {
     requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
     return new Response("ok", { status: 200 });
   });
   assert.equal(updated, true);
-  assert.equal(requests[0]?.url, "https://hooks.slack.com/actions/T/B/opaque");
-  assert.deepEqual(requests[0]?.body, { replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." });
+  assert.equal(requests[0]?.url, "https://hooks.slack.com/services/T/B/opaque");
+  assert.deepEqual(requests[0]?.body, {
+    replace_original: true,
+    text: "Decision received by Codkesh. The signed response is queued for local verification.",
+    blocks: [],
+    attachments: [],
+  });
   let calls = 0;
   assert.equal(await updateSlackSourceMessage("https://example.com/actions/T/B/secret", async () => { calls += 1; return new Response(); }), false);
-  assert.equal(await updateSlackSourceMessage("https://hooks.slack.com/actions/T/B/secret?leak=yes", async () => { calls += 1; return new Response(); }), false);
+  assert.equal(await updateSlackSourceMessage("https://hooks.slack.com/services/T/B/secret?leak=yes", async () => { calls += 1; return new Response(); }), false);
+  assert.equal(await updateSlackSourceMessage("https://hooks.slack.com/services/T/B", async () => { calls += 1; return new Response(); }), false);
+  assert.equal(await updateSlackSourceMessage("https://hooks.slack.com/not-a-response/T/B/secret", async () => { calls += 1; return new Response(); }), false);
   assert.equal(calls, 0);
 });
 
-test("Slack interaction responds with a visible replacement and records a durable bounded audit", async () => {
+test("Slack interaction acknowledges immediately and schedules the safe source-message replacement", async () => {
   const entries = new Map<string, string>();
   const secret = "slack-signing-secret-123456789";
   const pending: Promise<unknown>[] = [];
@@ -53,8 +60,10 @@ test("Slack interaction responds with a visible replacement and records a durabl
   assert.equal(response.status, 200);
   assert.ok([...entries.keys()].some((key) => key.startsWith("response:")));
   assert.equal(pending.length, 1);
-  assert.deepEqual(await response.json(), { replace_original: true, text: "Decision received by Codkesh. The signed response is queued for local verification." });
+  assert.equal(await response.text(), "");
   await Promise.all(pending);
   assert.equal(entries.size, 2);
   assert.match(entries.get("audit:decision_0123456789abcdef") ?? "", /U-owner/);
+  assert.match(entries.get("audit:decision_0123456789abcdef") ?? "", /"responseUrlPresent":true/);
+  assert.match(entries.get("audit:decision_0123456789abcdef") ?? "", /"sourceMessageUpdated":false/);
 });
