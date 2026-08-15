@@ -229,14 +229,11 @@ export function LocalRequestPanel(props: {
           setOutcome(resumable.idea);
           if (resumable.projectMode === "new_product") {
             setProjectId("__new__");
-            setWorkspacePath(
-              resumable.workspaceReference?.startsWith("selection_")
-                ? resumable.workspaceReference
-                : "",
-            );
-            setWorkspaceLabel(
-              resumable.workspaceLabel ?? "Choose folder again",
-            );
+            // Native picker references are deliberately process-local and expire
+            // whenever the control plane restarts. Never restore one as though it
+            // were still authorized; require a fresh native selection instead.
+            setWorkspacePath("");
+            setWorkspaceLabel("Choose folder again");
           } else {
             setProjectId(
               decodeProjectIntakeReference(

@@ -140,6 +140,14 @@ test("native workspace and attachment controls expose keyboard and screen-reader
   assert.match(panel, /type="button"[\s\S]*onClick=\{\(\) => void chooseFolder\(\)\}/);
   assert.match(panel, /aria-label="Attach files"[\s\S]*onClick=\{\(\) => void chooseFiles\(\)\}/);
   assert.match(panel, /aria-live="polite"[\s\S]*\{notice\}/);
+  assert.match(
+    panel,
+    /Native picker references are deliberately process-local[\s\S]*setWorkspacePath\(""\);[\s\S]*setWorkspaceLabel\("Choose folder again"\);/,
+  );
+  assert.doesNotMatch(
+    panel,
+    /setWorkspacePath\([\s\S]{0,120}resumable\.workspaceReference/,
+  );
   assert.match(client, /Files and Folders settings/);
   assert.match(client, /Nothing was changed/);
 });
