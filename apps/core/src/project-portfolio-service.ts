@@ -6,7 +6,7 @@ import {
 } from "../../../packages/runtime/src/local-projects.js";
 import type { ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
 import type { ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
-import { JIRA_CREDENTIAL_REFERENCE } from "./jira-delivery-service.js";
+import { resolveCurrentJiraCredential } from "./jira-oauth-credential.js";
 import {
   reconcileProjectProgress,
   type ExecutionProgressObservation,
@@ -28,7 +28,7 @@ export class ProjectPortfolioService {
     private readonly projects: Projects,
     private readonly lifecycles: Lifecycles,
     private readonly executions: Executions,
-    private readonly vault: Pick<CredentialVault, "read">,
+    private readonly vault: Pick<CredentialVault, "read"> & Partial<Pick<CredentialVault, "write">>,
     private readonly fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now
   ) {}
@@ -37,7 +37,7 @@ export class ProjectPortfolioService {
     const [collection, lifecycles, stored] = await Promise.all([
       this.projects.list(),
       this.lifecycles.list(),
-      this.vault.read(JIRA_CREDENTIAL_REFERENCE).catch(() => null),
+      resolveCurrentJiraCredential(this.vault, this.fetcher, this.now).catch(() => null),
     ]);
     const lifecycleByProject = new Map(lifecycles.map((record) => [record.projectId, record]));
     const credential = parseCredentialSafely(stored);

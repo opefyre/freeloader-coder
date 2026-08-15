@@ -84,7 +84,7 @@ test("portfolio observes the selected Jira project through the browser OAuth cre
     { list: async () => collection() },
     { list: async () => [] },
     { get: async () => null },
-    { read: async () => JSON.stringify({ accessToken: "oauth-access-token", expiresAt: now + 60_000 }) },
+    { read: async () => JSON.stringify({ accessToken: "oauth-access-token", expiresAt: now + 120_000 }) },
     async (input, init) => {
       urls.push(String(input));
       assert.equal(new Headers(init?.headers).get("Authorization"), "Bearer oauth-access-token");
