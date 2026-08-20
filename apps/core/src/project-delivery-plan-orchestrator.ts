@@ -45,7 +45,7 @@ export class ProjectDeliveryPlanOrchestrator {
       if (!(error instanceof FreeProviderSolutionUnavailableError) || !this.solutions.readContent) throw error;
       evidence = { providerId: "codkesh-local", modelId: "deterministic-delivery-planner-v1", response: deterministicPlan(await this.solutions.readContent(projectId), context.digest, solution.digest) };
     }
-    const plan = deliveryPlanContentSchema.parse(evidence.response);
+    const plan = deliveryPlanContentSchema.parse(normalizeGovernedArtifactReferences(evidence.response));
     if (plan.contextDigest !== context.digest || plan.solutionDigest !== solution.digest) throw new Error("Delivery plan is not bound to the approved evidence.");
     if (plan.items.some((item) => item.type === "subtask" && (item.allowedFiles.length === 0 || item.validationProfiles.length === 0))) throw new Error("Delivery plan subtasks require explicit file and validation authority.");
     const candidate = { name: "Candidate delivery plan", content: boundedJson(plan) };
@@ -77,6 +77,12 @@ export class DeliveryPlanReviewDissentError extends Error { constructor(readonly
 function identity(evidence: SolutionModelEvidence, declared: string) { return `${evidence.providerId}/${evidence.modelId}/${declared}`.slice(0, 160); }
 function executorIdentity(evidence: SolutionModelEvidence) { return `${evidence.providerId}/${evidence.modelId}`; }
 function boundedJson(value: unknown) { const result = JSON.stringify(value); if (!result || result.length > 2_000_000) throw new Error("Delivery plan output is not safely bounded."); return result; }
+function normalizeGovernedArtifactReferences(value: unknown): unknown {
+  if (typeof value === "string") return value.replaceAll("local://SOLUTION.md", "local://DESIGN.md");
+  if (Array.isArray(value)) return value.map(normalizeGovernedArtifactReferences);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, normalizeGovernedArtifactReferences(child)]));
+  return value;
+}
 function planningInstruction(contextDigest: string, solutionDigest: string) { return `Transform the approved solution into a self-contained delivery hierarchy. Include epics, stories, tasks, and 60–120 minute subtasks; estimates, dependencies, acceptance criteria, Definition of Done, role capabilities, rollback requirements, implementation notes, and citations. Provide a complete coverage matrix with exactly one entry for each of behavior, architecture, user_experience, data, integrations, security, privacy, reliability, rollout, and metrics; every entry must map to at least one executable subtask ID and deterministic validation profiles. Provide explicit owner_approval and infrastructure gates wherever authority or resources are required. Every subtask must name the exact safe project-relative files it may change in allowedFiles and select validationProfiles only from format, lint, typecheck, unit, integration, build, and visual. IDs must match plan_[16 lowercase hexadecimal characters], gate IDs must match gate_[16 lowercase hexadecimal characters], all parent and dependency IDs must reference items in the same plan, and every non-subtask must have a child. Stories and tasks require Fibonacci story points from 1, 2, 3, 5, 8, or 13; epics and subtasks require null storyPoints. Set contextDigest exactly to ${contextDigest} and solutionDigest exactly to ${solutionDigest}. Return strict JSON only.`; }
 function reviewInstruction(discipline: "delivery" | "technical") { return `Independently audit the candidate delivery plan from the ${discipline} discipline against CONTEXT.md and the approved SOLUTION.md. Only subtasks are constrained to 60–120 minutes; epic, story, and task estimates may aggregate child work. An empty dependencies array explicitly means no prerequisite and is valid. Treat fields visibly present in the candidate as present. Fail only for a concrete omission or contradiction, and cite the exact item or gate ID plus the conflicting or missing value in every finding. Pass when the hierarchy, ten-section coverage, bounded subtasks, criteria, Definition of Done, file authority, validations, rollback, citations, and gates are complete.`; }
 
@@ -101,7 +107,7 @@ function deterministicPlan(solution: SolutionContent, contextDigest: string, sol
     acceptanceCriteria: ["The coverage matrix contains exactly ten unique approved solution sections and maps each one to an executable subtask.", "The published backlog records two passing independent reviewer identities and one owner-approval gate before implementation."],
     definitionOfDone: ["All ten child stories, tasks, and 60–120 minute subtasks satisfy their recorded acceptance criteria.", "Schema validation plus independent delivery and technical reviews pass against the approved solution digest."],
     implementationNotes: ["Preserve the approved local-first, free-only, and owner-controlled boundaries throughout delivery."], roleCapabilities: ["Product owner", "Developer", "QA reviewer"],
-    rollbackRequirements: ["Revert the complete implementation to the last independently verified local project state."], allowedFiles: [], validationProfiles: [], citations: ["local://CONTEXT.md", "local://SOLUTION.md"],
+    rollbackRequirements: ["Revert the complete implementation to the last independently verified local project state."], allowedFiles: [], validationProfiles: [], citations: ["local://CONTEXT.md", "local://DESIGN.md"],
   }];
   const coverage = sections.map(([requirement, title, requirements, file], index) => {
     const storyId = id(2 + index * 3); const taskId = id(3 + index * 3); const subtaskId = id(4 + index * 3);
@@ -110,16 +116,16 @@ function deterministicPlan(solution: SolutionContent, contextDigest: string, sol
     const base = {
       description: `Deliver the approved ${title.toLowerCase()} scope: ${scope}`.slice(0, 10_000), priority: index < 4 ? "high" : "medium",
       acceptanceCriteria: [`The observable implementation in ${file} satisfies this approved requirement: ${requirements[0]}`, `The format, lint, typecheck, and unit validation profiles pass for ${file}, with no paid service and no unapproved data egress.`],
-      definitionOfDone: [`The scoped changes are limited to ${file}, reviewed against local://SOLUTION.md, and contain no unresolved validation failures.`, `Rollback instructions are verified and all four selected validation profiles have durable passing evidence.`],
+      definitionOfDone: [`The scoped changes are limited to ${file}, reviewed against local://DESIGN.md, and contain no unresolved validation failures.`, `Rollback instructions are verified and all four selected validation profiles have durable passing evidence.`],
       implementationNotes: requirements, roleCapabilities: ["Developer", "QA reviewer"], rollbackRequirements: [`Revert ${file} and restore the last verified behavior for this scope.`],
-      allowedFiles: [file], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://CONTEXT.md", "local://SOLUTION.md"],
+      allowedFiles: [file], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://CONTEXT.md", "local://DESIGN.md"],
     };
     items.push(
       { ...base, id: storyId, type: "story", parentId: epicId, title, storyPoints: 5, estimatedMinutes: 120, dependencies: previousSubtaskId ? [previousSubtaskId] : [] },
       { ...base, id: taskId, type: "task", parentId: storyId, title: `Implement ${title.toLowerCase()}`, storyPoints: 3, estimatedMinutes: 120, dependencies: [storyId] },
       { ...base, id: subtaskId, type: "subtask", parentId: taskId, title: `Build and validate ${title.toLowerCase()}`, storyPoints: null, estimatedMinutes: 120, dependencies: [taskId] },
     );
-    return { requirement, itemIds: [storyId, taskId, subtaskId], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://SOLUTION.md"] };
+    return { requirement, itemIds: [storyId, taskId, subtaskId], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://DESIGN.md"] };
   });
-  return deliveryPlanContentSchema.parse({ schemaVersion: 1, title: `${solution.title} delivery backlog`, objective: solution.summary, contextDigest, solutionDigest, items, coverage, gates: [{ id: "gate_0000000000000001", kind: "owner_approval", title: "Owner implementation approval", rationale: "Implementation is blocked until the owner approves the independently reviewed delivery plan.", beforeItemIds: items.filter((item) => item.type === "subtask").map((item) => item.id) }], risks: ["Free-provider capacity may delay review or implementation without permitting paid fallback."], assumptions: ["The approved solution remains authoritative until the owner approves a revision."], citations: ["local://CONTEXT.md", "local://SOLUTION.md"] });
+  return deliveryPlanContentSchema.parse({ schemaVersion: 1, title: `${solution.title} delivery backlog`, objective: solution.summary, contextDigest, solutionDigest, items, coverage, gates: [{ id: "gate_0000000000000001", kind: "owner_approval", title: "Owner implementation approval", rationale: "Implementation is blocked until the owner approves the independently reviewed delivery plan.", beforeItemIds: items.filter((item) => item.type === "subtask").map((item) => item.id) }], risks: ["Free-provider capacity may delay review or implementation without permitting paid fallback."], assumptions: ["The approved solution remains authoritative until the owner approves a revision."], citations: ["local://CONTEXT.md", "local://DESIGN.md"] });
 }

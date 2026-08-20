@@ -67,6 +67,8 @@ test("free-provider planning exhaustion falls back to a complete local plan and 
   assert.equal(draft.items.length, 31);
   assert.equal(draft.items.filter((item: any) => item.type === "subtask").length, 10);
   assert.equal(draft.coverage.length, 10);
+  assert.equal(JSON.stringify(draft).includes("local://SOLUTION.md"), false);
+  assert.ok(draft.citations.includes("local://DESIGN.md"));
   assert.ok(draft.reviews.every((review: any) => review.verdict === "pass"));
   assert.match(draft.reviews[1].reviewerId, /codkesh-local\/deterministic-technical-validator-v1/);
 });

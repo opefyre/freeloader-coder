@@ -105,6 +105,7 @@ export class ProjectDeliveryPlanCoordinator {
         updatedAt: this.now(),
       });
     } catch (error) {
+      console.error(JSON.stringify({ event: "delivery_plan_run_failed", projectId, errorName: error instanceof Error ? error.name : "UnknownError", errorMessage: error instanceof Error ? error.message.slice(0, 500) : "Unknown delivery planning failure." }));
       if (error instanceof FreeProviderSolutionUnavailableError && error.retryAt !== null) {
         await this.#set({
           schemaVersion: 1,
