@@ -6,7 +6,7 @@ import {
   type InfrastructureDeliveryStatus,
   type InfrastructureMutationPreview,
   type InfrastructureReceipt,
-} from "../../../packages/orchestration/src/infrastructure-delivery.js";
+} from "../../../packages/orchestration/src/infrastructure-delivery-contracts.js";
 
 const MAX_RESPONSE_BYTES = 1_100_000;
 
