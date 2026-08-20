@@ -18,7 +18,7 @@ test("isolated workspace enforces authority, validates, commits, and fast-forwar
     await mkdir(join(repository, "src"), { recursive: true });
     await mkdir(join(repository, "tests"), { recursive: true });
     await writeFile(join(repository, "src", "feature.js"), "export const value = 1;\n");
-    await writeFile(join(repository, "package.json"), JSON.stringify({ scripts: { typecheck: "node -e \"process.exit(0)\"", test: "node -e \"process.exit(0)\"" } }));
+    await writeFile(join(repository, "package.json"), JSON.stringify({ type: "module", scripts: { typecheck: "node --check src/feature.js", test: "node --test tests/feature.test.js" } }));
     await git(repository, ["init", "-b", "main"]);
     await git(repository, ["add", "."]);
     await git(repository, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
@@ -28,7 +28,7 @@ test("isolated workspace enforces authority, validates, commits, and fast-forwar
     const before = sources.find((source) => source.path === "src/feature.js")!;
     const applied = await service.apply(workspace, task(), [
       { type: "replace", path: "src/feature.js", expectedBeforeDigest: before.digest, content: "export const value = 2;\n" },
-      { type: "create", path: "tests/feature.test.js", expectedBeforeDigest: null, content: "export const verified = true;\n" },
+      { type: "create", path: "tests/feature.test.js", expectedBeforeDigest: null, content: "import assert from 'node:assert/strict'; import test from 'node:test'; import { value } from '../src/feature.js'; test('feature value', () => assert.equal(value, 2));\n" },
     ]);
     assert.deepEqual(applied.changedFiles, ["src/feature.js", "tests/feature.test.js"]);
     assert.equal((await service.validate(workspace.root, task())).every((item) => item.passed), true);
@@ -37,6 +37,18 @@ test("isolated workspace enforces authority, validates, commits, and fast-forwar
     const integrated = await service.integrate(repository, workspace, committed.commitDigest);
     assert.match(integrated.integrationDigest, /^[a-f0-9]{64}$/);
     assert.equal(await readFile(join(repository, "src", "feature.js"), "utf8"), "export const value = 2;\n");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("validation rejects unconditional-success scripts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-task-noop-"));
+  try {
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { typecheck: "echo 'No typecheck needed'", test: "node -e \"process.exit(0)\"" } }));
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    await assert.rejects(
+      () => service.validate(root, task()),
+      (error: unknown) => error instanceof ProjectTaskWorkspaceError && error.code === "validation_unavailable" && /no-op/.test(error.message),
+    );
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

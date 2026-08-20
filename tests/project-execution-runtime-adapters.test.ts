@@ -82,5 +82,35 @@ test("runtime adapter grounds a first source file in the reviewed delivery task"
   assert.deepEqual(result.changedFiles, ["src/workflow.ts"]);
 });
 
+test("independent review rotates to another eligible free provider when one rejects the request", async () => {
+  const rejected = candidate("nvidia-nim", "provider:rejected-reviewer");
+  const compatible = candidate("mistral", "provider:compatible-reviewer");
+  const attempted: string[] = [];
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq", "nvidia-nim", "mistral"], approvedAt: 1, expiresAt: 999_999 };
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: { ...completeDeliveryPlan(), revision: 1, reviews: [] } as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    {
+      candidates: async (_permit: unknown, role: string) => role === "implementer" ? [implementer] : [rejected, compatible],
+      run: async (input: any) => {
+        if (input.role === "implementer") return { providerId: "groq", modelId: "coder", artifactDigest: "a".repeat(64), response: { summary: "Prepare review fixture", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Prepare the reviewed change." }] } };
+        attempted.push(input.assignment.providerId);
+        if (input.assignment.providerId === "nvidia-nim") throw new Error("message contract rejected");
+        const role = input.taskId.endsWith("security") ? "security" : "functional";
+        return { providerId: "mistral", modelId: "reviewer", artifactDigest: "b".repeat(64), response: { reviewerId: `${role}-reviewer`, verdict: "pass", findings: [] } };
+      },
+    },
+    { prepare: async () => ({ projectId, taskId, root: "/isolated", branch: "studio/task", baseline: "a".repeat(40), authorityDigest: digest }), sources: async () => [{ path: "src/workflow.ts", content: "export const value = 2;", digest }], apply: async () => ({ changedFiles: ["src/workflow.ts"], evidenceDigest: digest }) } as any,
+    { synchronize: async () => undefined }
+  );
+  const task = executionTask();
+  await adapters.implement(projectId, task, 0);
+  const reviews = await adapters.review(projectId, { ...task, validations: [{ tier: "fast", commandLabel: "unit", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 1 }] });
+  assert.deepEqual(reviews.map((review) => review.providerId), ["mistral", "mistral"]);
+  assert.deepEqual(attempted, ["nvidia-nim", "mistral", "mistral"]);
+});
+
 function candidate(providerId: string, deviceId: string): ExecutionCandidate { return { providerId, modelId: providerId === "groq" ? "coder" : "reviewer", deviceId, capabilities: ["chat", "structured_output"], privacyClasses: ["source_code"], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 1, requiredMemoryMb: 0, deviceLoad: 0, preference: 10 }; }
 function executionTask(): ExecutionTask { return { id: taskId, jiraIssueKey: "PIPE-4", title: "Implement workflow contract", dependsOn: [], allowedFiles: ["src/workflow.ts"], validationProfiles: ["unit"], uiChanged: false, requiredCapabilities: ["chat", "structured_output"], privacyClass: "source_code", status: "running", revision: 1, attempt: 0, assignment: { providerId: "groq", modelId: "coder", deviceId: "provider:implementation", selectedAt: 1, reasons: ["All gates passed."] }, lease: { leaseId: "execlease_11111111111111111111", ownerId: "worker", acquiredAt: 1, heartbeatAt: 1, expiresAt: 999_999 }, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Running.", updatedAt: 1 }; }

@@ -101,6 +101,9 @@ export class ProjectTaskWorkspaceService {
     for (const profile of task.validationProfiles) {
       const script = scripts[profile];
       if (!manifest.scripts?.[script]) throw new ProjectTaskWorkspaceError("validation_unavailable", `Validation profile ${profile} is not configured by the project.`);
+      if (isNoOpValidationScript(manifest.scripts[script])) {
+        throw new ProjectTaskWorkspaceError("validation_unavailable", `Validation profile ${profile} is configured with a no-op command and cannot produce trustworthy evidence.`);
+      }
       try {
         const result = await run("npm", ["run", script], root, VALIDATION_TIMEOUT_MS);
         const output = bounded(`${result.stdout}\n${result.stderr}`);
@@ -141,6 +144,15 @@ export class ProjectTaskWorkspaceService {
     await git(root, ["diff", "--quiet", workspace.baseline, "HEAD"]);
     return { restoreDigest: hash(JSON.stringify({ baseline: workspace.baseline, failedCommit: commitDigest, restoredHead: (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() })) };
   }
+}
+
+function isNoOpValidationScript(command: string) {
+  const normalized = command.trim().replace(/\s+/g, " ").toLowerCase();
+  if (!normalized) return true;
+  return /^(?:echo|printf)(?:\s|$)/.test(normalized)
+    || /^(?:true|:)$/.test(normalized)
+    || /process\.exit\s*\(\s*0\s*\)/.test(normalized)
+    || /console\.log\s*\(/.test(normalized) && !/[;&|]\s*(?:node|npm|npx|tsc|eslint|prettier|vitest|jest)\b/.test(normalized);
 }
 
 export class ProjectTaskWorkspaceError extends Error { constructor(readonly code: "repository_invalid" | "canonical_dirty" | "workspace_conflict" | "source_unsupported" | "operation_denied" | "stale_source" | "validation_unavailable" | "integration_conflict", message: string) { super(message); } }
