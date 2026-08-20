@@ -1432,9 +1432,13 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       ) {
         requireIdempotencyKey(request);
         const body = await readJsonBody(request);
-        sendJson(response, 200, projectContextSnapshotSchema.parse(
-          await options.projects.generateContext(projectRoute[1] ?? "", body)
-        ));
+        const generated = await options.projects.generateContext(projectRoute[1] ?? "", body);
+        // Context orchestration also returns its internal clarification plan.
+        // Keep that coordinator-only data out of the strict public snapshot
+        // instead of turning a successful generation into a false API error.
+        const { clarificationPlan: _clarificationPlan, ...publicSnapshot } =
+          generated as typeof generated & { clarificationPlan?: unknown };
+        sendJson(response, 200, projectContextSnapshotSchema.parse(publicSnapshot));
         return;
       }
       if (

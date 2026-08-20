@@ -368,7 +368,7 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       },
       generateContext: (projectId, input) => {
         calls.push(`context:${projectId}:${JSON.stringify(input)}`);
-        return { schemaVersion: 1, projectId, path: "CONTEXT.md", digest: "a".repeat(64), groundingDigest: "b".repeat(64), topologyDigest: "c".repeat(64), observedAt, citations: [{ path: "README.md", digest: "d".repeat(64) }] };
+        return { schemaVersion: 1, projectId, path: "CONTEXT.md", digest: "a".repeat(64), groundingDigest: "b".repeat(64), topologyDigest: "c".repeat(64), observedAt, citations: [{ path: "README.md", digest: "d".repeat(64) }], clarificationPlan: { questions: [], assumptions: ["Internal only"] } };
       },
       forget: (projectId) => {
         calls.push(`forget:${projectId}`);
@@ -451,7 +451,9 @@ test("project endpoints require origin, schema, idempotency, and bounded semanti
       body: JSON.stringify({ schemaVersion: 1, outcome: "Build the complete product" }),
     });
     assert.equal(context.status, 200);
-    assert.equal((await context.json() as { path: string }).path, "CONTEXT.md");
+    const contextPayload = await context.json() as { path: string; clarificationPlan?: unknown };
+    assert.equal(contextPayload.path, "CONTEXT.md");
+    assert.equal(contextPayload.clarificationPlan, undefined);
     assert.equal((await create.json() as { outcome: string }).outcome, "created");
 
     const rescan = await fetch(

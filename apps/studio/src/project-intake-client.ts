@@ -11,9 +11,15 @@ export async function saveResumableProjectIntakeDraft(endpoint: string, current:
   mode: ProjectIntake["projectMode"]; idea: string; workspaceReference: string | null; workspaceLabel: string | null;
   attachments: readonly { kind: string; value: string }[]; idempotencyKey: string;
 }, fetcher: typeof fetch = fetch) {
-  const intake = !current || current.projectMode !== input.mode || !["draft", "resource_selection"].includes(current.state)
+  // The compose screen may outlive a cancellation or another authoritative
+  // revision. Reconcile the cached draft before deciding whether it can be
+  // reused so stale UI state cannot permanently wedge autosave and Start.
+  const authoritative = current
+    ? (await listProjectIntakes(endpoint, fetcher)).intakes.find(({ id }) => id === current.id) ?? null
+    : null;
+  const intake = !authoritative || authoritative.projectMode !== input.mode || !["draft", "resource_selection"].includes(authoritative.state)
     ? await createProjectIntake(endpoint, input.mode, input.idempotencyKey, fetcher)
-    : current;
+    : authoritative;
   const attachmentReferences = input.attachments.map(({ kind, value }) => encodeProjectIntakeReference(kind, value));
   if (intake.idea === input.idea && intake.workspaceReference === input.workspaceReference &&
     intake.workspaceLabel === input.workspaceLabel && sameReferences(intake.attachmentReferences, attachmentReferences)) return intake;

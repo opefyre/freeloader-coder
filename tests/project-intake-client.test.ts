@@ -31,7 +31,27 @@ test("resumable intake autosave skips an unchanged durable draft", async () => {
   const saved = await saveResumableProjectIntakeDraft("http://127.0.0.1:4312", current, {
     mode: "new_product", idea: "Keep this draft", workspaceReference: current.workspaceReference,
     workspaceLabel: "Project", attachments: [], idempotencyKey: "intake:draft:stable",
-  }, async () => { requests += 1; return Response.json(current); });
-  assert.equal(requests, 0);
+  }, async () => { requests += 1; return Response.json({ schemaVersion: 1, intakes: [current] }); });
+  assert.equal(requests, 1);
   assert.equal(saved.revision, 4);
+});
+
+test("resumable draft helper replaces a draft cancelled outside the compose screen", async () => {
+  const current = { ...intake, state: "resource_selection" as const, idea: "Keep this draft", workspaceReference: "selection_0123456789abcdef0123456789abcdef", workspaceLabel: "Old folder", revision: 2 };
+  const cancelled = { ...current, state: "cancelled" as const, revision: 3, cancellationReason: "Wrong folder" };
+  const created = { ...intake, id: "intake_abcdef01234567890123", projectMode: "new_product" as const };
+  const saved = { ...created, state: "resource_selection" as const, idea: "Keep this draft", workspaceReference: "selection_fedcba9876543210fedcba9876543210", workspaceLabel: "Correct folder", revision: 2 };
+  const calls: string[] = [];
+  const result = await saveResumableProjectIntakeDraft("http://127.0.0.1:4312", current, {
+    mode: "new_product", idea: "Keep this draft", workspaceReference: "selection_fedcba9876543210fedcba9876543210",
+    workspaceLabel: "Correct folder", attachments: [], idempotencyKey: "intake:draft:replacement",
+  }, async (url, init) => {
+    const path = new URL(String(url)).pathname; calls.push(`${init?.method ?? "GET"} ${path}`);
+    if (path === "/api/v1/project-intakes" && init?.method === "GET") return Response.json({ schemaVersion: 1, intakes: [cancelled] });
+    if (path === "/api/v1/project-intakes" && init?.method === "POST") return Response.json(created);
+    if (path.endsWith(`/${created.id}/draft`)) return Response.json(saved);
+    return new Response(null, { status: 500 });
+  });
+  assert.equal(result.id, created.id);
+  assert.deepEqual(calls, ["GET /api/v1/project-intakes", "POST /api/v1/project-intakes", `PUT /api/v1/project-intakes/${created.id}/draft`]);
 });
