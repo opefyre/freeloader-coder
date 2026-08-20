@@ -186,6 +186,7 @@ export type ControlPlaneServerOptions = {
     addFileContent?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     generateContext?: (projectId: string, input: unknown) => unknown | Promise<unknown>;
     artifacts?: (projectId: string) => unknown | Promise<unknown>;
+    artifact?: (projectId: string, kind: "context" | "memory" | "research" | "product" | "design" | "delivery_plan" | "ops_rules" | "infra" | "security" | "decisions" | "status") => unknown | Promise<unknown>;
     openArtifact?: (projectId: string, kind: "context" | "memory" | "research" | "product" | "design" | "delivery_plan" | "ops_rules" | "infra" | "security" | "decisions" | "status") => unknown | Promise<unknown>;
     forget: (projectId: string) => void | Promise<void>;
   };
@@ -1313,6 +1314,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         sendJson(response, 200, infrastructureReceiptSchema.nullable().parse(await options.infrastructure.receipt(infrastructureRoute[1] ?? "", infrastructureRoute[3]))); return;
       }
       const projectArtifactOpenRoute = url.pathname.match(/^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/artifacts\/(context|memory|research|product|design|delivery_plan|ops_rules|infra|security|decisions|status)\/open$/);
+      const projectArtifactReadRoute = url.pathname.match(/^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/artifacts\/(context|memory|research|product|design|delivery_plan|ops_rules|infra|security|decisions|status)$/);
       if (request.method === "GET" && projectRoute?.[2] === "artifacts" && options.projects?.artifacts) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
         sendJson(response, 200, z.array(z.strictObject({
@@ -1327,6 +1329,20 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           citations: z.strictObject({ verified: z.number().int().nonnegative(), unverified: z.number().int().nonnegative(), invalid: z.number().int().nonnegative() }),
           state: z.enum(["ready", "missing", "conflicted"]),
         })).length(11).parse(await options.projects.artifacts(projectRoute[1] ?? "")));
+        return;
+      }
+      if (request.method === "GET" && projectArtifactReadRoute && options.projects?.artifact) {
+        if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
+        sendJson(response, 200, z.strictObject({
+          fileName: z.string().regex(/^[A-Z][A-Z-]+\.md$/),
+          body: z.string().max(1_000_000),
+          metadata: z.strictObject({
+            schemaVersion: z.literal(1), kind: z.enum(["context", "memory", "research", "product", "design", "delivery_plan", "ops_rules", "infra", "security", "decisions", "status"]),
+            revision: z.number().int().nonnegative(), updatedAt: z.string().datetime(), producer: z.string().min(3).max(120), bodyDigest: z.string().regex(/^[a-f0-9]{64}$/),
+            approvedDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(), supersedesDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(), confidence: z.enum(["unknown", "mixed", "verified"]), approvalState: z.enum(["not_required", "pending", "approved"]),
+            citations: z.array(z.strictObject({ reference: z.string(), kind: z.enum(["local", "url", "jira"]), state: z.enum(["verified", "unverified", "invalid"]), observedAt: z.string().datetime(), digest: z.string().regex(/^[a-f0-9]{64}$/).nullable() })).max(500),
+          }),
+        }).parse(await options.projects.artifact(projectArtifactReadRoute[1] ?? "", projectArtifactReadRoute[2] as Parameters<NonNullable<typeof options.projects.artifact>>[1])));
         return;
       }
       if (request.method === "POST" && projectArtifactOpenRoute && options.projects?.openArtifact) {

@@ -37,6 +37,9 @@ export const projectResourceKindSchema = z.enum([
   "posthog_project",
   "sentry_project",
   "stripe_account",
+  "cloudflare_r2_bucket",
+  "gcloud_storage_bucket",
+  "aws_s3_bucket",
 ]);
 
 export const projectResourceBindingSchema = z.strictObject({

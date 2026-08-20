@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const integrationResourceSchema = z.strictObject({
   id: z.string().trim().min(1).max(500),
-  kind: z.enum(["github_repository", "jira_project", "telegram_chat", "google_account", "google_calendar", "slack_workspace", "slack_channel", "discord_server", "discord_channel", "cloudflare_account", "gcloud_project", "aws_account", "vercel_team"]),
+  kind: z.enum(["github_repository", "jira_project", "telegram_chat", "google_account", "google_calendar", "slack_workspace", "slack_channel", "discord_server", "discord_channel", "cloudflare_account", "gcloud_project", "aws_account", "vercel_team", "cloudflare_r2_bucket", "gcloud_storage_bucket", "aws_s3_bucket"]),
   label: z.string().trim().min(1).max(200),
   url: z.string().url().max(2_048).refine((value) => new URL(value).protocol === "https:", "Resource links must use HTTPS."),
   detail: z.string().trim().min(1).max(300),

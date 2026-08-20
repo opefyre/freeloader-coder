@@ -28,6 +28,15 @@ const projectArtifactInspectionSchema = z.strictObject({
   citations: z.strictObject({ verified: z.number().int().nonnegative(), unverified: z.number().int().nonnegative(), invalid: z.number().int().nonnegative() }),
 });
 export type ProjectArtifactInspection = z.infer<typeof projectArtifactInspectionSchema>;
+const projectArtifactDocumentSchema = z.strictObject({
+  fileName: z.string().regex(/^[A-Z][A-Z-]+\.md$/), body: z.string().max(1_000_000),
+  metadata: z.strictObject({
+    schemaVersion: z.literal(1), kind: artifactKindSchema, revision: z.number().int().nonnegative(), updatedAt: z.string().datetime(), producer: z.string(), bodyDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    approvedDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(), supersedesDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable(), confidence: z.enum(["unknown", "mixed", "verified"]), approvalState: z.enum(["not_required", "pending", "approved"]),
+    citations: z.array(z.strictObject({ reference: z.string(), kind: z.enum(["local", "url", "jira"]), state: z.enum(["verified", "unverified", "invalid"]), observedAt: z.string().datetime(), digest: z.string().regex(/^[a-f0-9]{64}$/).nullable() })).max(500),
+  }),
+});
+export type ProjectArtifactDocument = z.infer<typeof projectArtifactDocumentSchema>;
 
 export async function listLocalProjects(input: {
   endpoint: string;
@@ -48,6 +57,11 @@ export async function listLocalProjects(input: {
 export async function listProjectArtifacts(input: { endpoint: string; projectId: string; fetcher?: typeof fetch }): Promise<readonly ProjectArtifactInspection[]> {
   assertProjectId(input.projectId);
   return z.array(projectArtifactInspectionSchema).length(11).parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/artifacts`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
+}
+
+export async function getProjectArtifact(input: { endpoint: string; projectId: string; kind: z.infer<typeof artifactKindSchema>; fetcher?: typeof fetch }): Promise<ProjectArtifactDocument> {
+  assertProjectId(input.projectId);
+  return projectArtifactDocumentSchema.parse(await request({ endpoint: input.endpoint, path: `/api/v1/projects/${input.projectId}/artifacts/${input.kind}`, method: "GET", ...(input.fetcher ? { fetcher: input.fetcher } : {}) }));
 }
 
 export async function openProjectArtifact(input: { endpoint: string; projectId: string; kind: z.infer<typeof artifactKindSchema>; idempotencyKey: string; fetcher?: typeof fetch }) {

@@ -60,7 +60,7 @@ export function ProjectPortfolio(props: {
             const attention = needsAttention(project);
             const update = project.latestUpdate?.summary ?? (project.lifecycleStage ?? "intake").replaceAll("_", " ");
             return (
-              <button key={project.id} type="button" onClick={() => props.openProject(project.id)} className="group flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left outline-none hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/30">
+              <button key={project.id} type="button" onClick={() => props.openProject(project.id)} className="group flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left outline-none transition-[transform,background-color] duration-200 hover:translate-x-1 hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/30">
                 <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground"><FolderOpen size={17} weight="duotone" /></span>
                 <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{project.displayName}</strong><span className="mt-0.5 block truncate text-xs capitalize text-muted-foreground">{update}</span></span>
                 {attention && <Warning className="shrink-0 text-amber-500" aria-label="Needs attention" />}

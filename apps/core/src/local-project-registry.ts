@@ -145,6 +145,10 @@ export class LocalProjectRegistry {
     return this.#artifacts.inspect(await this.canonicalRoot(projectId));
   }
 
+  async artifact(projectId: string, kind: ProjectArtifactKind) {
+    return this.#artifacts.read(await this.canonicalRoot(projectId), kind);
+  }
+
   async openArtifact(projectId: string, kind: ProjectArtifactKind) {
     const root = await this.canonicalRoot(projectId);
     await this.#artifacts.read(root, kind);

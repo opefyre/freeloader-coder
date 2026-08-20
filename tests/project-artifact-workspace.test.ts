@@ -9,7 +9,7 @@ import { LocalProjectRegistry } from "../apps/core/src/local-project-registry.js
 
 const exec = promisify(execFile);
 
-test("live artifact journey returns truthful status and opens the exact file through a private server handle", async () => {
+test("live artifact journey returns truthful status and supports safe in-app reading", async () => {
   const sandbox = join(process.cwd(), `.test-artifact-ui-${crypto.randomUUID()}`);
   const project = join(sandbox, "project");
   const state = join(sandbox, "state");
@@ -23,6 +23,9 @@ test("live artifact journey returns truthful status and opens the exact file thr
     const artifacts = await registry.artifacts(registered.id);
     assert.equal(artifacts.length, 11);
     assert.ok(artifacts.every(({ fileName, bodyDigest }) => /^[A-Z][A-Z-]+\.md$/.test(fileName) && /^[a-f0-9]{64}$/.test(bodyDigest)));
+    const document = await registry.artifact(registered.id, "context");
+    assert.equal(document.fileName, "CONTEXT.md");
+    assert.match(document.body, /Project context/);
     const result = await registry.openArtifact(registered.id, "context");
     assert.deepEqual(result, { schemaVersion: 1, outcome: "opened", kind: "context", fileName: "CONTEXT.md" });
     assert.deepEqual(opened, [join(project, "CONTEXT.md")]);
@@ -42,6 +45,9 @@ test("artifact workspace is concise, keyboard reachable, responsive, and disting
   assert.match(source, /Stale/);
   assert.match(source, /Existing project files were not changed/);
   assert.match(source, /<ProjectResearchControl endpoint={props\.endpoint} projectId={props\.projectId}/);
+  assert.match(source, /getProjectArtifact/);
+  assert.match(source, /role="dialog"/);
+  assert.match(source, /MarkdownDocument/);
   assert.doesNotMatch(source, /absolute path|digest:|producer:/i);
 });
 

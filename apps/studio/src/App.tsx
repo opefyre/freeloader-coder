@@ -220,7 +220,7 @@ const ProjectArtifactWorkspace = lazy(() =>
   import("./components/projects/project-artifact-workspace.js").then((module) => ({ default: module.ProjectArtifactWorkspace }))
 );
 const ProjectSettingsPanel = lazy(() =>
-  import("./components/projects/project-settings-panel.js").then((module) => ({ default: module.ProjectSettingsPanel }))
+  import("./components/projects/project-resource-settings.js").then((module) => ({ default: module.ProjectResourceSettings }))
 );
 
 const workspaceIcons: Record<StudioView, typeof Gauge> = {

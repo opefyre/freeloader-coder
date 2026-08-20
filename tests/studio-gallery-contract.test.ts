@@ -54,3 +54,11 @@ test("Studio contains explicit wide, tablet, and mobile reflow rules", async () 
   assert.match(source, /lg:grid-cols-\[15\.5rem_minmax\(0,1fr\)\]/);
   assert.match(source, /sm:grid-cols-5/);
 });
+
+test("Studio provides subtle shared motion with reduced-motion protection", async () => {
+  const css = await readFile("apps/studio/src/globals.css", "utf8");
+  assert.match(css, /@keyframes codkesh-reveal/);
+  assert.match(css, /\[role="tabpanel"\][\s\S]*animation: codkesh-reveal/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(css, /transition-duration: 0s !important/);
+});
