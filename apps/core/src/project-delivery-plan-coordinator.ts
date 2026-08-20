@@ -30,9 +30,15 @@ export class ProjectDeliveryPlanCoordinator {
     this.#path = resolve(stateDirectory, "project-delivery-plan-runs.json");
   }
 
-  async schedule(projectId: string): Promise<DeliveryPlanRun> {
+  async schedule(projectId: string, options: { forceDeferredRetry?: boolean } = {}): Promise<DeliveryPlanRun> {
     let run = await this.get(projectId);
     if (run?.state === "completed") return run;
+    if (run?.state === "deferred" && options.forceDeferredRetry) {
+      const timer = this.#timers.get(projectId);
+      if (timer) clearTimeout(timer);
+      this.#timers.delete(projectId);
+      run = await this.#set({ ...run, state: "queued", retryAt: null, safeMessage: "Delivery planning is queued.", updatedAt: this.now() });
+    }
     if (!run || run.state === "needs_user") {
       run = await this.#set({
         schemaVersion: 1,

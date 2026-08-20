@@ -90,6 +90,21 @@ test("delivery plan coordinator defers provider capacity and resumes without dup
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("an explicit backlog retry clears a preserved provider deferral", async () => {
+  const root = await mkdtemp(join(tmpdir(), "delivery-plan-force-retry-"));
+  try {
+    let calls = 0;
+    const coordinator = new ProjectDeliveryPlanCoordinator(root, { run: async () => { calls += 1; if (calls === 1) throw new FreeProviderSolutionUnavailableError(10_000, "Free planning capacity is temporarily unavailable."); return {} as never; } } as never, () => 100);
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "deferred");
+    const queued = await coordinator.schedule(projectId, { forceDeferredRetry: true });
+    assert.equal(queued.state, "queued");
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    assert.equal(calls, 2);
+    await coordinator.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 async function waitFor(predicate: () => Promise<boolean>) {
   for (let index = 0; index < 100; index += 1) {
     if (await predicate()) return;
