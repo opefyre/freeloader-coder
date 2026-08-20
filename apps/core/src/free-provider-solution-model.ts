@@ -10,7 +10,7 @@ import { deliveryPlanContentSchema } from "../../../packages/orchestration/src/d
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 4;
+const RESPONSE_CONTRACT_VERSION = 5;
 
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
@@ -205,16 +205,21 @@ function researchEvidenceResponseSchema(discipline: "product" | "technical"): Re
 }
 
 function deliveryPlanningResponseSchema(): Readonly<Record<string, unknown>> {
-  const strings = { type: "array", items: { type: "string" } };
-  const validationProfiles = { type: "array", items: { enum: ["format", "lint", "typecheck", "unit", "integration", "build", "visual"] } };
+  const detail = { type: "string", minLength: 10, maxLength: 2_000 };
+  const strings = { type: "array", items: detail };
+  const references = { type: "array", minItems: 1, items: { type: "string", minLength: 1, maxLength: 2_048 } };
+  const itemId = { type: "string", pattern: "^plan_[a-f0-9]{16}$" };
+  const gateId = { type: "string", pattern: "^gate_[a-f0-9]{16}$" };
+  const digest = { type: "string", pattern: "^[a-f0-9]{64}$" };
+  const validationProfiles = { type: "array", minItems: 1, items: { enum: ["format", "lint", "typecheck", "unit", "integration", "build", "visual"] } };
   return {
     type: "object", additionalProperties: false,
     required: ["schemaVersion", "title", "objective", "contextDigest", "solutionDigest", "items", "coverage", "gates", "risks", "assumptions", "citations"],
     properties: {
-      schemaVersion: { const: 1 }, title: { type: "string" }, objective: { type: "string" }, contextDigest: { type: "string" }, solutionDigest: { type: "string" }, risks: strings, assumptions: strings, citations: strings,
-      items: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "type", "parentId", "title", "description", "storyPoints", "estimatedMinutes", "priority", "dependencies", "acceptanceCriteria", "definitionOfDone", "implementationNotes", "roleCapabilities", "rollbackRequirements", "allowedFiles", "validationProfiles", "citations"], properties: { id: { type: "string" }, type: { enum: ["epic", "story", "task", "subtask"] }, parentId: { type: ["string", "null"] }, title: { type: "string" }, description: { type: "string" }, storyPoints: { type: ["number", "null"] }, estimatedMinutes: { type: "number" }, priority: { enum: ["highest", "high", "medium", "low", "lowest"] }, dependencies: strings, acceptanceCriteria: strings, definitionOfDone: strings, implementationNotes: strings, roleCapabilities: strings, rollbackRequirements: strings, allowedFiles: strings, validationProfiles, citations: strings } } },
-      coverage: { type: "array", items: { type: "object", additionalProperties: false, required: ["requirement", "itemIds", "validationProfiles", "citations"], properties: { requirement: { enum: ["behavior", "architecture", "user_experience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics"] }, itemIds: strings, validationProfiles, citations: strings } } },
-      gates: { type: "array", items: { type: "object", additionalProperties: false, required: ["id", "kind", "title", "rationale", "beforeItemIds"], properties: { id: { type: "string" }, kind: { enum: ["owner_approval", "infrastructure"] }, title: { type: "string" }, rationale: { type: "string" }, beforeItemIds: strings } } },
+      schemaVersion: { const: 1 }, title: { type: "string", minLength: 3, maxLength: 200 }, objective: { type: "string", minLength: 40, maxLength: 10_000 }, contextDigest: digest, solutionDigest: digest, risks: { ...strings, minItems: 1 }, assumptions: strings, citations: references,
+      items: { type: "array", minItems: 4, items: { type: "object", additionalProperties: false, required: ["id", "type", "parentId", "title", "description", "storyPoints", "estimatedMinutes", "priority", "dependencies", "acceptanceCriteria", "definitionOfDone", "implementationNotes", "roleCapabilities", "rollbackRequirements", "allowedFiles", "validationProfiles", "citations"], properties: { id: itemId, type: { enum: ["epic", "story", "task", "subtask"] }, parentId: { anyOf: [itemId, { type: "null" }] }, title: { type: "string", minLength: 3, maxLength: 200 }, description: { type: "string", minLength: 40, maxLength: 10_000 }, storyPoints: { enum: [null, 1, 2, 3, 5, 8, 13] }, estimatedMinutes: { type: "integer", minimum: 1, maximum: 100_000 }, priority: { enum: ["highest", "high", "medium", "low", "lowest"] }, dependencies: { type: "array", items: itemId }, acceptanceCriteria: { ...strings, minItems: 2 }, definitionOfDone: { ...strings, minItems: 2 }, implementationNotes: { ...strings, minItems: 1 }, roleCapabilities: { type: "array", minItems: 1, items: { type: "string", minLength: 2, maxLength: 100 } }, rollbackRequirements: { ...strings, minItems: 1 }, allowedFiles: { type: "array", items: { type: "string", minLength: 1, maxLength: 500 } }, validationProfiles, citations: references } } },
+      coverage: { type: "array", minItems: 10, maxItems: 10, items: { type: "object", additionalProperties: false, required: ["requirement", "itemIds", "validationProfiles", "citations"], properties: { requirement: { enum: ["behavior", "architecture", "user_experience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics"] }, itemIds: { type: "array", minItems: 1, items: itemId }, validationProfiles, citations: references } } },
+      gates: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["id", "kind", "title", "rationale", "beforeItemIds"], properties: { id: gateId, kind: { enum: ["owner_approval", "infrastructure"] }, title: { type: "string", minLength: 3, maxLength: 200 }, rationale: detail, beforeItemIds: { type: "array", minItems: 1, items: itemId } } } },
     },
   };
 }
