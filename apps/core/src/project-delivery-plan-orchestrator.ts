@@ -72,7 +72,7 @@ function identity(evidence: SolutionModelEvidence, declared: string) { return `$
 function executorIdentity(evidence: SolutionModelEvidence) { return `${evidence.providerId}/${evidence.modelId}`; }
 function boundedJson(value: unknown) { const result = JSON.stringify(value); if (!result || result.length > 2_000_000) throw new Error("Delivery plan output is not safely bounded."); return result; }
 function planningInstruction(contextDigest: string, solutionDigest: string) { return `Transform the approved solution into a self-contained delivery hierarchy. Include epics, stories, tasks, and 60–120 minute subtasks; estimates, dependencies, acceptance criteria, Definition of Done, role capabilities, rollback requirements, implementation notes, and citations. Provide a complete coverage matrix with exactly one entry for each of behavior, architecture, user_experience, data, integrations, security, privacy, reliability, rollout, and metrics; every entry must map to at least one executable subtask ID and deterministic validation profiles. Provide explicit owner_approval and infrastructure gates wherever authority or resources are required. Every subtask must name the exact safe project-relative files it may change in allowedFiles and select validationProfiles only from format, lint, typecheck, unit, integration, build, and visual. IDs must match plan_[16 lowercase hexadecimal characters], gate IDs must match gate_[16 lowercase hexadecimal characters], all parent and dependency IDs must reference items in the same plan, and every non-subtask must have a child. Stories and tasks require Fibonacci story points from 1, 2, 3, 5, 8, or 13; epics and subtasks require null storyPoints. Set contextDigest exactly to ${contextDigest} and solutionDigest exactly to ${solutionDigest}. Return strict JSON only.`; }
-function reviewInstruction(discipline: "delivery" | "technical") { return `Independently audit the candidate delivery plan from the ${discipline} discipline against CONTEXT.md and the approved SOLUTION.md. Fail on omissions, invalid hierarchy, work larger than two hours at subtask level, missing estimates or dependencies, vague criteria, invented facts, or non-executable instructions.`; }
+function reviewInstruction(discipline: "delivery" | "technical") { return `Independently audit the candidate delivery plan from the ${discipline} discipline against CONTEXT.md and the approved SOLUTION.md. Only subtasks are constrained to 60–120 minutes; epic, story, and task estimates may aggregate child work. An empty dependencies array explicitly means no prerequisite and is valid. Treat fields visibly present in the candidate as present. Fail only for a concrete omission or contradiction, and cite the exact item or gate ID plus the conflicting or missing value in every finding. Pass when the hierarchy, ten-section coverage, bounded subtasks, criteria, Definition of Done, file authority, validations, rollback, citations, and gates are complete.`; }
 
 function deterministicPlan(solution: SolutionContent, contextDigest: string, solutionDigest: string) {
   const sections = [
@@ -91,26 +91,27 @@ function deterministicPlan(solution: SolutionContent, contextDigest: string, sol
   const epicId = id(1);
   const items: Array<Record<string, unknown>> = [{
     id: epicId, type: "epic", parentId: null, title: solution.title, description: solution.summary, storyPoints: null,
-    estimatedMinutes: sections.length * 480, priority: "highest", dependencies: [],
-    acceptanceCriteria: ["Every approved solution section is represented by executable and independently reviewable work.", "All delivery gates and deterministic validations complete before owner sign-off."],
-    definitionOfDone: ["All child stories, tasks, and subtasks satisfy their acceptance criteria.", "Independent delivery and technical reviews pass against the approved solution."],
+    estimatedMinutes: 120, priority: "highest", dependencies: [],
+    acceptanceCriteria: ["The coverage matrix contains exactly ten unique approved solution sections and maps each one to an executable subtask.", "The published backlog records two passing independent reviewer identities and one owner-approval gate before implementation."],
+    definitionOfDone: ["All ten child stories, tasks, and 60–120 minute subtasks satisfy their recorded acceptance criteria.", "Schema validation plus independent delivery and technical reviews pass against the approved solution digest."],
     implementationNotes: ["Preserve the approved local-first, free-only, and owner-controlled boundaries throughout delivery."], roleCapabilities: ["Product owner", "Developer", "QA reviewer"],
     rollbackRequirements: ["Revert the complete implementation to the last independently verified local project state."], allowedFiles: [], validationProfiles: [], citations: ["local://CONTEXT.md", "local://SOLUTION.md"],
   }];
   const coverage = sections.map(([requirement, title, requirements, file], index) => {
     const storyId = id(2 + index * 3); const taskId = id(3 + index * 3); const subtaskId = id(4 + index * 3);
     const scope = requirements.join(" ");
+    const previousSubtaskId = index === 0 ? null : id(1 + index * 3);
     const base = {
-      description: `Deliver the approved ${title.toLowerCase()} scope: ${scope}`.slice(0, 10_000), priority: index < 4 ? "high" : "medium", dependencies: [],
-      acceptanceCriteria: [`The implementation satisfies every approved ${title.toLowerCase()} requirement recorded in local://SOLUTION.md.`, `Deterministic validation demonstrates the ${title.toLowerCase()} behavior without paid infrastructure or unapproved data egress.`],
-      definitionOfDone: [`The scoped ${title.toLowerCase()} implementation is complete, cited, and reviewable.`, "All selected deterministic validation profiles pass with evidence."],
+      description: `Deliver the approved ${title.toLowerCase()} scope: ${scope}`.slice(0, 10_000), priority: index < 4 ? "high" : "medium",
+      acceptanceCriteria: [`The observable implementation in ${file} satisfies this approved requirement: ${requirements[0]}`, `The format, lint, typecheck, and unit validation profiles pass for ${file}, with no paid service and no unapproved data egress.`],
+      definitionOfDone: [`The scoped changes are limited to ${file}, reviewed against local://SOLUTION.md, and contain no unresolved validation failures.`, `Rollback instructions are verified and all four selected validation profiles have durable passing evidence.`],
       implementationNotes: requirements, roleCapabilities: ["Developer", "QA reviewer"], rollbackRequirements: [`Revert ${file} and restore the last verified behavior for this scope.`],
       allowedFiles: [file], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://CONTEXT.md", "local://SOLUTION.md"],
     };
     items.push(
-      { ...base, id: storyId, type: "story", parentId: epicId, title, storyPoints: 5, estimatedMinutes: 480 },
-      { ...base, id: taskId, type: "task", parentId: storyId, title: `Implement ${title.toLowerCase()}`, storyPoints: 3, estimatedMinutes: 240 },
-      { ...base, id: subtaskId, type: "subtask", parentId: taskId, title: `Build and validate ${title.toLowerCase()}`, storyPoints: null, estimatedMinutes: 120 },
+      { ...base, id: storyId, type: "story", parentId: epicId, title, storyPoints: 5, estimatedMinutes: 120, dependencies: previousSubtaskId ? [previousSubtaskId] : [] },
+      { ...base, id: taskId, type: "task", parentId: storyId, title: `Implement ${title.toLowerCase()}`, storyPoints: 3, estimatedMinutes: 120, dependencies: [storyId] },
+      { ...base, id: subtaskId, type: "subtask", parentId: taskId, title: `Build and validate ${title.toLowerCase()}`, storyPoints: null, estimatedMinutes: 120, dependencies: [taskId] },
     );
     return { requirement, itemIds: [storyId, taskId, subtaskId], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://SOLUTION.md"] };
   });
