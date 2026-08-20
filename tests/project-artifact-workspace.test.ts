@@ -41,6 +41,7 @@ test("artifact workspace is concise, keyboard reachable, responsive, and disting
   assert.match(source, /Missing/);
   assert.match(source, /Stale/);
   assert.match(source, /Existing project files were not changed/);
+  assert.match(source, /<ProjectResearchControl endpoint={props\.endpoint} projectId={props\.projectId}/);
   assert.doesNotMatch(source, /absolute path|digest:|producer:/i);
 });
 

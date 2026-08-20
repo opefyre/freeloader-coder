@@ -7,6 +7,7 @@ import { listProjectArtifacts, openProjectArtifact, type ProjectArtifactInspecti
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { InfrastructureDeliveryPanel } from "./infrastructure-delivery-panel.js";
+import { ProjectResearchControl } from "./project-research-control.js";
 
 export function ProjectArtifactWorkspace(props: { endpoint: string; projectId: string }) {
   const [items, setItems] = useState<readonly ProjectArtifactInspection[]>([]);
@@ -42,7 +43,9 @@ export function ProjectArtifactWorkspace(props: { endpoint: string; projectId: s
       })}
     </div>}
     {notice && state === "ready" && <p className="mt-4 text-xs text-muted-foreground" aria-live="polite">{notice}</p>}
-  </section><InfrastructureDeliveryPanel endpoint={props.endpoint} projectId={props.projectId} /></>;
+  </section>
+  <ProjectResearchControl endpoint={props.endpoint} projectId={props.projectId} />
+  <InfrastructureDeliveryPanel endpoint={props.endpoint} projectId={props.projectId} /></>;
 }
 
 function label(kind: ProjectArtifactInspection["kind"]) { return ({ context: "Context", memory: "Memory", research: "Research", product: "Product", design: "Design", delivery_plan: "Delivery plan", ops_rules: "Operating rules", infra: "Infrastructure", security: "Security", decisions: "Decisions", status: "Status" })[kind]; }
