@@ -9,7 +9,7 @@ const app = readFileSync("apps/studio/src/App.tsx", "utf8");
 test("Activity route mounts only the project-scoped Action Center", () => {
   assert.match(app, /ProjectActivityDashboard = lazy/);
   assert.match(app, /mode="actions"/);
-  assert.doesNotMatch(app, /mode="analytics"/);
+  assert.match(app, /mode="analytics" projectId=\{selectedProjectId\}/);
 });
 
 test("Activity Explorer exposes live filters, search, timeline, inspector, references, and export", () => {

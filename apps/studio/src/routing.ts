@@ -27,11 +27,11 @@ export const workspaceDefinitions = {
   projects: {
     path: "/projects",
     label: "Projects",
-    mobileLabel: "Project",
-    note: "Add, understand, and start safely",
-    eyebrow: "Guided project setup",
-    title: "Start with confidence",
-    description: "Add a repository, understand it automatically, and reach a validated first preview.",
+    mobileLabel: "Projects",
+    note: "Resources, progress, and files",
+    eyebrow: "Projects",
+    title: "Your projects",
+    description: "Open a project to manage its resources and progress.",
     group: "primary",
     mobile: true,
   },
@@ -230,7 +230,7 @@ export function viewFromLocation(location: {
   readonly search: string;
 }): StudioView {
   const pathname = normalizePath(location.pathname);
-  if (projectIdFromLocation(location)) return "overview";
+  if (projectIdFromLocation(location)) return "projects";
   const legacyView = new URLSearchParams(location.search).get("view");
   if (pathname === "/" && studioViews.includes(legacyView as StudioView)) {
     return legacyView as StudioView;
@@ -246,7 +246,7 @@ export function canonicalStudioUrl(url: URL, view: StudioView): URL {
   const canonical = new URL(url);
   const legacyProjectId = canonical.searchParams.get("project");
   const projectId = projectIdFromLocation(url) ?? (legacyProjectId && isProjectId(legacyProjectId) ? legacyProjectId : null);
-  canonical.pathname = view === "overview" && projectId
+  canonical.pathname = (view === "projects" || (view === "overview" && legacyProjectId)) && projectId
     ? projectRoute(projectId)
     : routeForView(view);
   canonical.searchParams.delete("view");

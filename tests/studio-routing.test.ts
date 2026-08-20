@@ -82,9 +82,9 @@ test("project workspaces use validated refresh-safe path routes", () => {
   const projectId = "project_0123456789abcdef";
   assert.equal(projectRoute(projectId), `/projects/${projectId}`);
   assert.equal(projectIdFromLocation({ pathname: `/projects/${projectId}/` }), projectId);
-  assert.equal(viewFromLocation({ pathname: `/projects/${projectId}`, search: "" }), "overview");
+  assert.equal(viewFromLocation({ pathname: `/projects/${projectId}`, search: "" }), "projects");
   const direct = new URL(`http://127.0.0.1:4310/projects/${projectId}`);
-  assert.equal(canonicalStudioUrl(direct, "overview").pathname, `/projects/${projectId}`);
+  assert.equal(canonicalStudioUrl(direct, "projects").pathname, `/projects/${projectId}`);
   const legacy = canonicalStudioUrl(new URL(`http://127.0.0.1:4310/?project=${projectId}`), "overview");
   assert.equal(legacy.pathname, `/projects/${projectId}`);
   assert.equal(legacy.search, "");

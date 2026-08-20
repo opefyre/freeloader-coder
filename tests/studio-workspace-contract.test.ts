@@ -2,16 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("workspace exposes exactly three primary owner destinations", async () => {
+test("workspace exposes exactly four primary owner destinations", async () => {
   const source = await readFile("apps/studio/src/App.tsx", "utf8");
   for (const label of [
     "Start",
+    "Projects",
     "Action Center",
     "Settings"
   ]) {
     assert.match(await readFile("apps/studio/src/routing.ts", "utf8"), new RegExp(label));
   }
-  assert.match(source, /primaryStudioViews = \["overview", "activity", "settings"\]/);
+  assert.match(source, /primaryStudioViews = \["overview", "projects", "activity", "settings"\]/);
   assert.match(source, /aria-current=/);
   assert.match(source, /window\.history\[replace \? "replaceState" : "pushState"\]/);
   assert.match(source, /window\.addEventListener\("popstate"/);
@@ -34,7 +35,7 @@ test("start page is a minimal prompt-first project entry", async () => {
   assert.doesNotMatch(source, /Canvas needs a wider screen/);
 });
 
-test("workspace provides dedicated start, action, and settings surfaces", async () => {
+test("workspace provides dedicated start, projects, action, and settings surfaces", async () => {
   const [source, routing] = await Promise.all([
     readFile("apps/studio/src/App.tsx", "utf8"),
     readFile("apps/studio/src/routing.ts", "utf8"),
@@ -42,6 +43,7 @@ test("workspace provides dedicated start, action, and settings surfaces", async 
   const shellContract = `${source}\n${routing}`;
   for (const title of [
     "What do you want to build?",
+    "Your projects",
     "Needs your attention",
     "Set up your workspace",
   ]) {
@@ -50,6 +52,18 @@ test("workspace provides dedicated start, action, and settings surfaces", async 
   assert.match(source, /onClick=\{\(\) => navigate\(item\.id\)\}/);
   assert.match(source, /ProjectActivityDashboard endpoint=\{endpoint\} mode="actions"/);
   assert.doesNotMatch(source, /TabsTrigger value="analytics"/);
+});
+
+test("projects provide real overview, resources, and project-scoped progress", async () => {
+  const source = await readFile("apps/studio/src/App.tsx", "utf8");
+  const settings = await readFile("apps/studio/src/components/projects/project-settings-panel.tsx", "utf8");
+  assert.match(source, /TabsTrigger value="overview">Overview/);
+  assert.match(source, /TabsTrigger value="resources">Resources/);
+  assert.match(source, /TabsTrigger value="progress">Progress/);
+  assert.match(source, /ProjectActivityDashboard endpoint=\{endpoint\} mode="analytics" projectId=\{selectedProjectId\}/);
+  assert.match(settings, /setLocalProjectResources/);
+  assert.match(settings, /listIntegrationConnections/);
+  assert.match(settings, /expectedRevision: project\.resourceRevision/);
 });
 
 test("workspace renders the shared approval pattern with all required decision facts", async () => {

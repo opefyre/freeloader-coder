@@ -50,7 +50,7 @@ test("real project UI keeps facts, inferences, decisions, warnings, and recovery
   }
 });
 
-test("opening a portfolio project keeps the owner in Build with project-scoped conversation", async () => {
+test("opening a portfolio project enters the dedicated project workspace", async () => {
   const [app, portfolio, panel] = await Promise.all([
     readFile("apps/studio/src/App.tsx", "utf8"),
     readFile("apps/studio/src/components/projects/project-portfolio.tsx", "utf8"),
@@ -58,7 +58,8 @@ test("opening a portfolio project keeps the owner in Build with project-scoped c
   ]);
   assert.match(portfolio, /openProject: \(projectId: string\) => void/);
   assert.match(app, /projectRoute\(projectId\)/);
-  assert.match(app, /initialProjectId=\{selectedProjectId \|\| undefined\}/);
+  assert.match(app, /ProjectSettingsPanel endpoint=\{endpoint\} projectId=\{selectedProjectId\}/);
+  assert.match(app, /ProjectActivityDashboard endpoint=\{endpoint\} mode="analytics" projectId=\{selectedProjectId\}/);
   assert.match(app, />\s*All projects\s*</);
   assert.match(panel, /initialProjectId\?: string/);
   assert.doesNotMatch(app, /function BuildWorkspace[\s\S]*\/activity\?project=/);

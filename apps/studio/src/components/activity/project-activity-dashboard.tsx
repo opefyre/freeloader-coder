@@ -35,9 +35,10 @@ import { Card, CardContent } from "../ui/card.js";
 export function ProjectActivityDashboard(props: {
   endpoint: string;
   mode: "actions" | "analytics";
+  projectId?: string;
 }) {
   const requestedProject =
-    new URLSearchParams(window.location.search).get("project") ?? "all";
+    props.projectId ?? new URLSearchParams(window.location.search).get("project") ?? "all";
   const [projectId, setProjectId] = useState(requestedProject);
   const [projects, setProjects] = useState<readonly LocalProjectSnapshot[]>([]);
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);

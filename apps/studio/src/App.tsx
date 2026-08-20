@@ -219,6 +219,9 @@ const ProjectPortfolio = lazy(() =>
 const ProjectArtifactWorkspace = lazy(() =>
   import("./components/projects/project-artifact-workspace.js").then((module) => ({ default: module.ProjectArtifactWorkspace }))
 );
+const ProjectSettingsPanel = lazy(() =>
+  import("./components/projects/project-settings-panel.js").then((module) => ({ default: module.ProjectSettingsPanel }))
+);
 
 const workspaceIcons: Record<StudioView, typeof Gauge> = {
   overview: Gauge,
@@ -239,7 +242,7 @@ const workspaceIcons: Record<StudioView, typeof Gauge> = {
   settings: Gear,
 };
 
-const primaryStudioViews = ["overview", "activity", "settings"] as const satisfies readonly StudioView[];
+const primaryStudioViews = ["overview", "projects", "activity", "settings"] as const satisfies readonly StudioView[];
 
 const navItems = primaryStudioViews
   .map((id) => ({
@@ -257,6 +260,7 @@ function primarySurface(view: StudioView): (typeof primaryStudioViews)[number] {
   if (["work", "decisions", "attention", "activity", "evidence"].includes(view)) {
     return "activity";
   }
+  if (view === "projects") return "projects";
   if (
     [
       "providers",
@@ -990,7 +994,7 @@ function WorkspaceSurface({
   navigate: (view: StudioView) => void;
 }) {
   if (view === "projects") {
-    return <OnboardingWorkspace />;
+    return <ProjectsWorkspace endpoint={controlPlaneEndpoint} navigate={navigate} />;
   }
 
   if (view === "conversation") {
@@ -1223,35 +1227,46 @@ function WorkspaceSurface({
 }
 
 function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) => void; endpoint: string }) {
-  const [selectedProjectId, setSelectedProjectId] = useState(
-    () => projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? ""
+  return (
+    <div className="mx-auto max-w-3xl space-y-8 py-8 sm:py-14">
+      <div className="text-center"><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">What do you want to build?</h1></div>
+      <LocalRequestPanel key="new-project" mode="compose" minimal navigate={navigate} />
+    </div>
   );
+}
+
+function ProjectsWorkspace({ endpoint, navigate }: { endpoint: string; navigate: (view: StudioView) => void }) {
+  const [selectedProjectId, setSelectedProjectId] = useState(() => projectIdFromLocation(window.location) ?? "");
+  const [section, setSection] = useState<"overview" | "resources" | "progress">("overview");
   useEffect(() => {
-    const syncProject = () => {
-      const projectId = projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? "";
-      setSelectedProjectId(projectId);
-    };
-    window.addEventListener("popstate", syncProject);
-    return () => window.removeEventListener("popstate", syncProject);
+    const sync = () => setSelectedProjectId(projectIdFromLocation(window.location) ?? "");
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
   }, []);
   const openProject = (projectId: string) => {
     window.history.pushState({}, "", projectRoute(projectId));
     setSelectedProjectId(projectId);
+    setSection("overview");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const closeProject = () => {
-    window.history.pushState({}, "", "/");
+    window.history.pushState({}, "", "/projects");
     setSelectedProjectId("");
   };
-  return (
-    <div className="mx-auto max-w-3xl space-y-12 py-8 sm:py-14">
-      <div className="text-center"><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">What do you want to build?</h1></div>
-      <LocalRequestPanel key={selectedProjectId || "new-project"} mode="compose" minimal initialProjectId={selectedProjectId || undefined} navigate={navigate} />
-      {selectedProjectId ? (
-        <div className="space-y-4"><Button variant="ghost" size="sm" onClick={closeProject}><ArrowRight className="rotate-180" />All projects</Button><ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId} /></div>
-      ) : <ProjectPortfolio openProject={openProject} startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()} />}
-    </div>
-  );
+  if (!selectedProjectId) return <div className="mx-auto max-w-3xl py-3"><ProjectPortfolio openProject={openProject} startProject={() => navigate("overview")} /></div>;
+  return <div className="space-y-5">
+    <Button variant="ghost" size="sm" onClick={closeProject}><ArrowRight className="rotate-180" />All projects</Button>
+    <Tabs value={section} onValueChange={(value) => setSection(value as typeof section)}>
+      <TabsList aria-label="Project sections">
+        <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsTrigger value="resources">Resources</TabsTrigger>
+        <TabsTrigger value="progress">Progress</TabsTrigger>
+      </TabsList>
+      <TabsContent value="overview"><ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId} /></TabsContent>
+      <TabsContent value="resources"><ProjectSettingsPanel endpoint={endpoint} projectId={selectedProjectId} /></TabsContent>
+      <TabsContent value="progress"><ProjectActivityDashboard endpoint={endpoint} mode="analytics" projectId={selectedProjectId} /></TabsContent>
+    </Tabs>
+  </div>;
 }
 
 function ActivityWorkspace({
