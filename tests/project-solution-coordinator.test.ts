@@ -91,6 +91,28 @@ test("solution coordinator defers a free-provider outage and recovers without du
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("an explicit start retries deferred work immediately after provider eligibility changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-coordinator-provider-change-"));
+  let calls = 0;
+  try {
+    const coordinator = new ProjectSolutionCoordinator(root, {
+      run: async () => {
+        calls += 1;
+        if (calls === 1) throw new FreeProviderSolutionUnavailableError(3_600_100, "The selected provider is rate limited.");
+        return {} as any;
+      },
+    } as any, () => 100);
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "deferred");
+    assert.equal(calls, 1);
+    const queued = await coordinator.schedule(projectId, { forceDeferredRetry: true });
+    assert.equal(queued.state, "queued");
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    assert.equal(calls, 2);
+    await coordinator.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("solution coordinator never hot-loops when a provider returns a retry time in the past", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-coordinator-past-retry-"));
   let calls = 0;

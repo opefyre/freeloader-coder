@@ -16,10 +16,16 @@ export class ProjectSolutionCoordinator {
   #mutation = Promise.resolve();
   constructor(stateDirectory: string, private readonly orchestrator: ProjectSolutionOrchestrator, private readonly now: () => number = Date.now) { this.#path = resolve(stateDirectory, "project-solution-runs.json"); }
 
-  async schedule(projectId: string): Promise<SolutionRun> {
+  async schedule(projectId: string, options: { forceDeferredRetry?: boolean } = {}): Promise<SolutionRun> {
     let run = await this.get(projectId);
     if (run?.state === "completed") return run;
     if (!run || run.state === "needs_user") run = await this.#set({ schemaVersion: 1, projectId, state: "queued", attempts: run?.attempts ?? 0, retryAt: null, safeMessage: "Solution research is queued.", updatedAt: this.now() });
+    if (run.state === "deferred" && options.forceDeferredRetry) {
+      const timer = this.#timers.get(projectId);
+      if (timer) clearTimeout(timer);
+      this.#timers.delete(projectId);
+      run = await this.#set({ ...run, state: "queued", retryAt: null, safeMessage: "Solution research is queued with the current free-provider routes.", updatedAt: this.now() });
+    }
     if (run.state === "deferred" && run.retryAt && run.retryAt > this.now()) { this.#scheduleRetry(projectId, run.retryAt); return run; }
     if (!this.#inFlight.has(projectId)) {
       const work = this.#execute(projectId).finally(() => this.#inFlight.delete(projectId));

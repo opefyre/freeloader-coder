@@ -523,7 +523,7 @@ const controlPlane = createControlPlaneServer({
       return lifecycle;
     },
     solutionRun: (projectId) => solutionCoordinator.get(projectId),
-    generateSolution: (projectId) => solutionCoordinator.schedule(projectId),
+    generateSolution: (projectId) => solutionCoordinator.schedule(projectId, { forceDeferredRetry: true }),
     getBacklog: (projectId) => projectDeliveryPlans.read(projectId),
     backlogRun: (projectId) => deliveryPlanCoordinator.get(projectId),
     generateBacklog: (projectId) => deliveryPlanCoordinator.schedule(projectId),
