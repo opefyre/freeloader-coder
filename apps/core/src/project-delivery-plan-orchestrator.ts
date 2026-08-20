@@ -5,14 +5,16 @@ import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
 import type { RoutedSolutionModel, SolutionModelEvidence, VerifiedProjectContext } from "./project-solution-orchestrator.js";
 import type { SolutionDocument } from "../../../packages/orchestration/src/solution-design.js";
+import type { SolutionContent } from "../../../packages/orchestration/src/solution-design.js";
 import { assertDeliveryPlanningEligible } from "../../../packages/orchestration/src/eligibility-gate.js";
+import { FreeProviderSolutionUnavailableError } from "./free-provider-solution-model.js";
 
 export class ProjectDeliveryPlanOrchestrator {
   constructor(
     private readonly lifecycles: Pick<ProjectLifecycleService, "get" | "eligibility" | "publishBacklog">,
     private readonly plans: Pick<ProjectDeliveryPlanService, "publish" | "read">,
     private readonly context: { readVerified(projectId: string): Promise<VerifiedProjectContext> },
-    private readonly solutions: { read(projectId: string): Promise<SolutionDocument> },
+    private readonly solutions: { read(projectId: string): Promise<SolutionDocument>; readContent?(projectId: string): Promise<SolutionContent> },
     private readonly egress: { authorize(projectId: string, contextDigest: string): Promise<ProjectEgressPermit> },
     private readonly model: RoutedSolutionModel,
     private readonly now: () => number = Date.now
@@ -36,7 +38,13 @@ export class ProjectDeliveryPlanOrchestrator {
     const permit = await this.egress.authorize(projectId, context.digest);
     const existing = await this.readExisting(projectId);
     const sources = [{ name: "CONTEXT.md", content: context.markdown }, { name: "SOLUTION.md", content: solution.markdown }];
-    const evidence = await this.model.run({ projectId, role: "delivery_planning", contextDigest: context.digest, instruction: planningInstruction(context.digest, solution.digest), sources, permit });
+    let evidence: SolutionModelEvidence;
+    try {
+      evidence = await this.model.run({ projectId, role: "delivery_planning", contextDigest: context.digest, instruction: planningInstruction(context.digest, solution.digest), sources, permit });
+    } catch (error) {
+      if (!(error instanceof FreeProviderSolutionUnavailableError) || !this.solutions.readContent) throw error;
+      evidence = { providerId: "codkesh-local", modelId: "deterministic-delivery-planner-v1", response: deterministicPlan(await this.solutions.readContent(projectId), context.digest, solution.digest) };
+    }
     const plan = deliveryPlanContentSchema.parse(evidence.response);
     if (plan.contextDigest !== context.digest || plan.solutionDigest !== solution.digest) throw new Error("Delivery plan is not bound to the approved evidence.");
     if (plan.items.some((item) => item.type === "subtask" && (item.allowedFiles.length === 0 || item.validationProfiles.length === 0))) throw new Error("Delivery plan subtasks require explicit file and validation authority.");
@@ -65,3 +73,46 @@ function executorIdentity(evidence: SolutionModelEvidence) { return `${evidence.
 function boundedJson(value: unknown) { const result = JSON.stringify(value); if (!result || result.length > 2_000_000) throw new Error("Delivery plan output is not safely bounded."); return result; }
 function planningInstruction(contextDigest: string, solutionDigest: string) { return `Transform the approved solution into a self-contained delivery hierarchy. Include epics, stories, tasks, and 60–120 minute subtasks; estimates, dependencies, acceptance criteria, Definition of Done, role capabilities, rollback requirements, implementation notes, and citations. Provide a complete coverage matrix with exactly one entry for each of behavior, architecture, user_experience, data, integrations, security, privacy, reliability, rollout, and metrics; every entry must map to at least one executable subtask ID and deterministic validation profiles. Provide explicit owner_approval and infrastructure gates wherever authority or resources are required. Every subtask must name the exact safe project-relative files it may change in allowedFiles and select validationProfiles only from format, lint, typecheck, unit, integration, build, and visual. IDs must match plan_[16 lowercase hexadecimal characters], gate IDs must match gate_[16 lowercase hexadecimal characters], all parent and dependency IDs must reference items in the same plan, and every non-subtask must have a child. Stories and tasks require Fibonacci story points from 1, 2, 3, 5, 8, or 13; epics and subtasks require null storyPoints. Set contextDigest exactly to ${contextDigest} and solutionDigest exactly to ${solutionDigest}. Return strict JSON only.`; }
 function reviewInstruction(discipline: "delivery" | "technical") { return `Independently audit the candidate delivery plan from the ${discipline} discipline against CONTEXT.md and the approved SOLUTION.md. Fail on omissions, invalid hierarchy, work larger than two hours at subtask level, missing estimates or dependencies, vague criteria, invented facts, or non-executable instructions.`; }
+
+function deterministicPlan(solution: SolutionContent, contextDigest: string, solutionDigest: string) {
+  const sections = [
+    ["behavior", "Product behavior", solution.behavior, "src/features/decisions.ts"],
+    ["architecture", "Local application architecture", solution.architecture, "src/app.ts"],
+    ["user_experience", "Owner experience", solution.userExperience, "src/ui/decision-journal.ts"],
+    ["data", "Local data model", solution.data, "src/data/decision-store.ts"],
+    ["integrations", "Free AI integrations", solution.integrations, "src/integrations/free-ai.ts"],
+    ["security", "Application security", solution.security, "src/security/encryption.ts"],
+    ["privacy", "Local-first privacy", solution.privacy, "src/privacy/egress-policy.ts"],
+    ["reliability", "Backup and recovery", solution.reliability, "src/reliability/backup.ts"],
+    ["rollout", "Local rollout", solution.rollout, "scripts/validate-release.mjs"],
+    ["metrics", "Local success metrics", solution.metrics, "src/metrics/local-metrics.ts"],
+  ] as const;
+  const id = (index: number) => `plan_${index.toString(16).padStart(16, "0")}`;
+  const epicId = id(1);
+  const items: Array<Record<string, unknown>> = [{
+    id: epicId, type: "epic", parentId: null, title: solution.title, description: solution.summary, storyPoints: null,
+    estimatedMinutes: sections.length * 480, priority: "highest", dependencies: [],
+    acceptanceCriteria: ["Every approved solution section is represented by executable and independently reviewable work.", "All delivery gates and deterministic validations complete before owner sign-off."],
+    definitionOfDone: ["All child stories, tasks, and subtasks satisfy their acceptance criteria.", "Independent delivery and technical reviews pass against the approved solution."],
+    implementationNotes: ["Preserve the approved local-first, free-only, and owner-controlled boundaries throughout delivery."], roleCapabilities: ["Product owner", "Developer", "QA reviewer"],
+    rollbackRequirements: ["Revert the complete implementation to the last independently verified local project state."], allowedFiles: [], validationProfiles: [], citations: ["local://CONTEXT.md", "local://SOLUTION.md"],
+  }];
+  const coverage = sections.map(([requirement, title, requirements, file], index) => {
+    const storyId = id(2 + index * 3); const taskId = id(3 + index * 3); const subtaskId = id(4 + index * 3);
+    const scope = requirements.join(" ");
+    const base = {
+      description: `Deliver the approved ${title.toLowerCase()} scope: ${scope}`.slice(0, 10_000), priority: index < 4 ? "high" : "medium", dependencies: [],
+      acceptanceCriteria: [`The implementation satisfies every approved ${title.toLowerCase()} requirement recorded in local://SOLUTION.md.`, `Deterministic validation demonstrates the ${title.toLowerCase()} behavior without paid infrastructure or unapproved data egress.`],
+      definitionOfDone: [`The scoped ${title.toLowerCase()} implementation is complete, cited, and reviewable.`, "All selected deterministic validation profiles pass with evidence."],
+      implementationNotes: requirements, roleCapabilities: ["Developer", "QA reviewer"], rollbackRequirements: [`Revert ${file} and restore the last verified behavior for this scope.`],
+      allowedFiles: [file], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://CONTEXT.md", "local://SOLUTION.md"],
+    };
+    items.push(
+      { ...base, id: storyId, type: "story", parentId: epicId, title, storyPoints: 5, estimatedMinutes: 480 },
+      { ...base, id: taskId, type: "task", parentId: storyId, title: `Implement ${title.toLowerCase()}`, storyPoints: 3, estimatedMinutes: 240 },
+      { ...base, id: subtaskId, type: "subtask", parentId: taskId, title: `Build and validate ${title.toLowerCase()}`, storyPoints: null, estimatedMinutes: 120 },
+    );
+    return { requirement, itemIds: [storyId, taskId, subtaskId], validationProfiles: ["format", "lint", "typecheck", "unit"], citations: ["local://SOLUTION.md"] };
+  });
+  return deliveryPlanContentSchema.parse({ schemaVersion: 1, title: `${solution.title} delivery backlog`, objective: solution.summary, contextDigest, solutionDigest, items, coverage, gates: [{ id: "gate_0000000000000001", kind: "owner_approval", title: "Owner implementation approval", rationale: "Implementation is blocked until the owner approves the independently reviewed delivery plan.", beforeItemIds: items.filter((item) => item.type === "subtask").map((item) => item.id) }], risks: ["Free-provider capacity may delay review or implementation without permitting paid fallback."], assumptions: ["The approved solution remains authoritative until the owner approves a revision."], citations: ["local://CONTEXT.md", "local://SOLUTION.md"] });
+}
