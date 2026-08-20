@@ -106,11 +106,13 @@ test("delivery planning publishes the canonical wire constraints providers must 
     }, () => now);
     const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
     await assert.rejects(() => model.run({ projectId, role: "delivery_planning", contextDigest, instruction: "Plan delivery.", sources: [{ name: "SOLUTION.md", content: "Safe approved solution." }], permit }));
-    assert.equal(responseSchema.properties.items.items.properties.id.pattern, "^plan_[a-f0-9]{16}$");
+    assert.equal(responseSchema.properties.items.items.properties.id.type, "string");
+    assert.equal(responseSchema.properties.items.items.properties.id.pattern, undefined);
     assert.deepEqual(responseSchema.properties.items.items.properties.storyPoints.enum, [null, 1, 2, 3, 5, 8, 13]);
     assert.equal(responseSchema.properties.coverage.minItems, 10);
     assert.equal(responseSchema.properties.coverage.maxItems, 10);
-    assert.equal(responseSchema.properties.gates.items.properties.id.pattern, "^gate_[a-f0-9]{16}$");
+    assert.equal(responseSchema.properties.gates.items.properties.id.type, "string");
+    assert.equal(responseSchema.properties.gates.items.properties.id.pattern, undefined);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

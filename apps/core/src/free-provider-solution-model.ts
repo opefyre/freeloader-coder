@@ -10,7 +10,7 @@ import { deliveryPlanContentSchema } from "../../../packages/orchestration/src/d
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 5;
+const RESPONSE_CONTRACT_VERSION = 6;
 
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
@@ -57,7 +57,7 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
           { role: "user", content: `${input.instruction}\n\nSOURCES:\n${payload}` },
         ], maxOutputTokens: Math.min(candidate.maxOutputTokens, input.role === "solution_reconciliation" ? 12_000 : 6_000), temperature: 0, responseSchema, tools: [], timeoutMs: 180_000 });
         if (response.finishReason !== "stop" || response.toolCalls.length || response.verified || SENSITIVE.test(response.content)) throw failure("malformed-response", 400);
-        validateResponse(input.role, response.content);
+        validateResponse(input.role, response.content, input);
         const digest = await writePrivateProposalArtifact({ directory, response: response.content });
         return { outputDigest: `sha256:${digest}`, inputTokens: response.usage.inputTokens, outputTokens: response.usage.outputTokens };
       } },
@@ -68,7 +68,7 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
     const attempt = [...outcome.result.projection.attempts].reverse().find((candidate) => candidate.status === "succeeded");
     const digest = outcome.result.projection.outputDigest?.replace(/^sha256:/, "");
     if (!attempt || !digest) throw new Error("Free-provider solution evidence is incomplete.");
-    return { providerId: attempt.providerId, modelId: attempt.modelId, response: validateResponse(input.role, await readPrivateProposalArtifact({ directory, digest })) };
+    return { providerId: attempt.providerId, modelId: attempt.modelId, response: validateResponse(input.role, await readPrivateProposalArtifact({ directory, digest }), input) };
   }
 
   async #refresh(ids: readonly string[], now: number) {
@@ -91,7 +91,7 @@ function providerPriority(providerId: string, order: readonly string[]): number 
 export class FreeProviderSolutionUnavailableError extends Error { constructor(readonly retryAt: number | null, message: string) { super(message); } }
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
 function failure(code: string, status: number) { return Object.assign(new Error(code), { code, status }); }
-function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"], content: string): unknown {
+function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"], content: string, input?: Parameters<RoutedSolutionModel["run"]>[0]): unknown {
   let parsed: unknown;
   try { parsed = JSON.parse(content); } catch { throw failure("malformed-response", 400); }
   if (typeof parsed === "object" && parsed !== null && "schemaVersion" in parsed && parsed.schemaVersion === "1") parsed = { ...parsed, schemaVersion: 1 };
@@ -103,7 +103,7 @@ function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"
   }
   if (role === "solution_reconciliation") return parseContract(solutionContentSchema, parsed);
   if (role === "solution_revision_scope") return parseContract(solutionRevisionScopeSchema, parsed);
-  if (role === "delivery_planning") return parseContract(deliveryPlanContentSchema, parsed);
+  if (role === "delivery_planning") return parseContract(deliveryPlanContentSchema, canonicalizeDeliveryPlan(parsed, input));
   if (role === "product_review" || role === "technical_review") {
     const result = parseContract(solutionReviewResultSchema, parsed);
     const discipline = role === "product_review" ? "product" : "technical";
@@ -111,6 +111,33 @@ function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"
     return result;
   }
   return parsed;
+}
+function canonicalizeDeliveryPlan(value: unknown, input?: Parameters<RoutedSolutionModel["run"]>[0]): unknown {
+  if (!input || typeof value !== "object" || value === null || !Array.isArray((value as { items?: unknown }).items)) return value;
+  const source = value as Record<string, unknown>;
+  const rawItems = source.items as Array<Record<string, unknown>>;
+  const ids = new Map<string, string>();
+  for (const [index, item] of rawItems.entries()) {
+    const oldId = String(item.id ?? `item-${index}`);
+    ids.set(oldId, `plan_${hash(`${index}:${oldId}:${String(item.title ?? "")}`).slice(0, 16)}`);
+  }
+  const itemId = (candidate: unknown) => ids.get(String(candidate)) ?? String(candidate);
+  const items = rawItems.map((item, index) => ({
+    ...item,
+    id: ids.get(String(item.id ?? `item-${index}`)),
+    parentId: item.parentId === null ? null : itemId(item.parentId),
+    dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(itemId) : item.dependencies,
+    storyPoints: item.type === "epic" || item.type === "subtask" ? null : item.storyPoints,
+  }));
+  const solutionDigest = input.instruction.match(/solutionDigest exactly to ([a-f0-9]{64})/)?.[1] ?? source.solutionDigest;
+  return {
+    ...source,
+    contextDigest: input.contextDigest,
+    solutionDigest,
+    items,
+    coverage: Array.isArray(source.coverage) ? source.coverage.map((entry) => typeof entry === "object" && entry !== null ? { ...entry, itemIds: Array.isArray((entry as { itemIds?: unknown }).itemIds) ? ((entry as { itemIds: unknown[] }).itemIds).map(itemId) : (entry as { itemIds?: unknown }).itemIds } : entry) : source.coverage,
+    gates: Array.isArray(source.gates) ? source.gates.map((gate, index) => typeof gate === "object" && gate !== null ? { ...gate, id: `gate_${hash(`${index}:${String((gate as { id?: unknown }).id ?? "gate")}:${String((gate as { title?: unknown }).title ?? "")}`).slice(0, 16)}`, beforeItemIds: Array.isArray((gate as { beforeItemIds?: unknown }).beforeItemIds) ? ((gate as { beforeItemIds: unknown[] }).beforeItemIds).map(itemId) : (gate as { beforeItemIds?: unknown }).beforeItemIds } : gate) : source.gates,
+  };
 }
 function parseContract<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown): T {
   const result = schema.safeParse(value);
@@ -208,16 +235,16 @@ function deliveryPlanningResponseSchema(): Readonly<Record<string, unknown>> {
   const detail = { type: "string", minLength: 10, maxLength: 2_000 };
   const strings = { type: "array", items: detail };
   const references = { type: "array", minItems: 1, items: { type: "string", minLength: 1, maxLength: 2_048 } };
-  const itemId = { type: "string", pattern: "^plan_[a-f0-9]{16}$" };
-  const gateId = { type: "string", pattern: "^gate_[a-f0-9]{16}$" };
-  const digest = { type: "string", pattern: "^[a-f0-9]{64}$" };
+  const itemId = { type: "string" };
+  const gateId = { type: "string" };
+  const digest = { type: "string" };
   const validationProfiles = { type: "array", minItems: 1, items: { enum: ["format", "lint", "typecheck", "unit", "integration", "build", "visual"] } };
   return {
     type: "object", additionalProperties: false,
     required: ["schemaVersion", "title", "objective", "contextDigest", "solutionDigest", "items", "coverage", "gates", "risks", "assumptions", "citations"],
     properties: {
       schemaVersion: { const: 1 }, title: { type: "string", minLength: 3, maxLength: 200 }, objective: { type: "string", minLength: 40, maxLength: 10_000 }, contextDigest: digest, solutionDigest: digest, risks: { ...strings, minItems: 1 }, assumptions: strings, citations: references,
-      items: { type: "array", minItems: 4, items: { type: "object", additionalProperties: false, required: ["id", "type", "parentId", "title", "description", "storyPoints", "estimatedMinutes", "priority", "dependencies", "acceptanceCriteria", "definitionOfDone", "implementationNotes", "roleCapabilities", "rollbackRequirements", "allowedFiles", "validationProfiles", "citations"], properties: { id: itemId, type: { enum: ["epic", "story", "task", "subtask"] }, parentId: { anyOf: [itemId, { type: "null" }] }, title: { type: "string", minLength: 3, maxLength: 200 }, description: { type: "string", minLength: 40, maxLength: 10_000 }, storyPoints: { enum: [null, 1, 2, 3, 5, 8, 13] }, estimatedMinutes: { type: "integer", minimum: 1, maximum: 100_000 }, priority: { enum: ["highest", "high", "medium", "low", "lowest"] }, dependencies: { type: "array", items: itemId }, acceptanceCriteria: { ...strings, minItems: 2 }, definitionOfDone: { ...strings, minItems: 2 }, implementationNotes: { ...strings, minItems: 1 }, roleCapabilities: { type: "array", minItems: 1, items: { type: "string", minLength: 2, maxLength: 100 } }, rollbackRequirements: { ...strings, minItems: 1 }, allowedFiles: { type: "array", items: { type: "string", minLength: 1, maxLength: 500 } }, validationProfiles, citations: references } } },
+      items: { type: "array", minItems: 4, items: { type: "object", additionalProperties: false, required: ["id", "type", "parentId", "title", "description", "storyPoints", "estimatedMinutes", "priority", "dependencies", "acceptanceCriteria", "definitionOfDone", "implementationNotes", "roleCapabilities", "rollbackRequirements", "allowedFiles", "validationProfiles", "citations"], properties: { id: itemId, type: { enum: ["epic", "story", "task", "subtask"] }, parentId: { type: ["string", "null"] }, title: { type: "string", minLength: 3, maxLength: 200 }, description: { type: "string", minLength: 40, maxLength: 10_000 }, storyPoints: { enum: [null, 1, 2, 3, 5, 8, 13] }, estimatedMinutes: { type: "integer", minimum: 1, maximum: 100_000 }, priority: { enum: ["highest", "high", "medium", "low", "lowest"] }, dependencies: { type: "array", items: itemId }, acceptanceCriteria: { ...strings, minItems: 2 }, definitionOfDone: { ...strings, minItems: 2 }, implementationNotes: { ...strings, minItems: 1 }, roleCapabilities: { type: "array", minItems: 1, items: { type: "string", minLength: 2, maxLength: 100 } }, rollbackRequirements: { ...strings, minItems: 1 }, allowedFiles: { type: "array", items: { type: "string", minLength: 1, maxLength: 500 } }, validationProfiles, citations: references } } },
       coverage: { type: "array", minItems: 10, maxItems: 10, items: { type: "object", additionalProperties: false, required: ["requirement", "itemIds", "validationProfiles", "citations"], properties: { requirement: { enum: ["behavior", "architecture", "user_experience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics"] }, itemIds: { type: "array", minItems: 1, items: itemId }, validationProfiles, citations: references } } },
       gates: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, required: ["id", "kind", "title", "rationale", "beforeItemIds"], properties: { id: gateId, kind: { enum: ["owner_approval", "infrastructure"] }, title: { type: "string", minLength: 3, maxLength: 200 }, rationale: detail, beforeItemIds: { type: "array", minItems: 1, items: itemId } } } },
     },
