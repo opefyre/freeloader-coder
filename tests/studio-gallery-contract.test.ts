@@ -15,8 +15,8 @@ test("Studio uses a React landmark, skip link, and labeled shadcn tabs", async (
   assert.match(source, /<main id="workspace"/);
   assert.match(source, /aria-label="Control center views"/);
   assert.match(source, /TabsTrigger value="overview"/);
-  assert.match(source, /Canvas needs a wider screen/);
-  assert.match(source, /title="Codkesh coding canvas"[\s\S]*className="hidden[^\"]*md:block"/);
+  assert.doesNotMatch(source, /Canvas needs a wider screen/);
+  assert.doesNotMatch(source, /title="Codkesh coding canvas"/);
 });
 
 test("Studio imports shadcn tokens, Onest, and the approved Phosphor package", async () => {

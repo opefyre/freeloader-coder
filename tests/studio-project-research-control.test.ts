@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("Build exposes explicit picker-only provider consent with an exact confirmation", async () => {
+test("provider consent remains implemented but is absent from the minimal Start history", async () => {
   const source = await readFile("apps/studio/src/components/projects/project-research-control.tsx", "utf8");
   const portfolio = await readFile("apps/studio/src/components/projects/project-portfolio.tsx", "utf8");
-  assert.match(portfolio, /ProjectResearchControl/);
+  assert.doesNotMatch(portfolio, /ProjectResearchControl/);
   for (const copy of ["Choose free providers", "Test context", "Project context", "Start solution research?", "Context version", "Maximum cost", "$0", "Allow and start", "Change sharing"]) assert.equal(source.includes(copy), true, `missing ${copy}`);
   assert.match(source, /useState<readonly string\[]>\(\[\]\)/);
   assert.doesNotMatch(source, /<input|<textarea/);

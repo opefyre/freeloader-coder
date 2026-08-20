@@ -390,10 +390,7 @@ function App() {
           <span className="grid size-10 place-items-center text-primary">
             <PipelineMark className="size-8" title="Codkesh mark" />
           </span>
-          <div>
-            <strong className="block text-sm font-semibold">Codkesh</strong>
-            <span className="text-xs text-muted-foreground">Autonomous product studio</span>
-          </div>
+          <strong className="block text-sm font-semibold">Codkesh</strong>
         </div>
 
         <nav className="mt-10 space-y-1" aria-label="Workspace">
@@ -424,27 +421,14 @@ function App() {
       </aside>
 
       <main id="workspace" className="min-w-0">
-        <header className="sticky top-0 z-30 flex h-18 items-center justify-between bg-background/88 px-4 backdrop-blur-xl sm:px-7 lg:px-9">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-background/88 px-4 backdrop-blur-xl sm:px-7 lg:px-9">
           <div className="flex items-center gap-3 lg:hidden">
             <span className="grid size-9 place-items-center text-primary">
               <PipelineMark className="size-7" title="Codkesh mark" />
             </span>
             <strong className="text-sm">Codkesh</strong>
           </div>
-          <button
-            type="button"
-            onClick={() => setCommandOpen(true)}
-            className="hidden h-10 w-full max-w-sm items-center gap-2 rounded-full bg-muted px-4 text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 sm:flex"
-          >
-            <MagnifyingGlass size={17} />
-            Find anything
-            <kbd className="ml-auto rounded-lg bg-background/70 px-2 py-1 text-[10px]">⌘ K</kbd>
-          </button>
           <div className="flex items-center gap-2">
-            <DemoModeButton
-              open={() => setProvenanceOpen(true)}
-              connection={controlPlane.state}
-            />
             <Button
               variant="ghost"
               size="icon"
@@ -462,21 +446,12 @@ function App() {
               )}
             </Button>
             <ThemeControl mode={theme.mode} setMode={theme.setMode} />
-            <Suspense fallback={<Button variant="ghost" size="icon" aria-label="Loading Attention Center"><Bell /></Button>}>
-              <AttentionBell endpoint={controlPlane.endpoint} openCenter={() => navigate("activity")} activate={activateSearchResult} />
-            </Suspense>
-            <button
-              type="button"
-              className="grid size-9 place-items-center rounded-full bg-secondary text-xs font-bold outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-              aria-label="Open profile menu"
-            >
-              OF
-            </button>
+            <Suspense fallback={null}><AttentionBell endpoint={controlPlane.endpoint} openCenter={() => navigate("activity")} activate={activateSearchResult} /></Suspense>
           </div>
         </header>
 
-        <div className="mx-auto max-w-[96rem] px-4 pb-28 sm:px-7 lg:px-9 lg:pb-12">
-          <div className="flex flex-col gap-4 pb-6 pt-4 sm:pt-7 md:flex-row md:items-end md:justify-between">
+        <div className="mx-auto max-w-5xl px-4 pb-28 sm:px-7 lg:px-9 lg:pb-12">
+          {activeView !== "overview" && <div className="flex flex-col gap-4 pb-6 pt-4 sm:pt-7 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <FolderOpen size={15} />
@@ -490,7 +465,7 @@ function App() {
               </p>
             </div>
             {!primaryStudioViews.includes(activeView as (typeof primaryStudioViews)[number]) && <div className="flex flex-wrap gap-2">
-              {activeView !== "overview" && activeView !== "work" && activeView !== "decisions" && activeView !== "activity" && activeView !== "settings" && (
+              {activeView !== "work" && activeView !== "decisions" && activeView !== "activity" && activeView !== "settings" && (
                 <Button variant="secondary">
                   <Pause />
                   Pause after step
@@ -501,7 +476,7 @@ function App() {
                 Build
               </Button>
             </div>}
-          </div>
+          </div>}
 
           {activeView === "overview" ? (
             <>
@@ -1248,9 +1223,6 @@ function WorkspaceSurface({
 }
 
 function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) => void; endpoint: string }) {
-  const [surface, setSurface] = useState<"canvas" | "projects">(
-    () => projectIdFromLocation(window.location) ? "projects" : "canvas"
-  );
   const [selectedProjectId, setSelectedProjectId] = useState(
     () => projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? ""
   );
@@ -1258,7 +1230,6 @@ function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) =
     const syncProject = () => {
       const projectId = projectIdFromLocation(window.location) ?? new URLSearchParams(window.location.search).get("project") ?? "";
       setSelectedProjectId(projectId);
-      if (projectId) setSurface("projects");
     };
     window.addEventListener("popstate", syncProject);
     return () => window.removeEventListener("popstate", syncProject);
@@ -1266,7 +1237,6 @@ function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) =
   const openProject = (projectId: string) => {
     window.history.pushState({}, "", projectRoute(projectId));
     setSelectedProjectId(projectId);
-    setSurface("projects");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const closeProject = () => {
@@ -1274,36 +1244,12 @@ function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) =
     setSelectedProjectId("");
   };
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="inline-flex rounded-2xl bg-muted p-1" aria-label="Build workspace view">
-          <button type="button" onClick={() => setSurface("canvas")} aria-pressed={surface === "canvas"} className={cn("rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground transition-colors", surface === "canvas" && "bg-background text-foreground shadow-sm")}>Canvas</button>
-          <button type="button" onClick={() => setSurface("projects")} aria-pressed={surface === "projects"} className={cn("rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground transition-colors", surface === "projects" && "bg-background text-foreground shadow-sm")}>Projects</button>
-        </div>
-        {surface === "canvas" && <span className="hidden text-xs text-muted-foreground sm:inline">Coding, files, terminal, previews and conversations</span>}
-      </div>
-      {surface === "canvas" ? (
-        <div className="overflow-hidden rounded-[1.4rem] bg-[#0b0e14] shadow-[0_24px_80px_rgba(0,0,0,0.2)]">
-          <div className="grid min-h-72 place-items-center px-6 py-12 text-center text-white md:hidden">
-            <div className="max-w-xs">
-              <Desktop className="mx-auto size-8 text-primary" weight="duotone" />
-              <strong className="mt-4 block text-base">Canvas needs a wider screen</strong>
-              <p className="mt-2 text-sm leading-6 text-white/60">Projects, approvals, and progress remain available here.</p>
-              <Button className="mt-5" onClick={() => setSurface("projects")}>Open projects</Button>
-            </div>
-          </div>
-          <iframe title="Codkesh coding canvas" src={`${import.meta.env.VITE_PIPELINE_CANVAS_URL ?? "http://127.0.0.1:8001"}/?pipeline=1`} className="hidden h-[calc(100vh-13.5rem)] min-h-[42rem] w-full border-0 md:block" allow="clipboard-read; clipboard-write" />
-        </div>
-      ) : (
-        <div className="mx-auto max-w-6xl space-y-10">
-          {selectedProjectId ? (
-            <><Button variant="ghost" size="sm" onClick={closeProject}><ArrowRight className="rotate-180" />All projects</Button><ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId} /></>
-          ) : (
-            <ProjectPortfolio openProject={openProject} startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()} />
-          )}
-          <LocalRequestPanel key={selectedProjectId || "new-project"} mode="compose" initialProjectId={selectedProjectId || undefined} navigate={navigate} />
-        </div>
-      )}
+    <div className="mx-auto max-w-3xl space-y-12 py-8 sm:py-14">
+      <div className="text-center"><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">What do you want to build?</h1></div>
+      <LocalRequestPanel key={selectedProjectId || "new-project"} mode="compose" minimal initialProjectId={selectedProjectId || undefined} navigate={navigate} />
+      {selectedProjectId ? (
+        <div className="space-y-4"><Button variant="ghost" size="sm" onClick={closeProject}><ArrowRight className="rotate-180" />All projects</Button><ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId} /></div>
+      ) : <ProjectPortfolio openProject={openProject} startProject={() => document.querySelector<HTMLTextAreaElement>("#build-request")?.focus()} />}
     </div>
   );
 }
@@ -1315,16 +1261,7 @@ function ActivityWorkspace({
   endpoint: string;
   navigate: (view: StudioView) => void;
 }) {
-  return (
-    <Tabs defaultValue="actions">
-      <TabsList aria-label="Activity sections">
-        <TabsTrigger value="actions">Action Center</TabsTrigger>
-        <TabsTrigger value="analytics">Analytics</TabsTrigger>
-      </TabsList>
-      <TabsContent value="actions"><ProjectActivityDashboard endpoint={endpoint} mode="actions" /></TabsContent>
-      <TabsContent value="analytics"><ProjectActivityDashboard endpoint={endpoint} mode="analytics" /></TabsContent>
-    </Tabs>
-  );
+  return <ProjectActivityDashboard endpoint={endpoint} mode="actions" />;
 }
 
 function OnboardingWorkspace() {
@@ -1844,40 +1781,16 @@ function SettingsWorkspace({
     <Tabs value={settingsSection} onValueChange={setSettingsSection}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsList aria-label="Settings sections">
-          <TabsTrigger value="connections">Connections</TabsTrigger>
-          <TabsTrigger value="providers">AI providers</TabsTrigger>
-          <TabsTrigger value="permissions">Preferences</TabsTrigger>
-          <TabsTrigger value="system">Advanced</TabsTrigger>
+          <TabsTrigger value="connections">Apps</TabsTrigger>
+          <TabsTrigger value="providers">AI</TabsTrigger>
         </TabsList>
       </div>
-
-      <TabsContent value="permissions">
-        <Card className="max-w-3xl">
-          <CardHeader><CardTitle>Defaults</CardTitle><CardDescription>Applied to new projects. Each project can tighten these choices in Build.</CardDescription></CardHeader>
-          <CardContent className="mt-6 space-y-5">
-            <div className="grid gap-2 sm:grid-cols-3">{["Guided", "Balanced", "Autonomous"].map((option) => <button key={option} type="button" aria-pressed={defaultAutonomy === option} onClick={() => savePreferences(option)} className={cn("rounded-2xl bg-muted/50 p-4 text-left text-sm font-semibold", defaultAutonomy === option && "bg-primary/[.12]")}>{option}</button>)}</div>
-            <label className="flex items-center justify-between rounded-2xl bg-muted/45 p-4 text-sm"><span>Notify me when a project needs attention</span><input type="checkbox" checked={notifyAttention} onChange={(event) => savePreferences(defaultAutonomy, event.target.checked)} className="size-4 accent-primary" /></label>
-            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Paid AI usage</span><Badge tone="positive">Always off</Badge></div>
-          </CardContent>
-        </Card>
-      </TabsContent>
 
       <TabsContent value="connections">
         <ConnectionCatalog endpoint={controlPlaneEndpoint} openProviders={() => setSettingsSection("providers")} />
       </TabsContent>
       <TabsContent value="providers">
         <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
-      </TabsContent>
-      <TabsContent value="system">
-        <Card className="max-w-3xl">
-          <CardHeader><CardTitle>This computer</CardTitle><CardDescription>Codkesh runs locally and keeps credentials in the system vault.</CardDescription></CardHeader>
-          <CardContent className="mt-6 space-y-3">
-            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Local service</span><Badge tone={runtimeCheck === "unavailable" ? "caution" : "positive"}>{runtimeCheck === "checking" ? "Checking" : runtimeCheck === "unavailable" ? "Needs attention" : "Ready"}</Badge></div>
-            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Credentials</span><span className="text-xs font-semibold">System vault</span></div>
-            <div className="flex items-center justify-between rounded-2xl bg-muted/45 p-4"><span className="text-sm">Network access</span><span className="text-xs font-semibold">This computer only</span></div>
-            <Button variant="secondary" size="sm" disabled={runtimeCheck === "checking"} onClick={() => { setRuntimeCheck("checking"); void fetch(`${controlPlaneEndpoint}/api/v1/health`, { cache: "no-store", credentials: "omit" }).then((response) => setRuntimeCheck(response.ok ? "ready" : "unavailable")).catch(() => setRuntimeCheck("unavailable")); }}>Check health</Button>
-          </CardContent>
-        </Card>
       </TabsContent>
     </Tabs>
     </>

@@ -10,13 +10,14 @@ import {
   sandboxChoices,
 } from "../apps/studio/src/runtime-setup-fixture.js";
 
-test("Projects screen mounts the complete clone-to-running setup experience", async () => {
+test("runtime setup remains internal and is absent from primary Settings", async () => {
   const app = await readFile("apps/studio/src/App.tsx", "utf8");
   const panel = await readFile(
     "apps/studio/src/components/runtime/runtime-setup-panel.tsx",
     "utf8"
   );
-  assert.match(app, /<RuntimeSetupPanel \/>/);
+  assert.doesNotMatch(app, /TabsTrigger value="advanced"/);
+  assert.doesNotMatch(app, />Advanced<\/TabsTrigger>/);
   assert.match(panel, /Clone-to-running setup/);
   assert.deepEqual(
     runtimeSetupStages.map((stage) => stage.id),

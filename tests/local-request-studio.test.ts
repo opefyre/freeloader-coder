@@ -180,7 +180,7 @@ test("starting a new project clears every project-scoped intake value", async ()
   ]) {
     assert.equal(reset.includes(requiredReset), true, `Missing reset: ${requiredReset}`);
   }
-  assert.match(panel, /onClick=\{beginNewProject\}[\s\S]*New project/);
+  assert.match(panel, /function beginNewProject\(\)/);
 });
 
 test("submission invalidates delayed autosave before durable work starts", async () => {

@@ -51,8 +51,8 @@ test("project status and Action Center provide direct navigation to project file
   assert.match(activity, /Open project files/);
   assert.match(activity, /href={`\/projects\/\$\{record\.projectId\}`}/);
   assert.match(app, /<ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId}/);
-  assert.match(app, /projectIdFromLocation\(window\.location\) \? "projects" : "canvas"/);
-  assert.match(app, /if \(projectId\) setSurface\("projects"\)/);
+  assert.match(app, /projectIdFromLocation\(window\.location\)/);
+  assert.match(app, /setSelectedProjectId\(projectId\)/);
 });
 
 test("Action Center exposes immutable solution revisions and keeps historical decisions read only", async () => {

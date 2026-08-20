@@ -2,63 +2,54 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("workspace exposes trusted destinations and keyboard command semantics", async () => {
-  const [source, commandCenter] = await Promise.all([
-    readFile("apps/studio/src/App.tsx", "utf8"),
-    readFile("apps/studio/src/components/search/global-command-center.tsx", "utf8"),
-  ]);
+test("workspace exposes exactly three primary owner destinations", async () => {
+  const source = await readFile("apps/studio/src/App.tsx", "utf8");
   for (const label of [
-    "Build",
-    "Activity",
+    "Start",
+    "Action Center",
     "Settings"
   ]) {
-    assert.match(source, new RegExp(label));
+    assert.match(await readFile("apps/studio/src/routing.ts", "utf8"), new RegExp(label));
   }
-  assert.match(source, /Find anything/);
-  assert.match(source, /⌘ K/);
+  assert.match(source, /primaryStudioViews = \["overview", "activity", "settings"\]/);
   assert.match(source, /aria-current=/);
   assert.match(source, /window\.history\[replace \? "replaceState" : "pushState"\]/);
   assert.match(source, /window\.addEventListener\("popstate"/);
-  assert.match(source, /event\.key\.toLowerCase\(\) === "k"/);
-  assert.match(commandCenter, /role="dialog"/);
-  assert.match(commandCenter, /aria-modal="true"/);
-  assert.match(source, /setActiveView/);
+  assert.doesNotMatch(source, /Build workspace view/);
+  assert.doesNotMatch(source, /Codkesh coding canvas/);
 });
 
-test("workspace labels fixture claims and prevents inert decision controls", async () => {
+test("start page is a minimal prompt-first project entry", async () => {
   const [source, routing] = await Promise.all([
     readFile("apps/studio/src/App.tsx", "utf8"),
     readFile("apps/studio/src/routing.ts", "utf8"),
   ]);
-  assert.match(routing, /Your product workspace/);
-  assert.match(routing, /Demo:/);
-  assert.match(source, /Choose the public product name/);
-  assert.match(source, /Demo message received locally\. No task was created\./);
-  assert.match(source, /Demo choice recorded locally\. No project data was changed\./);
-  assert.match(source, /aria-pressed=\{selected\}/);
-  assert.doesNotMatch(source, /commit 726d351/);
+  const composer = await readFile("apps/studio/src/components/conversation/local-request-panel.tsx", "utf8");
+  assert.match(routing, /What do you want to build\?/);
+  assert.match(source, /LocalRequestPanel/);
+  assert.match(composer, /Describe your idea… or drop files here/);
+  assert.match(composer, /Choose folder/);
+  assert.match(composer, /Attach files/);
+  assert.match(composer, /LocalVoiceInput/);
+  assert.doesNotMatch(source, /Canvas needs a wider screen/);
 });
 
-test("workspace provides dedicated interactive surfaces rather than inert anchors", async () => {
-  const [source, routing, workbench] = await Promise.all([
+test("workspace provides dedicated start, action, and settings surfaces", async () => {
+  const [source, routing] = await Promise.all([
     readFile("apps/studio/src/App.tsx", "utf8"),
     readFile("apps/studio/src/routing.ts", "utf8"),
-    readFile(
-      "apps/studio/src/components/orchestration/orchestration-workbench.tsx",
-      "utf8",
-    ),
   ]);
   const shellContract = `${source}\n${routing}`;
   for (const title of [
-    "What would you like to build?",
-    "Everything that is happening",
+    "What do you want to build?",
+    "Needs your attention",
     "Set up your workspace",
   ]) {
     assert.match(shellContract, new RegExp(title));
   }
   assert.match(source, /onClick=\{\(\) => navigate\(item\.id\)\}/);
-  assert.match(source, /onClick=\{\(\) => navigate\("overview"\)\}/);
-  assert.match(workbench, /https:\/\/opefyre\.atlassian\.net\/browse\/PIPE-56/);
+  assert.match(source, /ProjectActivityDashboard endpoint=\{endpoint\} mode="actions"/);
+  assert.doesNotMatch(source, /TabsTrigger value="analytics"/);
 });
 
 test("workspace renders the shared approval pattern with all required decision facts", async () => {
@@ -117,28 +108,16 @@ test("workspace has explicit responsive, focus, motion, and contrast contracts",
   assert.match(styles, /@media \(forced-colors: active\)/);
 });
 
-test("settings explains, masks, expires, resets, and revokes canonical permissions", async () => {
+test("settings contains only app connections and AI setup", async () => {
   const workspace = await readFile("apps/studio/src/App.tsx", "utf8");
   const fixture = await readFile("apps/studio/src/permission-fixture.ts", "utf8");
   const combined = `${workspace}\n${fixture}`;
-  for (const label of [
-    "Project permission posture",
-    "Who can access what",
-    "Project folder",
-    "Provider",
-    "Connector",
-    "Tool",
-    "External effect",
-    "Paid action",
-    "Recent use"
-  ]) {
-    assert.match(combined, new RegExp(label));
-  }
-  assert.match(workspace, /Mask for screen sharing/);
-  assert.match(workspace, /Advanced · technical scopes/);
-  assert.match(workspace, /Expire in 24 hours/);
-  assert.match(workspace, /Reset to recommended/);
-  assert.match(workspace, /Revoke now/);
-  assert.match(workspace, /aria-live="polite"/);
-  assert.match(workspace, /Models and plugins cannot grant themselves access/);
+  assert.match(combined, /Apps/);
+  assert.match(workspace, /AI/);
+  assert.match(workspace, /ConnectionCatalog/);
+  assert.match(workspace, /ProviderConnectionWizard/);
+  assert.doesNotMatch(workspace, /TabsTrigger value="permissions"/);
+  assert.doesNotMatch(workspace, /TabsTrigger value="system"/);
+  assert.doesNotMatch(workspace, /Mask for screen sharing/);
+  assert.doesNotMatch(workspace, /Project permission posture/);
 });

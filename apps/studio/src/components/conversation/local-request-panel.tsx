@@ -120,12 +120,13 @@ function encodeBase64(value: ArrayBuffer): string {
 
 export function LocalRequestPanel(props: {
   mode: "compose" | "queue";
+  minimal?: boolean;
   initialProjectId?: string | undefined;
   navigate?: (view: "work" | "projects" | "activity" | "settings") => void;
 }) {
   const [projects, setProjects] = useState<readonly LocalProjectSnapshot[]>([]);
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);
-  const [projectId, setProjectId] = useState(props.initialProjectId ?? "");
+  const [projectId, setProjectId] = useState(props.initialProjectId ?? (props.minimal ? "__new__" : ""));
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceLabel, setWorkspaceLabel] = useState("");
   const [attachments, setAttachments] = useState<
@@ -251,7 +252,7 @@ export function LocalRequestPanel(props: {
       if (disposed.current) return;
       setProjects(projectCollection.projects);
       setRequests(requestCollection.requests);
-      if (!restoredDraft.current && props.mode === "compose") {
+      if (!restoredDraft.current && props.mode === "compose" && !props.minimal) {
         const resumable = intakeCollection.intakes.find((intake) =>
           ["draft", "resource_selection"].includes(intake.state),
         );
@@ -277,6 +278,7 @@ export function LocalRequestPanel(props: {
           setNotice("Draft restored. No work started.");
         }
       }
+      if (props.minimal && !props.initialProjectId) restoredDraft.current = true;
       setProjectId((current) =>
         props.initialProjectId &&
         projectCollection.projects.some(
@@ -1696,7 +1698,7 @@ export function LocalRequestPanel(props: {
           What do you want to build?
         </h2>
       )}
-      {props.mode === "compose" && selectedProject && (
+      {props.mode === "compose" && selectedProject && !props.minimal && (
         <div className="flex flex-col gap-4 rounded-3xl bg-muted/55 p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -1850,7 +1852,7 @@ export function LocalRequestPanel(props: {
             </CardContent>
           </Card>
         )}
-      {props.mode === "compose" && eligibility?.eligible && (
+      {props.mode === "compose" && eligibility?.eligible && !props.minimal && (
         <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
           <CheckCircle className="text-primary" weight="fill" />
           <span>Product lifecycle accepted</span>
@@ -1988,42 +1990,6 @@ export function LocalRequestPanel(props: {
               )}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="relative flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setProjectPickerOpen((open) => !open)}
-                    aria-expanded={projectPickerOpen}
-                  >
-                    {projectId === "__new__"
-                      ? "New project"
-                      : (projects.find((project) => project.id === projectId)
-                          ?.displayName ?? "Project")}
-                  </Button>
-                  {projectPickerOpen && (
-                    <div className="absolute bottom-11 left-0 z-30 min-w-64 rounded-2xl bg-popover p-2 shadow-2xl ring-1 ring-foreground/10">
-                      <button
-                        type="button"
-                        onClick={beginNewProject}
-                        className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
-                      >
-                        New project
-                      </button>
-                      {projects.map((project) => (
-                        <button
-                          key={project.id}
-                          type="button"
-                          onClick={() => {
-                            setProjectId(project.id);
-                            setProjectPickerOpen(false);
-                          }}
-                          className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
-                        >
-                          {project.displayName}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                   {projectId === "__new__" && (
                     <Button
                       type="button"
@@ -2036,18 +2002,7 @@ export function LocalRequestPanel(props: {
                       {workspaceLabel || "Choose folder"}
                     </Button>
                   )}
-                  {projectId !== "__new__" && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void openResourcePicker()}
-                      disabled={status === "working"}
-                    >
-                      <GitBranch />
-                      Resources
-                    </Button>
-                  )}
+                  {projectId !== "__new__" && <span className="px-2 text-xs font-medium text-muted-foreground">{projects.find((project) => project.id === projectId)?.workspaceLabel ?? "Local project"}</span>}
                   <Button
                     type="button"
                     size="sm"
@@ -2058,20 +2013,6 @@ export function LocalRequestPanel(props: {
                   >
                     <PaperclipHorizontal />
                   </Button>
-                  <label className="inline-flex h-8 cursor-pointer items-center rounded-xl px-3 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">
-                    <input
-                      type="file"
-                      multiple
-                      className="sr-only"
-                      disabled={status === "working"}
-                      onChange={(event) => {
-                        if (event.target.files)
-                          acceptBrowserFiles(event.target.files);
-                        event.target.value = "";
-                      }}
-                    />
-                    Upload
-                  </label>
                   {!voice && (
                     <Suspense fallback={null}>
                       <LocalVoiceInput
@@ -2376,7 +2317,7 @@ export function LocalRequestPanel(props: {
               )}
             </div>
           )}
-          <p
+          {!props.minimal && <p
             aria-live="polite"
             className={
               props.mode === "compose"
@@ -2385,7 +2326,7 @@ export function LocalRequestPanel(props: {
             }
           >
             {notice}
-          </p>
+          </p>}
         </CardContent>
       </Card>
 
