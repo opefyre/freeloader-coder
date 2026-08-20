@@ -37,9 +37,10 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
     }
     const capacity = await this.#capacity.snapshot(connections.map((connection) => connection.id), now);
     const byId = new Map(connections.map((connection) => [connection.id, connection]));
+    const providerOrder = preferredProvidersForRole(input.role);
     const outcome = await this.#runtime.executeAdmitted({
       taskId: input.projectId, workUnitId: `${input.role}-${requestDigest.slice(0, 20)}`, requestDigest, connections,
-      priorityByConnectionId: Object.fromEntries([...connections].sort((a, b) => a.id.localeCompare(b.id)).map((connection, index) => [connection.id, index + 1])),
+      priorityByConnectionId: Object.fromEntries([...connections].sort((a, b) => providerPriority(a.providerId, providerOrder) - providerPriority(b.providerId, providerOrder) || a.id.localeCompare(b.id)).map((connection, index) => [connection.id, index + 1])),
       usageByConnectionId: capacity.usageByConnectionId, circuitOpenUntilByConnectionId: capacity.circuitOpenUntilByConnectionId,
       requiredCapabilities: ["chat", "structured_output"],
       routeRequest: { role: "implementer", kind: input.role.endsWith("review") ? "review" : "plan", dataClass: permit.dataClass, minimumPrivacy: "training_eligible", estimatedInputTokens: Math.max(1, Math.ceil(payload.length / 4)), requestedOutputTokens: input.role === "solution_reconciliation" ? 12_000 : 6_000, allowPaid: false, allowPromotionalCredit: false, preferredProviderIds: permit.providerIds, avoidedProviderIds: connections.filter((connection) => !permit.providerIds.includes(connection.providerId)).map((connection) => connection.providerId), now },
@@ -73,6 +74,17 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
     if (!this.#refreshInFlight) this.#refreshInFlight = Promise.allSettled([...new Set(ids)].map((id) => this.refresher!.reProbe(id, now))).then(() => undefined).finally(() => { this.#refreshInFlight = null; });
     await this.#refreshInFlight;
   }
+}
+
+function preferredProvidersForRole(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): readonly string[] {
+  if (role === "technical_research" || role === "product_review" || role === "delivery_review") return ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere"];
+  if (role === "technical_review" || role === "technical_delivery_review") return ["nvidia-nim", "mistral", "gemini", "huggingface", "kilo", "groq", "cohere"];
+  return ["gemini", "mistral", "nvidia-nim", "huggingface", "kilo", "groq", "cohere"];
+}
+
+function providerPriority(providerId: string, order: readonly string[]): number {
+  const index = order.indexOf(providerId);
+  return index === -1 ? order.length + 1 : index;
 }
 
 export class FreeProviderSolutionUnavailableError extends Error { constructor(readonly retryAt: number | null, message: string) { super(message); } }
