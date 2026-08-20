@@ -59,6 +59,22 @@ test("Jira remains usable when the optional profile endpoint is unavailable", as
   assert.equal(jira?.resources[0]?.label, "PIPE · Coding Pipeline");
 });
 
+test("Jira can be re-probed to discover projects created after the initial connection", async () => {
+  const stored = new Map([["vault:providers/jira/default", JSON.stringify({ accessToken: "valid-token" })]]);
+  const vault = { async write(reference: string, value: string) { stored.set(reference, value); }, async read(reference: string) { return stored.get(reference) ?? null; }, async delete(reference: string) { stored.delete(reference); } };
+  let projects = [{ id: "10132", key: "PIPE", name: "Coding Pipeline" }];
+  const service = new IntegrationConnectionService(undefined, vault, async (input) => {
+    const url = String(input);
+    if (url.endsWith("/oauth/token/accessible-resources")) return Response.json([{ id: "cloud-1", name: "Opefyre", url: "https://opefyre.atlassian.net" }]);
+    if (url.endsWith("/rest/api/3/myself")) return Response.json({ displayName: "Opefyre" });
+    if (url.includes("/rest/api/3/project/search")) return Response.json({ values: projects });
+    return new Response("not found", { status: 404 });
+  });
+  assert.deepEqual((await service.list()).connections.find((item) => item.provider === "jira")?.resources.map((item) => item.label), ["PIPE · Coding Pipeline"]);
+  projects = [...projects, { id: "10200", key: "CKPILOT", name: "Codkesh Pilot — Disposable" }];
+  assert.deepEqual((await service.probeJira()).connections.find((item) => item.provider === "jira")?.resources.map((item) => item.label), ["PIPE · Coding Pipeline", "CKPILOT · Codkesh Pilot — Disposable"]);
+});
+
 test("broker-issued Jira OAuth migrates its refresh token to a sealed rotating grant", async () => {
   const stored = new Map<string, string>();
   const vault = { async write(reference: string, value: string) { stored.set(reference, value); }, async read(reference: string) { return stored.get(reference) ?? null; }, async delete(reference: string) { stored.delete(reference); } };

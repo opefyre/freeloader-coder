@@ -16,6 +16,11 @@ const reviewRepairSchema = z.strictObject({
   expectedRevision: z.number().int().nonnegative(),
   rationale: z.string().trim().min(10).max(2_000),
 });
+const environmentRetrySchema = z.strictObject({
+  taskId: z.string().regex(/^plan_[a-f0-9]{16}$/),
+  expectedRevision: z.number().int().nonnegative(),
+  rationale: z.string().trim().min(10).max(500),
+});
 type JiraReceipt = { completed: boolean; planDigest: string; issues: Record<string, { issueKey: string }> };
 
 export class ProjectExecutionService {
@@ -189,6 +194,28 @@ export class ProjectExecutionService {
   async releaseForRetry(projectId: string, taskId: string, leaseId: string, ownerId: string, safeMessage: string) {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
       const updated: ExecutionTask = { ...task, status: "queued", assignment: null, lease: null, revision: task.revision + 1, safeMessage, updatedAt: now };
+      return { record: projectState(replaceTask(record, updated), now), result: updated };
+    });
+  }
+
+  async authorizeEnvironmentRetry(projectId: string, input: unknown) {
+    const retry = environmentRetrySchema.parse(input);
+    return this.#mutateProject(projectId, (record) => {
+      const task = record.tasks.find((candidate) => candidate.id === retry.taskId);
+      if (!task) throw new ProjectExecutionError("not_found", "Execution task was not found.");
+      if (task.revision !== retry.expectedRevision) throw new ProjectExecutionError("stale_revision", "Execution evidence changed. Review the latest state before retrying.");
+      if (task.status !== "needs_user" || task.lease || task.implementationEvidence.length > 0 || task.validations.length > 0 || task.reviews.length > 0 || task.commitDigest || task.integrationDigest || task.failureClass) {
+        throw new ProjectExecutionError("retry_denied", "Only a pre-implementation environment failure can be resumed with this action.");
+      }
+      const now = this.now();
+      const updated: ExecutionTask = {
+        ...task,
+        status: "queued",
+        assignment: null,
+        revision: task.revision + 1,
+        safeMessage: `Owner resumed execution after the environment was repaired: ${retry.rationale}`,
+        updatedAt: now,
+      };
       return { record: projectState(replaceTask(record, updated), now), result: updated };
     });
   }

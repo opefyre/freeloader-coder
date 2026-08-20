@@ -96,6 +96,15 @@ export class IntegrationConnectionService {
     return this.#collection();
   }
 
+  async probeJira(): Promise<PublicIntegrationConnectionCollection> {
+    if (!this.#vault || !await this.#vault.read(JIRA_CREDENTIAL_REFERENCE)) {
+      this.#jira = this.#emptyJira("Connect Jira to choose a project.");
+      return this.#collection();
+    }
+    this.#jira = await this.#probeStoredJiraOAuth();
+    return this.#collection();
+  }
+
   async configureOAuth(input: unknown): Promise<PublicIntegrationConnectionCollection> {
     if (!this.#vault) throw new Error("Secure credential storage is unavailable.");
     const parsed = oauthAppConfigurationInputSchema.parse(input);

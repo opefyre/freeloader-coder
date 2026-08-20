@@ -11,6 +11,10 @@ export async function probeGitHubConnection(input: { endpoint: string; idempoten
   return request({ ...input, path: "/api/v1/integration-connections/github/probe", method: "POST" });
 }
 
+export async function probeJiraConnection(input: { endpoint: string; idempotencyKey: string; fetcher?: typeof fetch }) {
+  return request({ ...input, path: "/api/v1/integration-connections/jira/probe", method: "POST" });
+}
+
 export async function configureIntegrationOAuth(input: { endpoint: string; provider: "github" | "jira"; clientId: string; clientSecret?: string; idempotencyKey: string; fetcher?: typeof fetch }) {
   return request({ ...input, path: "/api/v1/integration-connections/oauth/configure", method: "POST", body: { schemaVersion: 1, provider: input.provider, clientId: input.clientId, ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}) } });
 }

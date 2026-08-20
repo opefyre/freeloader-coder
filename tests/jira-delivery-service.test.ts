@@ -34,13 +34,13 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
       if (pathname.endsWith("/issuetype/project")) return json([
         { id: "100", name: "Epic" }, { id: "101", name: "Story" }, { id: "102", name: "Task" }, { id: "103", name: "Sub-task" },
       ]);
-      if (pathname.includes("/issue/createmeta/")) return json({ fields: {
-        assignee: { name: "Assignee" },
-        parent: { name: "Parent" },
-        priority: { name: "Priority", allowedValues: [{ id: "1", name: "Highest" }, { id: "2", name: "High" }, { id: "3", name: "Medium" }, { id: "4", name: "Low" }, { id: "5", name: "Lowest" }] },
-        customfield_10016: { name: "Story point estimate" },
-        customfield_10011: { name: "Epic Name" },
-      } });
+      if (pathname.includes("/issue/createmeta/")) return json({ fields: [
+        { fieldId: "assignee", name: "Assignee" },
+        { fieldId: "parent", name: "Parent" },
+        { fieldId: "priority", name: "Priority", allowedValues: [{ id: "1", name: "Highest" }, { id: "2", name: "High" }, { id: "3", name: "Medium" }, { id: "4", name: "Low" }, { id: "5", name: "Lowest" }] },
+        { fieldId: "customfield_10016", name: "Story point estimate" },
+        { fieldId: "customfield_10011", name: "Epic Name" },
+      ] });
       if (pathname.endsWith("/search/jql")) return json({ issues: [] });
       if (pathname.endsWith("/issue") && init?.method === "POST") {
         createAttempts += 1;

@@ -55,5 +55,37 @@ test("isolated workspace rejects unauthorized paths and stale replacement eviden
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("commitless Codkesh-owned project creates one verified baseline before isolation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-bootstrap-product-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(join(repository, ".pipeline"), { recursive: true });
+    await writeFile(join(repository, "CONTEXT.md"), "# Context\n\nApproved context.\n");
+    await writeFile(join(repository, ".pipeline", "SOLUTION.md"), "# Solution\n\nApproved solution.\n");
+    await git(repository, ["init", "-b", "main"]);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const workspace = await service.prepare("project_abcdef0123456789", repository, task());
+    const baseline = (await run("git", ["rev-parse", "--verify", "HEAD"], { cwd: repository })).stdout.trim();
+    assert.equal(workspace.baseline, baseline);
+    assert.equal((await run("git", ["status", "--porcelain"], { cwd: repository })).stdout, "");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("commitless project refuses to checkpoint files outside Codkesh ownership", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-task-unowned-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(repository, { recursive: true });
+    await writeFile(join(repository, "customer-source.ts"), "export const customer = true;\n");
+    await git(repository, ["init", "-b", "main"]);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    await assert.rejects(
+      () => service.prepare("project_abcdef0123456789", repository, task()),
+      (error: unknown) => error instanceof ProjectTaskWorkspaceError && error.code === "canonical_dirty"
+    );
+    await assert.rejects(() => run("git", ["rev-parse", "--verify", "HEAD"], { cwd: repository }));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 function task(): ExecutionTask { return { id: "plan_1111111111111111", jiraIssueKey: "PIPE-1", title: "Implement bounded feature", dependsOn: [], allowedFiles: ["src/feature.js", "tests/feature.test.js"], validationProfiles: ["typecheck", "unit"], uiChanged: false, requiredCapabilities: ["chat", "structured_output"], privacyClass: "source_code", status: "queued", revision: 0, attempt: 0, assignment: null, lease: null, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Queued.", updatedAt: 1 }; }
 async function git(cwd: string, args: readonly string[]) { await run("git", [...args], { cwd }); }

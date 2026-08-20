@@ -215,6 +215,7 @@ export type ControlPlaneServerOptions = {
     backlogRun?: (projectId: string) => DeliveryPlanRun | null | Promise<DeliveryPlanRun | null>;
     generateBacklog?: (projectId: string) => DeliveryPlanRun | Promise<DeliveryPlanRun>;
     getExecution?: (projectId: string) => ProjectExecutionRecord | null | Promise<ProjectExecutionRecord | null>;
+    retryExecution?: (projectId: string, input: unknown, idempotencyKey: string) => ProjectExecutionRecord | Promise<ProjectExecutionRecord>;
     getEgressConsent?: (projectId: string) => ProjectEgressPermit | null | Promise<ProjectEgressPermit | null>;
     grantEgressConsent?: (projectId: string, input: unknown) => ProjectEgressPermit | Promise<ProjectEgressPermit>;
     revokeEgressConsent?: (projectId: string) => void | Promise<void>;
@@ -236,6 +237,7 @@ export type ControlPlaneServerOptions = {
   integrationConnections?: {
     list: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     probeGitHub: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
+    probeJira?: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     connectJira: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     disconnectJira: () => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
     connectTelegram?: (input: unknown) => PublicIntegrationConnectionCollection | Promise<PublicIntegrationConnectionCollection>;
@@ -396,6 +398,19 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           return;
         }
         sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.probeGitHub(), "live_probe"));
+        return;
+      }
+      if (url.pathname === "/api/v1/integration-connections/jira/probe" && options.integrationConnections?.probeJira) {
+        if (request.method !== "POST") {
+          sendJson(response, 405, { error: "Method is not allowed." });
+          return;
+        }
+        requireIdempotencyKey(request);
+        if (requestBodyDeclared(request)) {
+          sendJson(response, 413, { error: "Request body is not accepted." });
+          return;
+        }
+        sendJson(response, 200, withDiscoveryEvidence(await options.integrationConnections.probeJira(), "live_probe"));
         return;
       }
       if (url.pathname === "/api/v1/integration-connections/jira" && options.integrationConnections) {
@@ -1273,7 +1288,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(rescan|registration|resources|files|file-content|context|artifacts)$/
       );
       const projectLifecycleRoute = url.pathname.match(
-        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|eligibility-override|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|provider-consent)$/
+        /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/(lifecycle|lifecycle-reopen|clarifications|eligibility|eligibility-override|solution|solution-history|solution-decision|solution-run|solution-generate|backlog|backlog-run|backlog-generate|execution|execution-retry|provider-consent)$/
       );
       const infrastructureRoute = url.pathname.match(
         /^\/api\/v1\/projects\/(project_[a-f0-9]{16})\/infrastructure(?:\/(status|design|previews|approvals|executions|rollbacks|receipts)(?:\/(infra_preview_[a-f0-9]{20}))?)?$/
@@ -1429,6 +1444,13 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "execution" && options.projectLifecycles?.getExecution) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }
         sendJson(response, 200, projectExecutionRecordSchema.nullable().parse(await options.projectLifecycles.getExecution(projectLifecycleRoute[1] ?? ""))); return;
+      }
+      if (request.method === "POST" && projectLifecycleRoute?.[2] === "execution-retry" && options.projectLifecycles?.retryExecution) {
+        sendJson(response, 200, projectExecutionRecordSchema.parse(await options.projectLifecycles.retryExecution(
+          projectLifecycleRoute[1] ?? "",
+          await readJsonBody(request),
+          requireIdempotencyKey(request)
+        ))); return;
       }
       if (request.method === "GET" && projectLifecycleRoute?.[2] === "provider-consent" && options.projectLifecycles?.getEgressConsent) {
         if (requestBodyDeclared(request)) { sendJson(response, 413, { error: "Request body is not accepted." }); return; }

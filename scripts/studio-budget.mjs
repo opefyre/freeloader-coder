@@ -28,7 +28,7 @@ for (const asset of assetsByFile.values()) {
     ? "entry"
     : /transformers\.web/.test(asset.file)
       ? "ai-runtime"
-    : /(?:react|rolldown)-runtime/.test(asset.file)
+    : /(?:react|rolldown|markdown)-runtime/.test(asset.file)
       ? "shared"
       : "feature";
   assets.push({ file: asset.file, bytes: measurement.size, kind });

@@ -22,7 +22,7 @@ export class ProjectTaskWorkspaceService {
   async prepare(projectId: string, canonicalRoot: string, task: ExecutionTask): Promise<PreparedTaskWorkspace> {
     const root = await realpath(canonicalRoot);
     await assertRepository(root);
-    const baseline = (await git(root, ["rev-parse", "--verify", "HEAD"])).trim();
+    const baseline = await ensureBaseline(root);
     if ((await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0) throw new ProjectTaskWorkspaceError("canonical_dirty", "Commit or stash canonical changes before autonomous implementation.");
     const authorityDigest = hash(JSON.stringify({ projectId, taskId: task.id, baseline, allowedFiles: [...task.allowedFiles].sort(), validationProfiles: [...task.validationProfiles].sort() }));
     const workspaceRoot = resolve(this.stateDirectory, "project-task-worktrees");
@@ -146,6 +146,30 @@ export class ProjectTaskWorkspaceService {
 export class ProjectTaskWorkspaceError extends Error { constructor(readonly code: "repository_invalid" | "canonical_dirty" | "workspace_conflict" | "source_unsupported" | "operation_denied" | "stale_source" | "validation_unavailable" | "integration_conflict", message: string) { super(message); } }
 
 async function assertRepository(root: string) { const top = await realpath((await git(root, ["rev-parse", "--show-toplevel"])).trim()); if (top !== root) throw new ProjectTaskWorkspaceError("repository_invalid", "Selected folder is not the canonical Git repository root."); }
+async function ensureBaseline(root: string) {
+  const existing = await optionalHead(root);
+  if (existing) return existing;
+  const changed = parseChanged(await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]));
+  if (changed.length === 0) throw new ProjectTaskWorkspaceError("repository_invalid", "The new project has no approved files for its first Git checkpoint.");
+  if (changed.some((path) => !isCodkeshOwnedBaselinePath(path))) {
+    throw new ProjectTaskWorkspaceError("canonical_dirty", "The commitless project contains files Codkesh does not own. Review and checkpoint them before autonomous implementation.");
+  }
+  await git(root, ["add", "--", ...changed]);
+  await git(root, ["-c", "user.name=Codkesh", "-c", "user.email=codkesh@localhost", "commit", "--no-verify", "-m", "chore: save approved Codkesh baseline"]);
+  const baseline = await optionalHead(root);
+  if (!baseline || (await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0) {
+    throw new ProjectTaskWorkspaceError("repository_invalid", "Codkesh could not verify the new project's first Git checkpoint.");
+  }
+  return baseline;
+}
+async function optionalHead(root: string) {
+  try { return (await run("git", ["rev-parse", "--verify", "HEAD"], root, GIT_TIMEOUT_MS)).stdout.trim() || null; }
+  catch { return null; }
+}
+function isCodkeshOwnedBaselinePath(path: string) {
+  const artifacts = new Set(["CONTEXT.md", "DECISIONS.md", "DELIVERY-PLAN.md", "DESIGN.md", "INFRA.md", "MEMORY.md", "OPS-RULES.md", "PRODUCT.md", "RESEARCH.md", "SECURITY.md", "STATUS.md"]);
+  return artifacts.has(path) || path.startsWith(".pipeline/") || path.startsWith(".codkesh/artifacts/");
+}
 async function approvedTarget(rootValue: string, path: string, creating: boolean) {
   if (!path || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw new ProjectTaskWorkspaceError("operation_denied", "Task path is unsafe.");
   const root = await realpath(rootValue);

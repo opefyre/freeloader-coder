@@ -14,7 +14,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          return id.includes("/node_modules/react") ? "react-runtime" : undefined;
+          if (/\/node_modules\/(?:react|react-dom|scheduler)\//.test(id)) return "react-runtime";
+          if (/\/node_modules\/(?:react-markdown|remark-|unified|vfile|mdast-|micromark|hast-|unist-|property-information|space-separated-tokens|comma-separated-tokens|decode-named-character-reference|devlop|trough|bail|is-plain-obj|longest-streak|markdown-table|zwitch)(?:\/|-)/.test(id)) return "markdown-runtime";
+          return undefined;
         }
       }
     }

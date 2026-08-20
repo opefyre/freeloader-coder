@@ -4,6 +4,7 @@ import test from "node:test";
 import { buildDecisionSnapshot } from "../apps/core/src/decision-inbox.js";
 import type { AutonomySnapshot } from "../packages/runtime/src/autonomy.js";
 import type { LiveOperationsSnapshot } from "../packages/runtime/src/live-operations.js";
+import type { ProjectExecutionRecord } from "../packages/orchestration/src/project-execution.js";
 
 const now = 1_800_000_000_000;
 const projectId = "project_0123456789abcdef";
@@ -91,4 +92,29 @@ test("reviewed solutions appear as digest-backed owner approvals", () => {
   assert.equal(snapshot.items[0]?.source, "project_solution");
   assert.equal(snapshot.items[0]?.category, "approval");
   assert.match(snapshot.items[0]?.evidence.join(" ") ?? "", /2 independent reviewers/);
+});
+
+test("delivery execution failures replace superseded request prompts with a current owner action", () => {
+  const lifecycle = {
+    schemaVersion: 1 as const, projectId, stage: "delivery" as const, revision: 7, mission: "Build a portal.", assessment: null,
+    questions: [], answers: [], artifacts: [], designApproval: null, designFeedback: [], jiraEpicId: "PIPE-1", blockedReason: null, updatedAt: now - 10,
+  };
+  const execution: ProjectExecutionRecord = {
+    schemaVersion: 1, projectId, planDigest: "c".repeat(64), state: "needs_user", revision: 4, updatedAt: now - 5,
+    tasks: [{
+      id: "plan_0000000000000004", jiraIssueKey: "PIPE-22", title: "Build foundation", dependsOn: [], allowedFiles: ["package.json"], validationProfiles: ["unit"], uiChanged: false,
+      requiredCapabilities: ["chat"], privacyClass: "source_code", status: "needs_user", revision: 3, attempt: 0,
+      assignment: { providerId: "gemini", modelId: "free", deviceId: "provider:gemini", selectedAt: now - 20, reasons: ["Free route selected."] }, lease: null,
+      implementationEvidence: ["d".repeat(64)], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null,
+      safeMessage: "Validation environment needs repair.", updatedAt: now - 5,
+    }],
+  };
+  const staleAutonomy = { ...autonomy, recommendations: [{ ...autonomy.recommendations[0]!, boundary: "approve_request" as const }], leases: [] };
+  const snapshot = buildDecisionSnapshot({ live: { ...live, providers: [], recentEvents: [] }, autonomy: staleAutonomy, lifecycles: [lifecycle], executions: [execution], query: { range: "all" }, now });
+  assert.equal(snapshot.items.length, 1);
+  assert.equal(snapshot.items[0]?.title, "PIPE-22 needs owner attention");
+  assert.equal(snapshot.items[0]?.priority, "high");
+  assert.equal(snapshot.items[0]?.projectId, projectId);
+  assert.equal(snapshot.items[0]?.reference.path, `/projects?project=${projectId}`);
+  assert.doesNotMatch(JSON.stringify(snapshot), /Approve the grounded plan/);
 });

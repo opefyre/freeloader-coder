@@ -7,6 +7,7 @@ import type { LocalProjectRegistry } from "./local-project-registry.js";
 import type { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
 import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { CredentialVault } from "../../../packages/providers/src/lifecycle.js";
+import { resolveCurrentJiraCredential } from "./jira-oauth-credential.js";
 
 export const JIRA_CREDENTIAL_REFERENCE = "vault:providers/jira/default";
 
@@ -40,7 +41,7 @@ export class JiraDeliveryService {
     private readonly projects: Pick<LocalProjectRegistry, "list">,
     private readonly plans: Pick<ProjectDeliveryPlanService, "readDraft">,
     private readonly lifecycles: Pick<ProjectLifecycleService, "activateDelivery">,
-    private readonly vault: Pick<CredentialVault, "read">,
+    private readonly vault: Pick<CredentialVault, "read"> & Partial<Pick<CredentialVault, "write">>,
     private readonly fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now
   ) {
@@ -55,7 +56,7 @@ export class JiraDeliveryService {
     const [{ draft, document }, collection, stored] = await Promise.all([
       this.plans.readDraft(projectId),
       this.projects.list(),
-      this.vault.read(JIRA_CREDENTIAL_REFERENCE),
+      resolveCurrentJiraCredential(this.vault, this.fetcher, this.now),
     ]);
     if (!stored) throw new JiraDeliveryNeedsUserError("Connect Jira in Settings before creating the delivery plan.");
     const project = collection.projects.find((candidate) => candidate.id === projectId);
@@ -63,10 +64,11 @@ export class JiraDeliveryService {
     const binding = project.resources?.find((resource) => resource.kind === "jira_project" && resource.role === "primary") ?? project.resources?.find((resource) => resource.kind === "jira_project");
     if (!binding?.url) throw new JiraDeliveryNeedsUserError("Choose a Jira project for this project before delivery begins.");
     const credential = parseCredential(stored);
-    const selected = parseSelectedProject(binding.url, binding.resourceId, credential.siteUrl);
+    const access = await resolveJiraAccess(credential, binding.url, this.fetcher);
+    const selected = parseSelectedProject(binding.url, binding.resourceId, access.siteUrl);
     let receipt = await this.#initialReceipt(projectId, document.digest, selected.projectId);
     if (receipt.completed) return receipt;
-    const client = new JiraClient(credential, this.fetcher);
+    const client = new JiraClient(access, this.fetcher);
     const catalog = await client.catalog(selected.projectId);
     for (const item of orderedItems(draft)) {
       if (receipt.issues[item.id]) continue;
@@ -89,7 +91,7 @@ export class JiraDeliveryService {
           fieldCatalog: catalog.fields[item.type],
         });
       }
-      receipt = await this.#save({ ...receipt, issues: { ...receipt.issues, [item.id]: { planItemId: item.id, issueId: issue.id, issueKey: issue.key, url: `${credential.siteUrl}/browse/${encodeURIComponent(issue.key)}` } }, updatedAt: this.now() });
+      receipt = await this.#save({ ...receipt, issues: { ...receipt.issues, [item.id]: { planItemId: item.id, issueId: issue.id, issueKey: issue.key, url: `${access.siteUrl}/browse/${encodeURIComponent(issue.key)}` } }, updatedAt: this.now() });
     }
     for (const item of draft.items) {
       if ((item.type === "task" || (item.type === "story" && !catalog.fields.story.parent)) && item.parentId) receipt = await this.#ensureLink(client, receipt, "Relates", item.id, item.parentId);
@@ -146,8 +148,8 @@ export class JiraDeliveryNeedsUserError extends Error {}
 
 class JiraClient {
   readonly #headers: Record<string, string>;
-  constructor(private readonly credential: JiraCredential, private readonly fetcher: typeof fetch) {
-    this.#headers = { Accept: "application/json", "Content-Type": "application/json", Authorization: `Basic ${Buffer.from(`${credential.email}:${credential.apiToken}`, "utf8").toString("base64")}` };
+  constructor(private readonly access: JiraAccess, private readonly fetcher: typeof fetch) {
+    this.#headers = { Accept: "application/json", "Content-Type": "application/json", Authorization: access.authorization };
   }
 
   async catalog(projectId: string) {
@@ -164,9 +166,9 @@ class JiraClient {
     })) as Record<DeliveryPlanDraft["items"][number]["type"], string>;
     const metadata = await Promise.all((["epic", "story", "task", "subtask"] as const).map(async (type) => {
       const response = await this.json(`/rest/api/3/issue/createmeta/${encodeURIComponent(projectId)}/issuetypes/${encodeURIComponent(issueTypeIds[type])}?maxResults=200`);
-      const fields = response && typeof response === "object" && !Array.isArray(response) && (response as Record<string, unknown>).fields;
-      if (!fields || typeof fields !== "object" || Array.isArray(fields)) throw new JiraDeliveryNeedsUserError(`Jira did not return create fields for ${type} issues.`);
-      return [type, parseCreateFields(fields as Record<string, unknown>)] as const;
+      const fields = normalizeCreateFields(response && typeof response === "object" && !Array.isArray(response) ? (response as Record<string, unknown>).fields : null);
+      if (!fields) throw new JiraDeliveryNeedsUserError(`Jira did not return create fields for ${type} issues.`);
+      return [type, parseCreateFields(fields)] as const;
     }));
     const fields = Object.fromEntries(metadata) as Record<DeliveryPlanDraft["items"][number]["type"], JiraCreateFields>;
     for (const type of ["epic", "story", "task", "subtask"] as const) if (!fields[type].assignee) throw new JiraDeliveryNeedsUserError(`Jira does not allow assigning ${type} issues to the connected account.`);
@@ -204,7 +206,7 @@ class JiraClient {
   }
 
   async json(path: string, init: RequestInit = {}, emptyOkay = false): Promise<any> {
-    const response = await this.fetcher(`${this.credential.siteUrl}${path}`, { ...init, headers: this.#headers, redirect: "error" });
+    const response = await this.fetcher(`${this.access.apiBase}${path}`, { ...init, headers: this.#headers, redirect: "error" });
     if (!response.ok) throw new JiraDeliveryNeedsUserError(`Jira rejected delivery synchronization (${response.status}). Review project permissions and fields.`);
     const text = await response.text();
     if (text.length > 2_000_000) throw new Error("Jira response is too large.");
@@ -213,13 +215,28 @@ class JiraClient {
   }
 }
 
-type JiraCredential = { siteUrl: string; email: string; apiToken: string };
+type JiraCredential = { kind: "oauth"; accessToken: string } | { kind: "basic"; siteUrl: string; email: string; apiToken: string };
+type JiraAccess = { siteUrl: string; apiBase: string; authorization: string };
 function parseCredential(value: string): JiraCredential {
   const parsed = JSON.parse(value) as Record<string, unknown>;
+  if (typeof parsed.accessToken === "string" && parsed.accessToken.length >= 8) return { kind: "oauth", accessToken: parsed.accessToken };
   if (typeof parsed.siteUrl !== "string" || typeof parsed.email !== "string" || typeof parsed.apiToken !== "string") throw new Error("Stored Jira credential is invalid.");
   const siteUrl = new URL(parsed.siteUrl);
   if (siteUrl.protocol !== "https:" || !siteUrl.hostname.endsWith(".atlassian.net") || siteUrl.port) throw new Error("Stored Jira site is invalid.");
-  return { siteUrl: siteUrl.origin, email: parsed.email, apiToken: parsed.apiToken };
+  return { kind: "basic", siteUrl: siteUrl.origin, email: parsed.email, apiToken: parsed.apiToken };
+}
+async function resolveJiraAccess(credential: JiraCredential, selectedUrl: string, fetcher: typeof fetch): Promise<JiraAccess> {
+  if (credential.kind === "basic") return { siteUrl: credential.siteUrl, apiBase: credential.siteUrl, authorization: `Basic ${Buffer.from(`${credential.email}:${credential.apiToken}`, "utf8").toString("base64")}` };
+  const selectedOrigin = new URL(selectedUrl).origin;
+  const response = await fetcher("https://api.atlassian.com/oauth/token/accessible-resources", { headers: { Accept: "application/json", Authorization: `Bearer ${credential.accessToken}` }, redirect: "error" });
+  const text = await response.text();
+  if (!response.ok || text.length > 1_000_000) throw new JiraDeliveryNeedsUserError("Jira OAuth site discovery failed safely.");
+  let body: unknown;
+  try { body = JSON.parse(text); } catch { throw new JiraDeliveryNeedsUserError("Jira OAuth site discovery returned invalid data."); }
+  if (!Array.isArray(body)) throw new JiraDeliveryNeedsUserError("Jira OAuth site discovery returned invalid data.");
+  const site = body.find((item) => item && typeof item === "object" && typeof (item as Record<string, unknown>).id === "string" && typeof (item as Record<string, unknown>).url === "string" && new URL(String((item as Record<string, unknown>).url)).origin === selectedOrigin) as Record<string, unknown> | undefined;
+  if (!site) throw new JiraDeliveryNeedsUserError("The selected Jira project is not accessible to the connected Jira account.");
+  return { siteUrl: selectedOrigin, apiBase: `https://api.atlassian.com/ex/jira/${encodeURIComponent(String(site.id))}`, authorization: `Bearer ${credential.accessToken}` };
 }
 function parseSelectedProject(urlValue: string, projectId: string, siteUrl: string) {
   const url = new URL(urlValue);
@@ -232,6 +249,18 @@ function orderedItems(plan: DeliveryPlanDraft) { const rank = { epic: 0, story: 
 function parseIssue(value: unknown) { if (!value || typeof value !== "object") throw new Error("Jira issue response is invalid."); const issue = value as Record<string, unknown>; if (typeof issue.id !== "string" || typeof issue.key !== "string") throw new Error("Jira issue response is incomplete."); const fields = issue.fields && typeof issue.fields === "object" ? issue.fields as Record<string, unknown> : null; return { id: issue.id, key: issue.key, summary: typeof fields?.summary === "string" ? fields.summary : null }; }
 function escapeJql(value: string) { return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"'); }
 type JiraCreateFields = { assignee: boolean; parent: boolean; storyPoints: string | null; epicName: string | null; priority: readonly { id: string; name: string }[] | null };
+function normalizeCreateFields(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (!Array.isArray(value)) return null;
+  const fields: Record<string, unknown> = {};
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const field = raw as Record<string, unknown>;
+    const id = typeof field.fieldId === "string" ? field.fieldId : typeof field.key === "string" ? field.key : null;
+    if (id) fields[id] = field;
+  }
+  return fields;
+}
 function parseCreateFields(fields: Record<string, unknown>): JiraCreateFields {
   let storyPoints: string | null = null;
   let epicName: string | null = null;

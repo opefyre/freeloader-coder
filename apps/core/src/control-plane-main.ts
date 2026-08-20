@@ -197,6 +197,15 @@ const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
     await executionCoordinator.schedule(projectId);
   }
 );
+const wakeQueuedProjectExecutions = async () => {
+  const projects = await localProjects.list();
+  for (const project of projects.projects) {
+    const execution = await projectExecutions.get(project.id);
+    if (execution?.state === "running" && execution.tasks.some((task) => task.status === "queued")) {
+      await executionCoordinator.schedule(project.id);
+    }
+  }
+};
 const lifecycleCoordinator = new ProjectLifecycleCoordinator(
   stateDirectory,
   projectLifecycles,
@@ -311,8 +320,14 @@ async function attentionInputs() {
     providers: await providerConnectionService.list(),
   });
   const autonomySnapshot = await autonomy.snapshot();
-  const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles: await projectLifecycles.list(), query: { range: "all" } });
+  const [lifecycles, executions] = await Promise.all([projectLifecycles.list(), executionRecords()]);
+  const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles, executions, query: { range: "all" } });
   return { live, decisions };
+}
+
+async function executionRecords() {
+  const projects = await localProjects.list();
+  return (await Promise.all(projects.projects.map((project) => projectExecutions.get(project.id)))).filter((record) => record !== null);
 }
 
 async function setupObservation() {
@@ -407,6 +422,7 @@ const controlPlane = createControlPlaneServer({
       }),
       autonomy: await autonomy.snapshot(),
       lifecycles: await projectLifecycles.list(),
+      executions: await executionRecords(),
       query,
     }),
   search: async (query) => {
@@ -416,7 +432,7 @@ const controlPlane = createControlPlaneServer({
       providers: await providerConnectionService.list(),
     });
     const autonomySnapshot = await autonomy.snapshot();
-    const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles: await projectLifecycles.list(), query: { range: "all" } });
+    const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles: await projectLifecycles.list(), executions: await executionRecords(), query: { range: "all" } });
     return buildUniversalSearchSnapshot({
       live,
       activity: buildActivitySnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } }),
@@ -453,8 +469,16 @@ const controlPlane = createControlPlaneServer({
   },
   providerConnections: {
     list: () => providerConnectionService.list(),
-    connect: (input) => providerConnectionService.connect(input),
-    reProbe: (connectionId) => providerConnectionService.reProbe(connectionId),
+    connect: async (input) => {
+      const result = await providerConnectionService.connect(input);
+      if (result.connection?.admission.admitted) await wakeQueuedProjectExecutions();
+      return result;
+    },
+    reProbe: async (connectionId) => {
+      const result = await providerConnectionService.reProbe(connectionId);
+      if (result.connection?.admission.admitted) await wakeQueuedProjectExecutions();
+      return result;
+    },
     replaceModel: (connectionId, input) =>
       providerConnectionService.replaceModel(connectionId, input),
     revoke: (connectionId) => providerConnectionService.revoke(connectionId),
@@ -529,6 +553,13 @@ const controlPlane = createControlPlaneServer({
     backlogRun: (projectId) => deliveryPlanCoordinator.get(projectId),
     generateBacklog: (projectId) => deliveryPlanCoordinator.schedule(projectId, { forceDeferredRetry: true }),
     getExecution: (projectId) => projectExecutions.get(projectId),
+    retryExecution: async (projectId, input) => {
+      await projectExecutions.authorizeEnvironmentRetry(projectId, input);
+      await executionCoordinator.schedule(projectId);
+      const execution = await projectExecutions.get(projectId);
+      if (!execution) throw new Error("Project execution disappeared after retry authorization.");
+      return execution;
+    },
     getEgressConsent: (projectId) => projectEgress.get(projectId),
     grantEgressConsent: (projectId, input) => projectEgress.grant(projectId, input),
     revokeEgressConsent: (projectId) => projectEgress.revoke(projectId),
@@ -555,6 +586,7 @@ const controlPlane = createControlPlaneServer({
   integrationConnections: {
     list: () => integrationConnections.list(),
     probeGitHub: () => integrationConnections.probeGitHub(),
+    probeJira: () => integrationConnections.probeJira(),
     connectJira: (input) => integrationConnections.connectJira(input),
     disconnectJira: () => integrationConnections.disconnectJira(),
     connectTelegram: (input) => integrationConnections.connectTelegram(input),

@@ -74,6 +74,26 @@ test("failed validation permits only bounded healing and expired outcomes requir
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner can resume a pre-implementation environment failure after repair", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-environment-retry-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    const interrupted = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "The new repository has no baseline commit.");
+    const retried = await service.authorizeEnvironmentRetry(projectId, {
+      taskId,
+      expectedRevision: interrupted.revision,
+      rationale: "The verified repository baseline repair is installed.",
+    });
+    assert.equal(retried.status, "queued");
+    assert.equal(retried.assignment, null);
+    assert.equal((await service.get(projectId))?.state, "running");
+    await assert.rejects(() => service.authorizeEnvironmentRetry(projectId, { taskId, expectedRevision: interrupted.revision, rationale: "Retry this repaired environment once more." }), /evidence changed/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("protected paths are rejected before execution and reviewer dissent cannot integrate", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-guards-"));
   try {

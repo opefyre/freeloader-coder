@@ -13,6 +13,7 @@ import {
 import type { AutonomySnapshot } from "../../../packages/runtime/src/autonomy.js";
 import type { LiveOperationsSnapshot } from "../../../packages/runtime/src/live-operations.js";
 import type { ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
+import type { ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
 
 const priorityWeight: Record<DecisionPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
@@ -20,6 +21,7 @@ export function buildDecisionSnapshot(input: {
   live: LiveOperationsSnapshot;
   autonomy: AutonomySnapshot;
   lifecycles?: readonly ProjectLifecycleRecord[];
+  executions?: readonly ProjectExecutionRecord[];
   query?: Partial<DecisionQuery>;
   now?: number;
 }): DecisionSnapshot {
@@ -28,8 +30,9 @@ export function buildDecisionSnapshot(input: {
   const canonical = deduplicate([
     ...input.live.recentEvents.flatMap((event) => fromLiveEvent(event, now)),
     ...input.live.providers.flatMap((provider) => fromProvider(provider, now)),
-    ...input.autonomy.recommendations.flatMap((recommendation) => fromRecommendation(recommendation, now)),
+    ...input.autonomy.recommendations.flatMap((recommendation) => supersededByLifecycle(recommendation, input.lifecycles ?? []) ? [] : fromRecommendation(recommendation, now)),
     ...(input.lifecycles ?? []).flatMap((lifecycle) => fromLifecycle(lifecycle, now)),
+    ...(input.executions ?? []).flatMap((execution) => fromExecution(execution, now)),
     ...input.autonomy.leases.filter((lease) => lease.expiresAt <= now).map((lease) => decision({
       seed: `lease:${lease.requestId}:${lease.expiresAt}`,
       category: "recovery",
@@ -126,6 +129,38 @@ export function buildDecisionSnapshot(input: {
     },
     items,
   });
+}
+
+function fromExecution(record: ProjectExecutionRecord, now: number): DecisionItem[] {
+  return record.tasks.filter((task) => task.status === "needs_user" || task.status === "quarantined").map((task) => decision({
+    seed: `execution:${record.projectId}:${task.id}:${task.revision}:${task.status}`,
+    category: task.status === "quarantined" ? "failure" : "recovery",
+    priority: task.status === "quarantined" ? "critical" : "high",
+    owner: "user",
+    state: task.status === "quarantined" ? "unavailable" : "open",
+    title: `${task.jiraIssueKey} needs owner attention`,
+    reason: task.safeMessage,
+    nextAction: task.status === "quarantined" ? "Review the quarantined evidence" : "Review the failure and available recovery options",
+    authorityBoundary: task.status === "quarantined" ? "review_quarantine" : "review_execution_failure",
+    effect: "local_read",
+    reversible: true,
+    observedAt: task.updatedAt,
+    deadlineAt: null,
+    retryAt: null,
+    projectId: record.projectId,
+    requestId: null,
+    providerId: task.assignment?.providerId ?? null,
+    source: "system_observation",
+    sourceRecordId: `${record.projectId}:${task.id}`,
+    evidence: [`Jira issue ${task.jiraIssueKey}`, `Execution revision ${task.revision}`, `${task.implementationEvidence.length} implementation evidence record(s)`, `${task.validations.length} validation record(s)`],
+    reference: { surface: "projects", path: `/projects?project=${encodeURIComponent(record.projectId)}`, label: "Open project" },
+  }, now));
+}
+
+function supersededByLifecycle(recommendation: AutonomySnapshot["recommendations"][number], lifecycles: readonly ProjectLifecycleRecord[]): boolean {
+  if (!recommendation.projectId || !["approve_request", "provide_input"].includes(recommendation.boundary)) return false;
+  const lifecycle = lifecycles.find((item) => item.projectId === recommendation.projectId);
+  return lifecycle ? !["intake", "context", "clarification"].includes(lifecycle.stage) : false;
 }
 
 function fromLifecycle(record: ProjectLifecycleRecord, now: number): DecisionItem[] {

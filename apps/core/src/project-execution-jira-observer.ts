@@ -8,6 +8,7 @@ import type { ExecutionTask, ProjectExecutionRecord } from "../../../packages/or
 import type { DeliveryPlanDraft } from "../../../packages/orchestration/src/delivery-plan.js";
 import { assertJiraClosureEligible, JiraClosurePolicyError, type JiraClosureEvidence } from "../../../packages/orchestration/src/jira-closure-policy.js";
 import { JIRA_CREDENTIAL_REFERENCE } from "./jira-delivery-service.js";
+import { resolveCurrentJiraCredential } from "./jira-oauth-credential.js";
 
 const receiptSchema = z.strictObject({
   marker: z.string().regex(/^pipeline_exec_[a-f0-9]{24}$/),
@@ -32,19 +33,19 @@ export class ProjectExecutionJiraObserver {
     private readonly executions: { get(projectId: string): Promise<ProjectExecutionRecord | null> },
     private readonly delivery: { get(projectId: string): Promise<DeliveryReceipt | null> },
     private readonly plans: { readDraft(projectId: string): Promise<{ draft: DeliveryPlanDraft }> },
-    private readonly vault: Pick<CredentialVault, "read">,
+    private readonly vault: Pick<CredentialVault, "read"> & Partial<Pick<CredentialVault, "write">>,
     private readonly fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now
   ) { this.#path = resolve(stateDirectory, "project-execution-jira-receipts.json"); }
 
   async synchronize(projectId: string) {
     const [execution, delivery, plan, secret] = await Promise.all([
-      this.executions.get(projectId), this.delivery.get(projectId), this.plans.readDraft(projectId), this.vault.read(JIRA_CREDENTIAL_REFERENCE),
+      this.executions.get(projectId), this.delivery.get(projectId), this.plans.readDraft(projectId), resolveCurrentJiraCredential(this.vault, this.fetcher, this.now),
     ]);
     if (!execution || !delivery?.completed) return { synchronized: 0, pending: 0 };
     if (!secret) throw new ProjectExecutionJiraObserverError("jira_disconnected", "Reconnect Jira to publish implementation evidence.");
     const credential = parseCredential(secret);
-    const client = new ExecutionJiraClient(credential, this.fetcher);
+    const client = new ExecutionJiraClient(await resolveExecutionJiraAccess(credential, this.fetcher), this.fetcher);
     let synchronized = 0;
     for (const task of execution.tasks) {
       if (task.revision === 0) continue;
@@ -86,7 +87,7 @@ export class ProjectExecutionJiraObserverError extends Error { constructor(reado
 
 class ExecutionJiraClient {
   readonly #headers: Record<string, string>;
-  constructor(private readonly credential: { siteUrl: string; email: string; apiToken: string }, private readonly fetcher: typeof fetch) { this.#headers = { Accept: "application/json", "Content-Type": "application/json", Authorization: `Basic ${Buffer.from(`${credential.email}:${credential.apiToken}`, "utf8").toString("base64")}` }; }
+  constructor(private readonly access: { apiBase: string; authorization: string }, private readonly fetcher: typeof fetch) { this.#headers = { Accept: "application/json", "Content-Type": "application/json", Authorization: access.authorization }; }
   async hasMarker(issueKey: string, marker: string) { const response = await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment?maxResults=100&orderBy=-created`); return Array.isArray(response.comments) && response.comments.some((comment: unknown) => JSON.stringify(comment).includes(marker)); }
   async comment(issueKey: string, marker: string, summary: string) { await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`, { method: "POST", body: JSON.stringify({ body: document([summary, marker]) }) }); }
   async ensureStatus(issueKey: string, desired: string) {
@@ -104,7 +105,7 @@ class ExecutionJiraClient {
     const observed = await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=status`);
     return String(observed.fields?.status?.name ?? "").toLowerCase() === desired.toLowerCase();
   }
-  async json(path: string, init: RequestInit = {}, emptyOkay = false): Promise<any> { const response = await this.fetcher(`${this.credential.siteUrl}${path}`, { ...init, headers: this.#headers, redirect: "error" }); if (!response.ok) throw new ProjectExecutionJiraObserverError("jira_rejected", `Jira rejected execution synchronization (${response.status}).`); const text = await response.text(); if (text.length > 2_000_000) throw new ProjectExecutionJiraObserverError("response_too_large", "Jira response is too large."); if (!text && emptyOkay) return {}; try { return JSON.parse(text); } catch { throw new ProjectExecutionJiraObserverError("invalid_response", "Jira returned invalid JSON."); } }
+  async json(path: string, init: RequestInit = {}, emptyOkay = false): Promise<any> { const response = await this.fetcher(`${this.access.apiBase}${path}`, { ...init, headers: this.#headers, redirect: "error" }); if (!response.ok) throw new ProjectExecutionJiraObserverError("jira_rejected", `Jira rejected execution synchronization (${response.status}).`); const text = await response.text(); if (text.length > 2_000_000) throw new ProjectExecutionJiraObserverError("response_too_large", "Jira response is too large."); if (!text && emptyOkay) return {}; try { return JSON.parse(text); } catch { throw new ProjectExecutionJiraObserverError("invalid_response", "Jira returned invalid JSON."); } }
 }
 
 function jiraStatus(status: ExecutionTask["status"]): string | null { if (["running", "validating", "healing"].includes(status)) return "In Progress"; if (["reviewing", "integrating"].includes(status)) return "In Review"; if (status === "completed") return "Done"; return null; }
@@ -131,7 +132,9 @@ function closureCandidate(task: ExecutionTask, criteria: readonly string[]) {
     closureComment: evidenceSummary(task), children: [], priorTransitions: [],
   };
 }
-function parseCredential(value: string) { let parsed: Record<string, unknown>; try { parsed = JSON.parse(value) as Record<string, unknown>; } catch { throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); } if (typeof parsed.siteUrl !== "string" || typeof parsed.email !== "string" || typeof parsed.apiToken !== "string") throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); const site = new URL(parsed.siteUrl); if (site.protocol !== "https:" || !site.hostname.endsWith(".atlassian.net") || site.port) throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira site is invalid."); return { siteUrl: site.origin, email: parsed.email, apiToken: parsed.apiToken }; }
+type ExecutionJiraCredential = { kind: "oauth"; accessToken: string } | { kind: "basic"; siteUrl: string; email: string; apiToken: string };
+function parseCredential(value: string): ExecutionJiraCredential { let parsed: Record<string, unknown>; try { parsed = JSON.parse(value) as Record<string, unknown>; } catch { throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); } if (typeof parsed.accessToken === "string" && parsed.accessToken.length >= 8) return { kind: "oauth", accessToken: parsed.accessToken }; if (typeof parsed.siteUrl !== "string" || typeof parsed.email !== "string" || typeof parsed.apiToken !== "string") throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira credential is invalid."); const site = new URL(parsed.siteUrl); if (site.protocol !== "https:" || !site.hostname.endsWith(".atlassian.net") || site.port) throw new ProjectExecutionJiraObserverError("credential_invalid", "Stored Jira site is invalid."); return { kind: "basic", siteUrl: site.origin, email: parsed.email, apiToken: parsed.apiToken }; }
+async function resolveExecutionJiraAccess(credential: ExecutionJiraCredential, fetcher: typeof fetch) { if (credential.kind === "basic") return { apiBase: credential.siteUrl, authorization: `Basic ${Buffer.from(`${credential.email}:${credential.apiToken}`, "utf8").toString("base64")}` }; const response = await fetcher("https://api.atlassian.com/oauth/token/accessible-resources", { headers: { Accept: "application/json", Authorization: `Bearer ${credential.accessToken}` }, redirect: "error" }); const text = await response.text(); if (!response.ok || text.length > 1_000_000) throw new ProjectExecutionJiraObserverError("site_discovery_failed", "Jira OAuth site discovery failed safely."); let body: unknown; try { body = JSON.parse(text); } catch { throw new ProjectExecutionJiraObserverError("site_discovery_invalid", "Jira OAuth site discovery returned invalid data."); } if (!Array.isArray(body) || body.length !== 1 || !body[0] || typeof body[0] !== "object" || typeof (body[0] as Record<string, unknown>).id !== "string") throw new ProjectExecutionJiraObserverError("site_ambiguous", "Choose one accessible Jira site before publishing execution evidence."); return { apiBase: `https://api.atlassian.com/ex/jira/${encodeURIComponent(String((body[0] as Record<string, unknown>).id))}`, authorization: `Bearer ${credential.accessToken}` }; }
 function document(lines: readonly string[]) { return { type: "doc", version: 1, content: lines.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) }; }
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
 async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }

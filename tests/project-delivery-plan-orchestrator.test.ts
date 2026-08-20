@@ -10,6 +10,7 @@ const projectId = "project_0123456789abcdef";
 const contextDigest = "a".repeat(64);
 const solutionDigest = "b".repeat(64);
 const lifecycle = { schemaVersion: 1 as const, projectId, stage: "backlog_design" as const, revision: 6, mission: "Build the complete product.", assessment: { classification: "new_product" as const, rationale: ["New product."], affectedDomains: ["product"], estimatedDeveloperHours: 80, requiresArchitectureDecision: true, confidence: 0.95 }, questions: [], answers: [], artifacts: [], designApproval: { artifactDigest: solutionDigest, decision: "approved" as const, decidedAt: 10 }, designFeedback: [], jiraEpicId: null, blockedReason: null, updatedAt: 10 };
+const featureLifecycle = { ...lifecycle, assessment: { ...lifecycle.assessment, classification: "major_feature" as const } };
 const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "non_personal_test" as const, providerIds: ["groq"], approvedAt: 1, expiresAt: 100_000 };
 
 test("approved major solution becomes an independently reviewed backlog artifact", async () => {
@@ -21,7 +22,7 @@ test("approved major solution becomes an independently reviewed backlog artifact
   } };
   let published: unknown;
   const orchestrator = new ProjectDeliveryPlanOrchestrator(
-    { get: async () => lifecycle, eligibility: async () => ({ schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: lifecycle.assessment, evidence: ["New product."], alternatives: [], override: null, decidedAt: 1 }), publishBacklog: async (_id, artifact) => { published = artifact; return { ...lifecycle, stage: "backlog_qa", revision: 7 }; } },
+    { get: async () => featureLifecycle, eligibility: async () => ({ schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: featureLifecycle.assessment, evidence: ["Major feature."], alternatives: [], override: null, decidedAt: 1 }), publishBacklog: async (_id, artifact) => { published = artifact; return { ...featureLifecycle, stage: "backlog_qa", revision: 7 }; } },
     { read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); }, publish: async (_id, draft) => ({ kind: "backlog", projectRelativePath: ".pipeline/BACKLOG.md", digest: "c".repeat(64), revision: (draft as { revision: number }).revision, createdAt: 20, citations: ["local://CONTEXT.md"], reviewerIds: (draft as { reviews: Array<{ reviewerId: string }> }).reviews.map((review) => review.reviewerId), qaPassed: true }) },
     { readVerified: async () => ({ digest: contextDigest, markdown: "# Context\n\nVerified." }) },
     { read: async () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: solutionDigest, markdown: "# Solution\n\nApproved." }) },
@@ -35,7 +36,7 @@ test("approved major solution becomes an independently reviewed backlog artifact
 
 test("backlog planning fails closed on reviewer dissent, planner self-review, and evidence mismatch", async () => {
   const run = async (mismatch: boolean, dissent: boolean, selfReview = false) => new ProjectDeliveryPlanOrchestrator(
-    { get: async () => lifecycle, eligibility: async () => ({ schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: lifecycle.assessment, evidence: ["New product."], alternatives: [], override: null, decidedAt: 1 }), publishBacklog: async () => { throw new Error("must not publish"); } },
+    { get: async () => featureLifecycle, eligibility: async () => ({ schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: featureLifecycle.assessment, evidence: ["Major feature."], alternatives: [], override: null, decidedAt: 1 }), publishBacklog: async () => { throw new Error("must not publish"); } },
     { read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); }, publish: async () => { throw new Error("must not publish"); } },
     { readVerified: async () => ({ digest: contextDigest, markdown: "context" }) },
     { read: async () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: solutionDigest, markdown: "solution" }) },
@@ -64,8 +65,13 @@ test("free-provider planning exhaustion falls back to a complete local plan and 
   const result = await orchestrator.run(projectId);
   assert.equal(result.stage, "backlog_qa");
   assert.deepEqual(calls, ["delivery_planning", "delivery_review", "technical_delivery_review"]);
-  assert.equal(draft.items.length, 31);
-  assert.equal(draft.items.filter((item: any) => item.type === "subtask").length, 10);
+  assert.equal(draft.items.length, 34);
+  const subtasks = draft.items.filter((item: any) => item.type === "subtask");
+  assert.equal(subtasks.length, 11);
+  const scaffold = subtasks.find((item: any) => item.allowedFiles.includes("package.json"));
+  assert.ok(scaffold);
+  assert.deepEqual(scaffold.dependencies, []);
+  assert.ok(subtasks.filter((item: any) => item.id !== scaffold.id).every((item: any) => item.dependencies.includes(scaffold.id)));
   assert.equal(draft.coverage.length, 10);
   assert.equal(JSON.stringify(draft).includes("local://SOLUTION.md"), false);
   assert.ok(draft.citations.includes("local://DESIGN.md"));

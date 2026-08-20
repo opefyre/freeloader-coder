@@ -315,6 +315,33 @@ export class LocalProjectRegistry {
         "The private project workspace was created, but Git could not initialize it."
       );
     }
+    try {
+      await execFileAsync("git", ["-C", workspace, "add", "--", "README.md"], {
+        timeout: 15_000,
+        maxBuffer: 64_000,
+        windowsHide: true,
+      });
+      await execFileAsync(
+        "git",
+        [
+          "-C", workspace,
+          "-c", "user.name=Codkesh",
+          "-c", "user.email=codkesh@localhost",
+          "commit", "--no-verify", "-m", "chore: save Codkesh project baseline",
+        ],
+        { timeout: 15_000, maxBuffer: 64_000, windowsHide: true }
+      );
+      await execFileAsync("git", ["-C", workspace, "rev-parse", "--verify", "HEAD"], {
+        timeout: 15_000,
+        maxBuffer: 64_000,
+        windowsHide: true,
+      });
+    } catch {
+      throw new LocalProjectError(
+        "scan_failed",
+        "The private project workspace was created, but its recoverable Git baseline could not be verified."
+      );
+    }
     return this.register({
       schemaVersion: 1,
       path: workspace,
