@@ -58,7 +58,7 @@ test("free-provider planning exhaustion falls back to a complete local plan and 
     { readVerified: async () => ({ digest: contextDigest, markdown: "# Context\n\nVerified." }) },
     { read: async () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: solutionDigest, markdown: "# Solution\n\nApproved." }), readContent: async () => solutionContent },
     { authorize: async () => permit },
-    { run: async (input) => { calls.push(input.role); if (input.role === "delivery_planning") throw new FreeProviderSolutionUnavailableError(1_000, "Free planner unavailable."); return { providerId: input.role === "delivery_review" ? "mistral" : "nvidia-nim", modelId: input.role, response: { schemaVersion: 1, reviewerId: `${input.role}-reviewer`, discipline: input.role === "delivery_review" ? "delivery" : "technical", verdict: "pass", findings: [] } }; } },
+    { run: async (input) => { calls.push(input.role); if (input.role === "delivery_planning") throw new FreeProviderSolutionUnavailableError(1_000, "Free planner unavailable."); return { providerId: "gemini", modelId: "gemini-reviewer", response: { schemaVersion: 1, reviewerId: `${input.role}-reviewer`, discipline: input.role === "delivery_review" ? "delivery" : "technical", verdict: "pass", findings: [] } }; } },
     () => 20,
   );
   const result = await orchestrator.run(projectId);
@@ -68,4 +68,5 @@ test("free-provider planning exhaustion falls back to a complete local plan and 
   assert.equal(draft.items.filter((item: any) => item.type === "subtask").length, 10);
   assert.equal(draft.coverage.length, 10);
   assert.ok(draft.reviews.every((review: any) => review.verdict === "pass"));
+  assert.match(draft.reviews[1].reviewerId, /codkesh-local\/deterministic-technical-validator-v1/);
 });

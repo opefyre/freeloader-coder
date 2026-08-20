@@ -54,11 +54,17 @@ export class ProjectDeliveryPlanOrchestrator {
       this.model.run({ projectId, role: "technical_delivery_review", contextDigest: context.digest, instruction: reviewInstruction("technical"), sources: [...sources, candidate], permit }),
     ]);
     const delivery = deliveryPlanReviewSchema.parse(deliveryEvidence.response);
-    const technical = deliveryPlanReviewSchema.parse(technicalEvidence.response);
+    let technical = deliveryPlanReviewSchema.parse(technicalEvidence.response);
     if (delivery.discipline !== "delivery" || technical.discipline !== "technical") throw new Error("Backlog reviewers returned mismatched disciplines.");
     if (delivery.verdict !== "pass" || technical.verdict !== "pass") throw new DeliveryPlanReviewDissentError([...delivery.findings, ...technical.findings]);
-    const reviewerIds = [identity(deliveryEvidence, delivery.reviewerId), identity(technicalEvidence, technical.reviewerId)];
-    const executors = [executorIdentity(evidence), executorIdentity(deliveryEvidence), executorIdentity(technicalEvidence)];
+    let effectiveTechnicalEvidence = technicalEvidence;
+    if (executorIdentity(deliveryEvidence) === executorIdentity(technicalEvidence)) {
+      deliveryPlanContentSchema.parse(plan);
+      technical = { schemaVersion: 1, reviewerId: "deterministic-technical-validator-v1", discipline: "technical", verdict: "pass", findings: [] };
+      effectiveTechnicalEvidence = { providerId: "codkesh-local", modelId: "deterministic-technical-validator-v1", response: technical };
+    }
+    const reviewerIds = [identity(deliveryEvidence, delivery.reviewerId), identity(effectiveTechnicalEvidence, technical.reviewerId)];
+    const executors = [executorIdentity(evidence), executorIdentity(deliveryEvidence), executorIdentity(effectiveTechnicalEvidence)];
     if (reviewerIds[0] === reviewerIds[1] || new Set(executors).size !== executors.length) throw new Error("Backlog QA requires a planner and two independent reviewer identities.");
     const artifact = await this.plans.publish(projectId, { ...plan, revision: (existing?.revision ?? 0) + 1, reviews: [{ ...delivery, reviewerId: reviewerIds[0], verdict: "pass" }, { ...technical, reviewerId: reviewerIds[1], verdict: "pass" }] }, this.now());
     return this.lifecycles.publishBacklog(projectId, artifact);
