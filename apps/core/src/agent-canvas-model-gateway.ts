@@ -99,6 +99,8 @@ export function normalizeAgentCanvasMessages(value: unknown): AgentCanvasGateway
 }
 
 export class AgentCanvasModelGateway {
+  private readonly refreshAfterByConnectionId = new Map<string, number>();
+
   public constructor(
     private readonly connections: Pick<ProviderConnectionRepository, "list">,
     private readonly vault: Pick<CredentialVault, "read">,
@@ -249,12 +251,28 @@ export class AgentCanvasModelGateway {
       usageByConnectionId: capacity.usageByConnectionId,
       circuitOpenUntilByConnectionId: capacity.circuitOpenUntilByConnectionId,
     });
-    if (!admitted.candidates.length && this.refreshConnection) {
+    if (this.refreshConnection) {
       const refreshable = admitted.excluded
         .filter(({ decision }) => ["quota-evidence-stale", "canary-stale", "cost-evidence-stale"].includes(decision.reason))
-        .map(({ connectionId }) => connectionId);
+        .map(({ connectionId }) => connectionId)
+        .filter((connectionId) => (this.refreshAfterByConnectionId.get(connectionId) ?? 0) <= now);
       if (refreshable.length) {
-        await Promise.allSettled(refreshable.map((connectionId) => this.refreshConnection?.(connectionId)));
+        for (const connectionId of refreshable) {
+          // A failed free-provider probe must not turn every model request into
+          // another external request. The next normal request may heal it after
+          // the cooldown, while healthy providers continue serving immediately.
+          this.refreshAfterByConnectionId.set(connectionId, now + 15 * 60_000);
+        }
+        const refresh = Promise.allSettled(
+          refreshable.map((connectionId) => this.refreshConnection?.(connectionId)),
+        );
+        if (admitted.candidates.length) {
+          void refresh;
+        } else {
+          await refresh;
+        }
+      }
+      if (!admitted.candidates.length && refreshable.length) {
         connections = await this.connections.list();
         capacity = await this.capacity();
         admitted = resolveAdmittedProviderCandidates({

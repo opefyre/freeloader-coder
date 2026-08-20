@@ -170,6 +170,39 @@ test("refreshes stale free-tier evidence once before declaring capacity unavaila
   assert.equal(refreshCount, 1);
 });
 
+test("self-heals stale providers in the background while a healthy provider keeps serving", async () => {
+  const stale = {
+    ...connection,
+    id: "stale-provider",
+    quota: { ...connection.quota, observedAt: now - 1_000, expiresAt: now - 1 },
+  };
+  let refreshCount = 0;
+  let releaseRefresh!: () => void;
+  const refreshStarted = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+  const gateway = new AgentCanvasModelGateway(
+    { list: async () => [connection, stale] },
+    { read: async () => "test-secret-value" },
+    { adapter: () => adapter },
+    async () => ({
+      usageByConnectionId: {
+        "groq-main": { activeRequests: 0, requestsToday: 0, tokensToday: 0, inputTokensToday: 0, outputTokensToday: 0, requestTimestamps: [], tokenSamples: [] },
+        "stale-provider": { activeRequests: 0, requestsToday: 0, tokensToday: 0, inputTokensToday: 0, outputTokensToday: 0, requestTimestamps: [], tokenSamples: [] },
+      },
+    }),
+    () => now,
+    async () => {
+      refreshCount += 1;
+      await refreshStarted;
+    },
+  );
+
+  assert.equal((await gateway.models()).length, 1);
+  assert.equal(refreshCount, 1);
+  assert.equal((await gateway.models()).length, 1);
+  assert.equal(refreshCount, 1, "the cooldown prevents a probe storm");
+  releaseRefresh();
+});
+
 test("free-tier routing compacts oversized system context without dropping security or grounding", () => {
   const filler = "irrelevant skill text ".repeat(1_000);
   const [message] = compactAgentCanvasMessages([{ role: "system", content: [
