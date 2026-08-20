@@ -116,6 +116,27 @@ test("delivery planning publishes the canonical wire constraints providers must 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("delivery planning canonically decomposes a valid leaf task without inventing scope", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-delivery-decompose-"));
+  try {
+    const raw = threeLevelDeliveryPlan();
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => ({ schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(raw), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }) }) as unknown as ProviderAdapter,
+    }, () => now);
+    const solutionDigest = "b".repeat(64);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const result = await model.run({ projectId, role: "delivery_planning", contextDigest, instruction: `Set solutionDigest exactly to ${solutionDigest}.`, sources: [{ name: "SOLUTION.md", content: "Safe approved solution." }], permit });
+    const plan = result.response as any;
+    assert.equal(plan.contextDigest, contextDigest);
+    assert.equal(plan.solutionDigest, solutionDigest);
+    assert.equal(plan.items.length, 4);
+    assert.equal(plan.items.at(-1).type, "subtask");
+    assert.equal(plan.items.at(-1).parentId, plan.items[2].id);
+    assert.equal(plan.items.at(-1).description, plan.items[2].description);
+    assert.ok(plan.coverage.every((entry: any) => entry.itemIds.includes(plan.items.at(-1).id)));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("solution reconciliation requests and locally validates the complete canonical solution contract", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-model-reconciliation-"));
   try {
@@ -163,4 +184,15 @@ function solutionResponse() {
     ],
     unresolvedBlockers: [], citations: ["local://CONTEXT.md", "local://RESEARCH.md"],
   };
+}
+
+function threeLevelDeliveryPlan() {
+  const common = { description: "Implement the approved local-first decision journal behavior with bounded, verifiable project changes.", estimatedMinutes: 120, priority: "high", dependencies: [], acceptanceCriteria: ["The approved behavior is implemented with deterministic observable evidence.", "Automated validation demonstrates the expected behavior without external paid services."], definitionOfDone: ["The scoped implementation is complete and reviewed.", "All selected deterministic validation profiles pass."], implementationNotes: ["Follow the approved solution and preserve local-first data boundaries."], roleCapabilities: ["Developer"], rollbackRequirements: ["Revert the scoped project files and restore the last verified local state."], allowedFiles: ["src/decision-journal.ts"], validationProfiles: ["format", "lint", "unit"], citations: ["local://SOLUTION.md"] };
+  const items = [
+    { ...common, id: "epic-1", type: "epic", parentId: null, title: "Decision journal product", storyPoints: 13 },
+    { ...common, id: "story-1", type: "story", parentId: "epic-1", title: "Record structured decisions", storyPoints: 5 },
+    { ...common, id: "task-1", type: "task", parentId: "story-1", title: "Implement decision capture", storyPoints: null },
+  ];
+  const requirements = ["behavior", "architecture", "user_experience", "data", "integrations", "security", "privacy", "reliability", "rollout", "metrics"];
+  return { schemaVersion: 1, title: "Decision journal delivery plan", objective: "Deliver the approved local-first personal decision journal through bounded and independently verifiable implementation work.", contextDigest: "c".repeat(64), solutionDigest: "d".repeat(64), items, coverage: requirements.map((requirement) => ({ requirement, itemIds: ["task-1"], validationProfiles: ["unit"], citations: ["local://SOLUTION.md"] })), gates: [{ id: "approval-gate", kind: "owner_approval", title: "Owner implementation approval", rationale: "Implementation cannot start until the owner approves the reviewed delivery plan.", beforeItemIds: ["task-1"] }], risks: ["Free provider capacity may delay implementation but must never enable paid routing."], assumptions: [], citations: ["local://SOLUTION.md"] };
 }

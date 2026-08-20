@@ -10,7 +10,7 @@ import { deliveryPlanContentSchema } from "../../../packages/orchestration/src/d
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 6;
+const RESPONSE_CONTRACT_VERSION = 8;
 
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
@@ -103,7 +103,14 @@ function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"
   }
   if (role === "solution_reconciliation") return parseContract(solutionContentSchema, parsed);
   if (role === "solution_revision_scope") return parseContract(solutionRevisionScopeSchema, parsed);
-  if (role === "delivery_planning") return parseContract(deliveryPlanContentSchema, canonicalizeDeliveryPlan(parsed, input));
+  if (role === "delivery_planning") {
+    const result = deliveryPlanContentSchema.safeParse(canonicalizeDeliveryPlan(parsed, input));
+    if (!result.success) {
+      console.error(JSON.stringify({ event: "delivery_plan_contract_rejected", issues: result.error.issues.slice(0, 25).map((issue) => ({ path: issue.path.join("."), code: issue.code, message: issue.message })) }));
+      throw failure("response-contract-rejected", 400);
+    }
+    return result.data;
+  }
   if (role === "product_review" || role === "technical_review") {
     const result = parseContract(solutionReviewResultSchema, parsed);
     const discipline = role === "product_review" ? "product" : "technical";
@@ -122,22 +129,40 @@ function canonicalizeDeliveryPlan(value: unknown, input?: Parameters<RoutedSolut
     ids.set(oldId, `plan_${hash(`${index}:${oldId}:${String(item.title ?? "")}`).slice(0, 16)}`);
   }
   const itemId = (candidate: unknown) => ids.get(String(candidate)) ?? String(candidate);
-  const items = rawItems.map((item, index) => ({
+  const items: Record<string, unknown>[] = rawItems.map((item, index) => ({
     ...item,
-    id: ids.get(String(item.id ?? `item-${index}`)),
+    id: ids.get(String(item.id ?? `item-${index}`))!,
     parentId: item.parentId === null ? null : itemId(item.parentId),
     dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(itemId) : item.dependencies,
-    storyPoints: item.type === "epic" || item.type === "subtask" ? null : item.storyPoints,
+    storyPoints: item.type === "epic" || item.type === "subtask" ? null : normalizeStoryPoints(item.storyPoints, item.estimatedMinutes),
   }));
+  const parentIds = new Set(items.map((item) => item.parentId).filter((candidate): candidate is string => typeof candidate === "string"));
+  const generatedChildren = new Map<string, string>();
+  for (const item of items) {
+    if (item.type !== "task" || parentIds.has(String(item.id))) continue;
+    const childId = `plan_${hash(`subtask:${String(item.id)}:${String(item.title ?? "")}`).slice(0, 16)}`;
+    generatedChildren.set(String(item.id), childId);
+    items.push({ ...item, id: childId, type: "subtask", parentId: item.id, title: `Implement: ${String(item.title)}`.slice(0, 200), storyPoints: null, estimatedMinutes: Math.min(120, Math.max(60, Number(item.estimatedMinutes) || 120)), dependencies: [] });
+  }
   const solutionDigest = input.instruction.match(/solutionDigest exactly to ([a-f0-9]{64})/)?.[1] ?? source.solutionDigest;
   return {
     ...source,
     contextDigest: input.contextDigest,
     solutionDigest,
     items,
-    coverage: Array.isArray(source.coverage) ? source.coverage.map((entry) => typeof entry === "object" && entry !== null ? { ...entry, itemIds: Array.isArray((entry as { itemIds?: unknown }).itemIds) ? ((entry as { itemIds: unknown[] }).itemIds).map(itemId) : (entry as { itemIds?: unknown }).itemIds } : entry) : source.coverage,
+    coverage: Array.isArray(source.coverage) ? source.coverage.map((entry) => typeof entry === "object" && entry !== null ? { ...entry, itemIds: Array.isArray((entry as { itemIds?: unknown }).itemIds) ? ((entry as { itemIds: unknown[] }).itemIds).flatMap((candidate) => { const canonical = itemId(candidate); return generatedChildren.has(canonical) ? [canonical, generatedChildren.get(canonical)] : [canonical]; }) : (entry as { itemIds?: unknown }).itemIds } : entry) : source.coverage,
     gates: Array.isArray(source.gates) ? source.gates.map((gate, index) => typeof gate === "object" && gate !== null ? { ...gate, id: `gate_${hash(`${index}:${String((gate as { id?: unknown }).id ?? "gate")}:${String((gate as { title?: unknown }).title ?? "")}`).slice(0, 16)}`, beforeItemIds: Array.isArray((gate as { beforeItemIds?: unknown }).beforeItemIds) ? ((gate as { beforeItemIds: unknown[] }).beforeItemIds).map(itemId) : (gate as { beforeItemIds?: unknown }).beforeItemIds } : gate) : source.gates,
   };
+}
+function normalizeStoryPoints(value: unknown, estimatedMinutes: unknown): 1 | 2 | 3 | 5 | 8 | 13 {
+  if ([1, 2, 3, 5, 8, 13].includes(Number(value))) return Number(value) as 1 | 2 | 3 | 5 | 8 | 13;
+  const minutes = Number(estimatedMinutes);
+  if (minutes <= 60) return 1;
+  if (minutes <= 120) return 2;
+  if (minutes <= 240) return 3;
+  if (minutes <= 480) return 5;
+  if (minutes <= 960) return 8;
+  return 13;
 }
 function parseContract<T>(schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }, value: unknown): T {
   const result = schema.safeParse(value);
