@@ -200,6 +200,8 @@ export function LocalRequestPanel(props: {
   const disposed = useRef(false);
   const draftIntakeRef = useRef<ProjectIntake | null>(null);
   const draftSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const draftSaveTimer = useRef<number | null>(null);
+  const draftGeneration = useRef(0);
   const restoredDraft = useRef(false);
 
   function rememberDraft(value: ProjectIntake | null) {
@@ -209,6 +211,11 @@ export function LocalRequestPanel(props: {
   function beginNewProject() {
     // A new project is a new intake boundary. Never carry another project's
     // folder authorization, resources, attachments, answers, or idea across it.
+    draftGeneration.current += 1;
+    if (draftSaveTimer.current !== null) {
+      window.clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
+    }
     rememberDraft(null);
     setProjectId("__new__");
     setWorkspacePath("");
@@ -310,9 +317,13 @@ export function LocalRequestPanel(props: {
       attachments.length > 0 ||
       browserAttachments.length > 0;
     if (!hasDraft || !projectId) return;
-    const timer = window.setTimeout(() => {
+    const generation = draftGeneration.current;
+    draftSaveTimer.current = window.setTimeout(() => {
+      draftSaveTimer.current = null;
+      if (generation !== draftGeneration.current) return;
       draftSaveQueue.current = draftSaveQueue.current
         .then(async () => {
+          if (generation !== draftGeneration.current) return;
           const client = await import("../../project-intake-client.js");
           const mode =
             projectId === "__new__" ? "new_product" : "existing_product";
@@ -344,13 +355,18 @@ export function LocalRequestPanel(props: {
               idempotencyKey: `intake:draft:${crypto.randomUUID()}`,
             },
           );
-          rememberDraft(saved);
+          if (generation === draftGeneration.current) rememberDraft(saved);
         })
         .catch(() => {
           setNotice("Draft save paused. Text is safe.");
         });
     }, 650);
-    return () => window.clearTimeout(timer);
+    return () => {
+      if (draftSaveTimer.current !== null) {
+        window.clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = null;
+      }
+    };
   }, [
     attachments,
     browserAttachments,
@@ -457,6 +473,13 @@ export function LocalRequestPanel(props: {
     if (projectId === "__new__" && !workspacePath.trim()) {
       setNotice("Choose an absolute local folder for the project.");
       return;
+    }
+    // Starting work closes this draft generation. A delayed autosave from the
+    // compose screen must never recreate the submitted idea as a new intake.
+    draftGeneration.current += 1;
+    if (draftSaveTimer.current !== null) {
+      window.clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
     }
     setStatus("working");
     try {

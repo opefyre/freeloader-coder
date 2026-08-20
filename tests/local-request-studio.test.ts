@@ -182,3 +182,21 @@ test("starting a new project clears every project-scoped intake value", async ()
   }
   assert.match(panel, /onClick=\{beginNewProject\}[\s\S]*New project/);
 });
+
+test("submission invalidates delayed autosave before durable work starts", async () => {
+  const panel = await readFile(
+    "apps/studio/src/components/conversation/local-request-panel.tsx",
+    "utf8",
+  );
+
+  assert.match(panel, /const draftSaveTimer = useRef<number \| null>\(null\)/);
+  assert.match(panel, /const draftGeneration = useRef\(0\)/);
+  assert.match(
+    panel,
+    /async function submit\(\)[\s\S]*draftGeneration\.current \+= 1;[\s\S]*window\.clearTimeout\(draftSaveTimer\.current\);[\s\S]*setStatus\("working"\)/,
+  );
+  assert.match(
+    panel,
+    /const generation = draftGeneration\.current;[\s\S]*if \(generation !== draftGeneration\.current\) return;[\s\S]*saveResumableProjectIntakeDraft/,
+  );
+});
