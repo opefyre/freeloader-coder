@@ -206,6 +206,31 @@ export function LocalRequestPanel(props: {
     draftIntakeRef.current = value;
   }
 
+  function beginNewProject() {
+    // A new project is a new intake boundary. Never carry another project's
+    // folder authorization, resources, attachments, answers, or idea across it.
+    rememberDraft(null);
+    setProjectId("__new__");
+    setWorkspacePath("");
+    setWorkspaceLabel("");
+    setAttachments([]);
+    setBrowserAttachments([]);
+    setVoice(null);
+    setSelectedRepositoryIds([]);
+    setSelectedJiraProjectId("");
+    setSelectedTelegramChatIds([]);
+    setOutcome("");
+    setLifecycle(null);
+    setEligibility(null);
+    setClarificationChoices({});
+    setCustomAnswers({});
+    setLastSubmission(undefined);
+    setProjectPickerOpen(false);
+    setResourcePickerOpen(false);
+    setResourceQuery("");
+    setNotice("New project ready. Choose a folder to continue.");
+  }
+
   const refresh = useCallback(async () => {
     try {
       const { decodeProjectIntakeReference, listProjectIntakes } =
@@ -1956,10 +1981,7 @@ export function LocalRequestPanel(props: {
                     <div className="absolute bottom-11 left-0 z-30 min-w-64 rounded-2xl bg-popover p-2 shadow-2xl ring-1 ring-foreground/10">
                       <button
                         type="button"
-                        onClick={() => {
-                          setProjectId("__new__");
-                          setProjectPickerOpen(false);
-                        }}
+                        onClick={beginNewProject}
                         className="w-full rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
                       >
                         New project

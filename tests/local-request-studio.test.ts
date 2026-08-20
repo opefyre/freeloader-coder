@@ -151,3 +151,34 @@ test("native workspace and attachment controls expose keyboard and screen-reader
   assert.match(client, /Files and Folders settings/);
   assert.match(client, /Nothing was changed/);
 });
+
+test("starting a new project clears every project-scoped intake value", async () => {
+  const panel = await readFile(
+    "apps/studio/src/components/conversation/local-request-panel.tsx",
+    "utf8",
+  );
+
+  const reset = panel.slice(
+    panel.indexOf("function beginNewProject()"),
+    panel.indexOf("const refresh = useCallback"),
+  );
+  for (const requiredReset of [
+    'rememberDraft(null)',
+    'setProjectId("__new__")',
+    'setWorkspacePath("")',
+    'setWorkspaceLabel("")',
+    'setAttachments([])',
+    'setBrowserAttachments([])',
+    'setVoice(null)',
+    'setSelectedRepositoryIds([])',
+    'setSelectedJiraProjectId("")',
+    'setSelectedTelegramChatIds([])',
+    'setOutcome("")',
+    'setClarificationChoices({})',
+    'setCustomAnswers({})',
+    'setLastSubmission(undefined)',
+  ]) {
+    assert.equal(reset.includes(requiredReset), true, `Missing reset: ${requiredReset}`);
+  }
+  assert.match(panel, /onClick=\{beginNewProject\}[\s\S]*New project/);
+});
