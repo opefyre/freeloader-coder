@@ -86,6 +86,17 @@ test("solution model rejects structurally incomplete research before it becomes 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution model rejects an incomplete delivery plan at the provider boundary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-delivery-contract-"));
+  try {
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => ({ schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ schemaVersion: 1 }), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }) }) as unknown as ProviderAdapter,
+    }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    await assert.rejects(() => model.run({ projectId, role: "delivery_planning", contextDigest, instruction: "Plan delivery.", sources: [{ name: "SOLUTION.md", content: "Safe approved solution." }], permit }));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("solution reconciliation requests and locally validates the complete canonical solution contract", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-model-reconciliation-"));
   try {

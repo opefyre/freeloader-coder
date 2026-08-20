@@ -6,10 +6,11 @@ import { readPrivateProposalArtifact, writePrivateProposalArtifact } from "./loc
 import { ProviderCapacityStore } from "./provider-capacity-store.js";
 import { ProviderRuntimeService } from "./provider-service.js";
 import { projectEgressPermitSchema, researchEvidenceGraphSchema, solutionContentSchema, solutionReviewResultSchema, solutionRevisionScopeSchema } from "../../../packages/orchestration/src/solution-design.js";
+import { deliveryPlanContentSchema } from "../../../packages/orchestration/src/delivery-plan.js";
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 3;
+const RESPONSE_CONTRACT_VERSION = 4;
 
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
@@ -102,6 +103,7 @@ function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"
   }
   if (role === "solution_reconciliation") return parseContract(solutionContentSchema, parsed);
   if (role === "solution_revision_scope") return parseContract(solutionRevisionScopeSchema, parsed);
+  if (role === "delivery_planning") return parseContract(deliveryPlanContentSchema, parsed);
   if (role === "product_review" || role === "technical_review") {
     const result = parseContract(solutionReviewResultSchema, parsed);
     const discipline = role === "product_review" ? "product" : "technical";
