@@ -502,6 +502,32 @@ test("native picker endpoints expose only validated local selections", async () 
   }
 });
 
+test("native picker responses survive the ordinary five-second API timeout", async () => {
+  const controlPlane = createControlPlaneServer({
+    host: "127.0.0.1", port: 0,
+    allowedOrigins: ["http://127.0.0.1:4310"],
+    health: () => health, snapshot: () => snapshot,
+    nativePicker: {
+      folder: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5_100));
+        return { schemaVersion: 1, outcome: "cancelled", selections: [] } as const;
+      },
+      files: () => ({ schemaVersion: 1, outcome: "cancelled", selections: [] }),
+    },
+  });
+  const port = await controlPlane.listen();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/v1/system/pick-folder`, {
+      method: "POST",
+      headers: { Origin: "http://127.0.0.1:4310" },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json() as { outcome: string }).outcome, "cancelled");
+  } finally {
+    await controlPlane.close();
+  }
+});
+
 test("integration discovery is local, read-only by default, and explicit when probing", async () => {
   let probes = 0;
   let jiraConnections = 0;

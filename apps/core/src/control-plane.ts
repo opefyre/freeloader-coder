@@ -1171,6 +1171,11 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         (url.pathname === "/api/v1/system/pick-folder" || url.pathname === "/api/v1/system/pick-files") &&
         options.nativePicker
       ) {
+        // Native platform dialogs are intentionally interactive and can remain
+        // open much longer than an ordinary loopback API call. Keep the
+        // response bounded to the picker's own two-minute limit instead of
+        // destroying the socket after the control plane's five-second default.
+        response.setTimeout(125_000, () => response.destroy());
         if (requestBodyDeclared(request)) {
           sendJson(response, 413, { error: "Request body is not accepted." });
           return;
