@@ -25,37 +25,29 @@ test("only verified permanent or account-limited providers enter free routing", 
     "gemini",
     "openrouter",
     "github-models",
-    "cerebras",
+    "nvidia-nim",
+    "huggingface",
+    "aion",
+    "kilo",
+    "cohere",
     "mistral",
     "zhipu",
     "sambanova"
   ]);
-  assert.equal(catalogProvider("deepseek").freeAccess, "promotional_credit");
-  assert.throws(
-    () => createFreeCatalogCandidate({
-      providerId: "deepseek",
-      modelId: "deepseek-v4-flash",
-      configured: true,
-      priority: 10,
-      usage: emptyUsage
-    }),
-    /not eligible for automatic zero-cost routing/
-  );
+  assert.throws(() => catalogProvider("deepseek"), /Unknown provider catalog entry/);
+  assert.throws(() => catalogProvider("cerebras"), /Unknown provider catalog entry/);
 });
 
-test("Cerebras candidate uses observed account limits and protects review capacity", () => {
+test("NVIDIA candidate remains conservative until live account limits are observed", () => {
   const candidate = createFreeCatalogCandidate({
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    providerId: "nvidia-nim",
+    modelId: "meta/llama-3.1-8b-instruct",
     configured: true,
     priority: 10,
     usage: emptyUsage
   });
-  assert.equal(candidate.capacity.requestsPerMinute, 5);
-  assert.equal(candidate.capacity.requestsPerDay, 2_400);
-  assert.equal(candidate.capacity.tokensPerMinute, 30_000);
-  assert.equal(candidate.capacity.tokensPerDay, 1_000_000);
-  assert.equal(candidate.reservation?.requestsPerDay, 240);
+  assert.equal(candidate.capacity.maxConcurrentRequests, 1);
+  assert.equal(candidate.capacity.requestsPerDay, undefined);
 });
 
 test("unconfigured catalog providers remain visible but cannot receive work", () => {

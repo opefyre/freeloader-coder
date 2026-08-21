@@ -19,11 +19,14 @@ test("every supported provider has exact setup, free-status, data-use, and revoc
       "openrouter",
       "cloudflare",
       "github-models",
-      "cerebras",
+      "nvidia-nim",
+      "huggingface",
+      "aion",
+      "kilo",
+      "cohere",
       "mistral",
       "zhipu",
       "sambanova",
-      "deepseek",
       "local-model-runtime"
     ]
   );

@@ -124,7 +124,7 @@ const candidates: readonly ProviderCandidate[] = [
     }
   },
   ...[
-    ["cerebras", "gpt-oss-120b", 50],
+    ["nvidia-nim", "meta/llama-3.1-8b-instruct", 50],
     ["mistral", "mistral-small-latest", 60],
     ["zhipu", "glm-4.7-flash", 70],
     ["sambanova", "DeepSeek-V3.1", 80]

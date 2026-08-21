@@ -52,7 +52,8 @@ export class ProjectExecutionJiraObserver {
       const issueKey = delivery.issues[task.id]?.issueKey;
       if (!issueKey) throw new ProjectExecutionJiraObserverError("receipt_incomplete", `Jira receipt is missing ${task.id}.`);
       const marker = markerFor(task);
-      const stored = (await this.#load()).receipts[marker];
+      const receipts = (await this.#load()).receipts;
+      const stored = receipts[marker];
       if (stored?.commentObserved && stored.transitionObserved) continue;
       const desiredStatus = jiraStatus(task.status);
       if (desiredStatus === "Done") {
@@ -67,7 +68,10 @@ export class ProjectExecutionJiraObserver {
       const commentObserved = stored?.commentObserved || await client.hasMarker(issueKey, marker);
       if (!commentObserved) await client.comment(issueKey, marker, evidenceSummary(task));
       let transitionObserved = stored?.transitionObserved ?? false;
-      if (!transitionObserved) transitionObserved = desiredStatus === null || await client.ensureStatus(issueKey, desiredStatus);
+      const previouslyObservedWorkflow = Object.values(receipts).some((receipt) =>
+        receipt.projectId === projectId && receipt.taskId === task.id && receipt.status !== null && receipt.transitionObserved
+      );
+      if (!transitionObserved) transitionObserved = desiredStatus === null || await client.ensureStatus(issueKey, desiredStatus, { allowInitialAdvance: !previouslyObservedWorkflow });
       await this.#save({ marker, projectId, taskId: task.id, revision: task.revision, issueKey, status: desiredStatus, commentObserved: true, transitionObserved, observedAt: this.now() });
       if (transitionObserved) synchronized += 1;
     }
@@ -90,11 +94,12 @@ class ExecutionJiraClient {
   constructor(private readonly access: { apiBase: string; authorization: string }, private readonly fetcher: typeof fetch) { this.#headers = { Accept: "application/json", "Content-Type": "application/json", Authorization: access.authorization }; }
   async hasMarker(issueKey: string, marker: string) { const response = await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment?maxResults=100&orderBy=-created`); return Array.isArray(response.comments) && response.comments.some((comment: unknown) => JSON.stringify(comment).includes(marker)); }
   async comment(issueKey: string, marker: string, summary: string) { await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`, { method: "POST", body: JSON.stringify({ body: document([summary, marker]) }) }); }
-  async ensureStatus(issueKey: string, desired: string) {
+  async ensureStatus(issueKey: string, desired: string, options: { allowInitialAdvance: boolean }) {
     const issue = await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=status`);
     const current = String(issue.fields?.status?.name ?? "");
     if (current.toLowerCase() === desired.toLowerCase()) return true;
-    if (!safePredecessors(desired).includes(current.toLowerCase())) {
+    const initialAdvance = options.allowInitialAdvance && desired === "Done" && initialStatuses().includes(current.toLowerCase());
+    if (!initialAdvance && !safePredecessors(desired).includes(current.toLowerCase())) {
       throw new ProjectExecutionJiraObserverError("external_edit", `${issueKey} is ${current || "in an unknown status"} in Jira. Codkesh will not overwrite that external change.`);
     }
     const response = await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`);
@@ -110,6 +115,7 @@ class ExecutionJiraClient {
 
 function jiraStatus(status: ExecutionTask["status"]): string | null { if (["running", "validating", "healing"].includes(status)) return "In Progress"; if (["reviewing", "integrating"].includes(status)) return "In Review"; if (status === "completed") return "Done"; return null; }
 function safePredecessors(desired: string) { if (desired === "In Progress") return ["to do", "open", "selected for development"]; if (desired === "In Review") return ["in progress"]; if (desired === "Done") return ["in progress", "in review"]; return []; }
+function initialStatuses() { return ["to do", "open", "selected for development"]; }
 function markerFor(task: ExecutionTask) { return `pipeline_exec_${hash(`${task.id}:${task.revision}:${task.status}`).slice(0, 24)}`; }
 function evidenceSummary(task: ExecutionTask) { const passed = task.validations.filter((item) => item.passed).map((item) => item.tier).join(", ") || "none"; const reviewers = task.reviews.map((item) => `${item.role}:${item.verdict}`).join(", ") || "none"; return `Codkesh acceptance evidence · ${task.status.replaceAll("_", " ")} · attempt ${task.attempt + 1}. Deterministic validation: ${passed}. Independent reviews: ${reviewers}. Commit: ${task.commitDigest?.slice(0, 12) ?? "pending"}. ${task.safeMessage}`; }
 function closureCandidate(task: ExecutionTask, criteria: readonly string[]) {

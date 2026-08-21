@@ -11,11 +11,11 @@ import type {
 } from "./router.js";
 
 export const expandedProviderIdSchema = z.enum([
-  "cerebras",
+  "nvidia-nim",
+  "huggingface",
   "mistral",
   "zhipu",
-  "sambanova",
-  "deepseek"
+  "sambanova"
 ]);
 
 export const providerAccountEvidenceSchema = z.strictObject({
@@ -117,12 +117,16 @@ export function evaluateExpandedAdmission(input: {
     };
   }
 
-  if (evidence.providerId === "cerebras") {
-    if (evidence.planMode !== "free") return denied("wrong_plan", "A verified Cerebras free account is required.", null, true);
-    if (!evidence.explicitFreeModel) return denied("model_not_free", "The selected Cerebras model is not proven free for this account.", null, true);
+  if (evidence.providerId === "nvidia-nim") {
+    if (evidence.planMode !== "free") return denied("wrong_plan", "Free NVIDIA Developer Program access is required.", null, true);
+    if (!evidence.explicitFreeModel) return denied("model_not_free", "The selected NIM model is not available through free developer access.", null, true);
     if (!["account_api", "response_headers"].includes(input.quota.source)) {
       return denied("account_verification_required", "Live account limits are required before admission.", null, true);
     }
+  }
+  if (evidence.providerId === "huggingface") {
+    if (evidence.planMode !== "free") return denied("wrong_plan", "A Hugging Face free-user account is required.", null, true);
+    if (!evidence.explicitFreeModel) return denied("model_not_free", "The selected routed model is not available to this free account.", null, true);
   }
   if (evidence.providerId === "mistral") {
     if (evidence.planMode !== "experiment") return denied("wrong_plan", "Mistral Experiment mode must be proven.", null, true);
@@ -137,28 +141,11 @@ export function evaluateExpandedAdmission(input: {
     if (evidence.paymentMethodPresent !== false) return denied("payment_uncertain", "A no-payment-method free account must be proven.", null, true);
     if (evidence.planMode !== "free") return denied("wrong_plan", "SambaNova free-plan evidence is required.", null, true);
   }
-  if (evidence.providerId === "deepseek") {
-    if (!evidence.promotionalModeEnabled) return denied("credit_mode_disabled", "Promotional-credit mode is disabled by default.", null, false);
-    if (!evidence.balanceCompositionKnown) return denied("credit_composition_unknown", "Granted and topped-up balances are not distinguishable.", null, false);
-    if (!evidence.fundSeparationProven) return denied("credit_fund_separation_unproven", "The route cannot prove topped-up funds are unreachable.", null, false);
-    if (evidence.promotionExpiresAt === null || evidence.promotionExpiresAt <= input.now) {
-      return denied("credit_expired", "Promotional-credit expiry is missing or elapsed.", null, false);
-    }
-    const reserve = input.promotionalReserveMicros ?? 100_000;
-    if (
-      evidence.grantedBalanceMicros === null
-      || evidence.grantedBalanceMicros <= reserve
-    ) {
-      return denied("credit_exhausted", "Granted promotional balance is below the safety reserve.", null, false);
-    }
-  }
   return {
     admitted: true,
     state: "ready",
     reason: "ready",
-    detail: evidence.providerId === "deepseek"
-      ? "Temporary granted credit is isolated from topped-up funds and remains outside permanent-free routing."
-      : "Plan, model, account, quota, and capability evidence are current.",
+    detail: "Plan, model, account, quota, and capability evidence are current.",
     retryAt: null,
     permanentFree
   };
@@ -183,7 +170,6 @@ export function createExpandedProviderCandidate(input: {
   const dailyRequests = input.quota.requestsPerDay ?? provider.documentedCapacity.requestsPerDay;
   const dailyTokens = input.quota.tokensPerDay ?? provider.documentedCapacity.tokensPerDay;
   const scarce = input.evidence.providerId === "sambanova";
-  const promotional = input.evidence.providerId === "deepseek";
   return {
     id: `${provider.id}-${model.id}`,
     providerId: provider.id,
@@ -193,8 +179,8 @@ export function createExpandedProviderCandidate(input: {
     privacy: "training_eligible",
     location: "external",
     paid: false,
-    costClass: promotional ? "promotional_credit" : "free",
-    billingMode: promotional ? "promotional_credit" : "free_tier",
+    costClass: "free",
+    billingMode: "free_tier",
     roles: capabilityRoles(input.canary.capabilities),
     kinds: scarce ? ["plan", "review", "recovery"] : ["plan", "code", "review"],
     dataClasses: ["public_test", "non_personal_test", "source_code"],
@@ -219,19 +205,7 @@ export function createExpandedProviderCandidate(input: {
       providerRemainingTokens: input.quota.remainingTokens,
       providerResetAt: input.quota.resetAt
     },
-    circuitOpenUntil: 0,
-    ...(promotional
-      ? {
-          estimatedCreditMicros: input.estimatedCreditMicros ?? 0,
-          promotionalCredit: {
-            grantedBalanceMicros: input.evidence.grantedBalanceMicros ?? 0,
-            toppedUpBalanceMicros: input.evidence.toppedUpBalanceMicros ?? 0,
-            reserveMicros: input.promotionalReserveMicros ?? 100_000,
-            expiresAt: input.evidence.promotionExpiresAt,
-            fundSeparationProven: input.evidence.fundSeparationProven
-          }
-        }
-      : {})
+    circuitOpenUntil: 0
   };
 }
 

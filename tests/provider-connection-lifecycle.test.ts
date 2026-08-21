@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   ProviderConnectionLifecycle,
+  ProviderConnectionLifecycleError,
   resolveAdmittedProviderCandidates,
   type CredentialVault,
   type ProviderConnectionProbes,
@@ -107,9 +108,9 @@ test("connection lifecycle persists only a reference and admits current zero-cos
   const repository = new MemoryRepository();
   const lifecycle = new ProviderConnectionLifecycle(vault, repository, probes());
   const result = await lifecycle.connect({
-    id: "cerebras-primary",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     secret,
     now,
     capabilities: ["chat", "structured_output"]
@@ -125,8 +126,8 @@ test("connection lifecycle persists only a reference and admits current zero-cos
     connections: await repository.list(),
     now,
     requiredCapabilities: ["chat"],
-    priorityByConnectionId: { "cerebras-primary": 1 },
-    usageByConnectionId: { "cerebras-primary": usage }
+    priorityByConnectionId: { "groq-primary": 1 },
+    usageByConnectionId: { "groq-primary": usage }
   });
   assert.equal(resolution.candidates.length, 1);
   assert.equal(resolution.candidates[0]?.capacity.requestsPerMinute, 7);
@@ -137,9 +138,9 @@ test("restart re-probe uses the vault reference without exposing the key", async
   const repository = new MemoryRepository();
   const first = new ProviderConnectionLifecycle(vault, repository, probes());
   await first.connect({
-    id: "cerebras-primary",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     secret,
     now,
     capabilities: ["chat"]
@@ -147,13 +148,46 @@ test("restart re-probe uses the vault reference without exposing the key", async
 
   const restarted = new ProviderConnectionLifecycle(vault, repository, probes(now + 120_000));
   const result = await restarted.reProbe({
-    id: "cerebras-primary",
+    id: "groq-primary",
     now: now + 30_000,
     capabilities: ["chat"]
   });
   assert.equal(result.admission.admitted, true);
   assert.equal(result.connection.canary.expiresAt, now + 120_000);
   assert.equal(JSON.stringify(result).includes(secret), false);
+});
+
+test("restart re-probe preserves a safe, actionable canary failure", async () => {
+  const vault = new MemoryVault();
+  const repository = new MemoryRepository();
+  const first = new ProviderConnectionLifecycle(vault, repository, probes());
+  await first.connect({
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
+    secret,
+    now,
+    capabilities: ["chat", "structured_output", "tool_calling"]
+  });
+  const failing = new ProviderConnectionLifecycle(vault, repository, {
+    ...probes(now + 120_000),
+    async canary() {
+      throw new ProviderConnectionLifecycleError(
+        "tool-calling-failed",
+        "The selected free route did not produce a valid tool call."
+      );
+    }
+  });
+  await assert.rejects(
+    failing.reProbe({
+      id: "groq-primary",
+      now: now + 30_000,
+      capabilities: ["chat", "structured_output", "tool_calling"]
+    }),
+    (error: unknown) =>
+      error instanceof ProviderConnectionLifecycleError && error.code === "tool-calling-failed"
+  );
+  assert.equal((await repository.read("groq-primary"))?.state, "stale");
 });
 
 test("disk-backed restart persists masked connection evidence and excludes the secret", async () => {
@@ -166,9 +200,9 @@ test("disk-backed restart persists masked connection evidence and excludes the s
     probes()
   );
   await first.connect({
-    id: "cerebras-primary",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     secret,
     now,
     capabilities: ["chat"]
@@ -178,7 +212,7 @@ test("disk-backed restart persists masked connection evidence and excludes the s
   const restartedRepository = new JsonProviderConnectionRepository(path);
   const restarted = new ProviderConnectionLifecycle(vault, restartedRepository, probes());
   const result = await restarted.reProbe({
-    id: "cerebras-primary",
+    id: "groq-primary",
     now: now + 1_000,
     capabilities: ["chat"]
   });
@@ -191,9 +225,9 @@ test("stale evidence removes a route without mutating queued runtime state", asy
   const repository = new MemoryRepository();
   const lifecycle = new ProviderConnectionLifecycle(vault, repository, probes(now + 1));
   const result = await lifecycle.connect({
-    id: "cerebras-primary",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     secret,
     now,
     capabilities: ["chat"]
@@ -203,8 +237,8 @@ test("stale evidence removes a route without mutating queued runtime state", asy
     connections: [result.connection],
     now: now + 2,
     requiredCapabilities: ["chat"],
-    priorityByConnectionId: { "cerebras-primary": 1 },
-    usageByConnectionId: { "cerebras-primary": usage }
+    priorityByConnectionId: { "groq-primary": 1 },
+    usageByConnectionId: { "groq-primary": usage }
   });
   assert.equal(resolution.candidates.length, 0);
   assert.equal(resolution.excluded[0]?.decision.reason, "canary-stale");
@@ -216,46 +250,44 @@ test("revoke and disconnect remove credential access deterministically", async (
   const repository = new MemoryRepository();
   const lifecycle = new ProviderConnectionLifecycle(vault, repository, probes());
   const connected = await lifecycle.connect({
-    id: "cerebras-primary",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     secret,
     now,
     capabilities: ["chat"]
   });
-  const revoked = await lifecycle.revoke("cerebras-primary", now + 1);
+  const revoked = await lifecycle.revoke("groq-primary", now + 1);
   assert.equal(revoked.state, "revoked");
   assert.equal(await vault.read(connected.connection.credentialReference), null);
 
   await lifecycle.connect({
-    id: "cerebras-primary",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     secret,
     now: now + 2,
     capabilities: ["chat"]
   });
-  await lifecycle.disconnect("cerebras-primary");
-  assert.equal(await repository.read("cerebras-primary"), null);
+  await lifecycle.disconnect("groq-primary");
+  assert.equal(await repository.read("groq-primary"), null);
   assert.equal(vault.values.size, 0);
 });
 
-test("promotional credit connection remains stored but never becomes free-only runnable", async () => {
+test("removed promotional providers cannot be connected", async () => {
   const vault = new MemoryVault();
   const repository = new MemoryRepository();
   const lifecycle = new ProviderConnectionLifecycle(vault, repository, probes());
-  const result = await lifecycle.connect({
+  await assert.rejects(lifecycle.connect({
     id: "deepseek-trial",
     providerId: "deepseek",
     modelId: "deepseek-v4-flash",
     secret,
     now,
     capabilities: ["chat"]
-  });
-  assert.equal(result.admission.admitted, false);
-  assert.equal(result.admission.reason, "not-permanent-free");
-  assert.equal(result.connection.state, "limited");
-  assert.match(result.admission.detail, /permanent free-only/);
+  }), /Unknown provider catalog entry/);
+  assert.equal(vault.values.size, 0);
+  assert.equal(repository.values.size, 0);
 });
 
 test("failed initial probes remove the newly supplied secret and expose only safe guidance", async () => {
@@ -270,9 +302,9 @@ test("failed initial probes remove the newly supplied secret and expose only saf
   const lifecycle = new ProviderConnectionLifecycle(vault, repository, broken);
   await assert.rejects(
     lifecycle.connect({
-      id: "cerebras-primary",
-      providerId: "cerebras",
-      modelId: "gpt-oss-120b",
+      id: "groq-primary",
+      providerId: "groq",
+      modelId: "openai/gpt-oss-120b",
       secret,
       now,
       capabilities: ["chat"]

@@ -18,7 +18,11 @@ const stateSchema = z.strictObject({ schemaVersion: z.literal(1), permits: z.rec
 export class ProjectEgressPolicyService {
   readonly #path: string;
   #mutation = Promise.resolve();
-  constructor(stateDirectory: string, private readonly now: () => number = Date.now) { this.#path = resolve(stateDirectory, "project-egress-policies.json"); }
+  constructor(
+    stateDirectory: string,
+    private readonly now: () => number = Date.now,
+    private readonly defaultFreeProviders?: () => Promise<readonly string[]>
+  ) { this.#path = resolve(stateDirectory, "project-egress-policies.json"); }
 
   async grant(projectId: string, raw: unknown): Promise<ProjectEgressPermit> {
     assertProjectId(projectId);
@@ -39,10 +43,27 @@ export class ProjectEgressPolicyService {
   async authorize(projectId: string, contextDigest: string): Promise<ProjectEgressPermit> {
     assertProjectId(projectId);
     const permit = (await this.#load()).permits[projectId];
-    if (!permit) throw new ProjectEgressDeniedError("Approve provider use for this project before solution research.");
-    if (permit.expiresAt <= this.now()) throw new ProjectEgressDeniedError("Project provider consent expired. Review and approve it again.");
-    if (permit.contextDigest !== contextDigest) throw new ProjectEgressDeniedError("Project context changed after consent. Review the updated context before sharing it.");
-    return permit;
+    if (permit && permit.expiresAt > this.now() && permit.contextDigest === contextDigest) return permit;
+    if (!this.defaultFreeProviders) {
+      if (!permit) throw new ProjectEgressDeniedError("Approve provider use for this project before solution research.");
+      if (permit.expiresAt <= this.now()) throw new ProjectEgressDeniedError("Project provider consent expired. Review and approve it again.");
+      throw new ProjectEgressDeniedError("Project context changed after consent. Review the updated context before sharing it.");
+    }
+    const providerIds = [...new Set(await this.defaultFreeProviders())].sort();
+    if (providerIds.length === 0) throw new ProjectEgressDeniedError("No eligible free provider is currently available. Codkesh will retry provider checks automatically.");
+    const now = this.now();
+    return this.#mutate(async (state) => {
+      const refreshed = projectEgressPermitSchema.parse({
+        schemaVersion: 1,
+        projectId,
+        contextDigest,
+        dataClass: "source_code",
+        providerIds,
+        approvedAt: now,
+        expiresAt: now + 31 * 86_400_000,
+      });
+      return { state: { ...state, permits: { ...state.permits, [projectId]: refreshed } }, result: refreshed };
+    });
   }
 
   async get(projectId: string): Promise<ProjectEgressPermit | null> { assertProjectId(projectId); return (await this.#load()).permits[projectId] ?? null; }

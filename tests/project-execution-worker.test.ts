@@ -62,5 +62,24 @@ test("integration conflict pauses safely, preserves non-completion, and publishe
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("post-completion observer failure preserves completion and does not halt autonomous continuation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-observer-failure-"));
+  try {
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
+    const adapters: ProjectExecutionAdapters = {
+      candidates: async () => [{ providerId: "groq", modelId: "coder", deviceId: "spare-mac", capabilities: ["chat", "structured_output"], privacyClasses: ["source_code"], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 4_000, deviceLoad: 0.2, preference: 10 }],
+      implement: async () => implementation(), validate: async (_project, _task, tier) => ({ tier, commandLabel: tier, passed: true, exitCode: 0, evidenceDigest: evidence }), classifyFailure: async () => "implementation",
+      healingPolicy: async () => ({ maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["fast", "full", "integration"], requiredReviewRoles: ["functional", "design"], minimumGoldenScore: 90 }), heal: async () => implementation(),
+      review: async () => [review("functional-reviewer", "gemini", "functional"), review("design-reviewer", "cloudflare", "design")],
+      integrate: async () => ({ commitDigest: evidence, integrationDigest: evidence, validation: { tier: "integration", commandLabel: "post integration", passed: true, exitCode: 0, evidenceDigest: evidence } }),
+      observe: async () => { throw new Error("temporary Jira synchronization failure"); },
+    };
+    const result = await new ProjectExecutionWorker(service, adapters, "worker-a", 30_000).tick(projectId);
+    assert.equal(result?.state, "completed");
+    assert.equal(result?.tasks[0]?.status, "completed");
+    assert.equal(result?.tasks[0]?.commitDigest, evidence);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 function implementation() { return { evidenceDigest: evidence, changedFiles: ["src/app.ts"], goldenScore: 95, previousGoldenScore: 95 }; }
 function review(reviewerId: string, providerId: string, role: "functional" | "design") { return { reviewerId, providerId, role, verdict: "pass" as const, findings: [{ id: `${role}-finding`, severity: "info" as const, evidenceRef: evidence, confidence: 0.99, acceptanceCriterion: "The approved behavior is implemented.", recommendedRepair: "No repair is required." }] }; }

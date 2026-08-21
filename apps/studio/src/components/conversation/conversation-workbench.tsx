@@ -209,7 +209,7 @@ export function ConversationWorkbench({
                   {blocked ? "Needs attention" : "Safe to review"}
                 </Badge>
               </div>
-              <CardTitle className="mt-4 text-xl">What should Pipeline Studio build?</CardTitle>
+              <CardTitle className="mt-4 text-xl">What should Codkesh build?</CardTitle>
               <CardDescription>
                 Describe the outcome. Context is previewed, removable, cited, and checked locally first.
               </CardDescription>
@@ -489,4 +489,3 @@ function cancelLabel(state: CancelState, workerActive: boolean): string {
   if (state === "unable_to_stop") return "Unable to stop";
   return workerActive ? "Lease active" : "Lease inactive";
 }
-

@@ -55,17 +55,14 @@ export function ProjectPortfolio(props: {
           <FolderOpen /><span className="text-sm font-medium">Start your first project</span>
         </button>
       ) : (
-        <div className="divide-y divide-foreground/[.06]">
+        <div className="grid gap-2 sm:grid-cols-2">
           {projects.map((project) => {
             const attention = needsAttention(project);
             const update = project.latestUpdate?.summary ?? (project.lifecycleStage ?? "intake").replaceAll("_", " ");
             return (
-              <button key={project.id} type="button" onClick={() => props.openProject(project.id)} className="group flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left outline-none transition-[transform,background-color] duration-200 hover:translate-x-1 hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/30">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground"><FolderOpen size={17} weight="duotone" /></span>
-                <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{project.displayName}</strong><span className="mt-0.5 block truncate text-xs capitalize text-muted-foreground">{update}</span></span>
-                {attention && <Warning className="shrink-0 text-amber-500" aria-label="Needs attention" />}
-                <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">{project.latestUpdate ? relativeTime(project.latestUpdate.occurredAt) : ""}</span>
-                <ArrowRight className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+              <button key={project.id} type="button" onClick={() => props.openProject(project.id)} className="group flex min-h-36 w-full flex-col rounded-3xl bg-muted/45 p-4 text-left outline-none transition duration-200 hover:-translate-y-0.5 hover:bg-muted/70 hover:shadow-lg hover:shadow-black/5 focus-visible:ring-3 focus-visible:ring-ring/30">
+                <span className="flex w-full items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-background text-muted-foreground transition-transform group-hover:scale-105"><FolderOpen size={18} weight="duotone" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{project.displayName}</strong><span className="mt-1 block truncate text-xs capitalize text-muted-foreground">{update}</span></span>{attention ? <Warning className="shrink-0 text-amber-500" aria-label="Needs attention" /> : <ArrowRight className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}</span>
+                <span className="mt-auto flex w-full items-end justify-between gap-3 pt-5"><span className="min-w-0 flex-1">{project.progress ? <><span className="mb-1.5 flex justify-between text-[11px] text-muted-foreground"><span>{project.progress.percent}%</span><span>{project.progress.completed}/{project.progress.total}</span></span><span className="block h-1.5 overflow-hidden rounded-full bg-background"><span className="block h-full rounded-full bg-primary transition-[width]" style={{ width: `${project.progress.percent}%` }} /></span></> : <span className="text-xs capitalize text-muted-foreground">{(project.lifecycleStage ?? "intake").replaceAll("_", " ")}</span>}</span><span className="shrink-0 text-xs text-muted-foreground">{project.latestUpdate ? relativeTime(project.latestUpdate.occurredAt) : ""}</span></span>
               </button>
             );
           })}

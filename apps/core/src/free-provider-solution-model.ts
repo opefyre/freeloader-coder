@@ -10,7 +10,7 @@ import { deliveryPlanContentSchema } from "../../../packages/orchestration/src/d
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 8;
+const RESPONSE_CONTRACT_VERSION = 10;
 
 export class FreeProviderSolutionModel implements RoutedSolutionModel {
   readonly #runtime: ProviderRuntimeService;
@@ -39,12 +39,13 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
     const capacity = await this.#capacity.snapshot(connections.map((connection) => connection.id), now);
     const byId = new Map(connections.map((connection) => [connection.id, connection]));
     const providerOrder = preferredProvidersForRole(input.role);
+    const roleProviderIds = providerIdsForRole(input.role, permit.providerIds, providerOrder);
     const outcome = await this.#runtime.executeAdmitted({
       taskId: input.projectId, workUnitId: `${input.role}-${requestDigest.slice(0, 20)}`, requestDigest, connections,
       priorityByConnectionId: Object.fromEntries([...connections].sort((a, b) => providerPriority(a.providerId, providerOrder) - providerPriority(b.providerId, providerOrder) || a.id.localeCompare(b.id)).map((connection, index) => [connection.id, index + 1])),
       usageByConnectionId: capacity.usageByConnectionId, circuitOpenUntilByConnectionId: capacity.circuitOpenUntilByConnectionId,
       requiredCapabilities: ["chat", "structured_output"],
-      routeRequest: { role: "implementer", kind: input.role.endsWith("review") ? "review" : "plan", dataClass: permit.dataClass, minimumPrivacy: "training_eligible", estimatedInputTokens: Math.max(1, Math.ceil(payload.length / 4)), requestedOutputTokens: input.role === "solution_reconciliation" ? 12_000 : 6_000, allowPaid: false, allowPromotionalCredit: false, preferredProviderIds: permit.providerIds, avoidedProviderIds: connections.filter((connection) => !permit.providerIds.includes(connection.providerId)).map((connection) => connection.providerId), now },
+      routeRequest: { role: "implementer", kind: input.role.endsWith("review") ? "review" : "plan", dataClass: permit.dataClass, minimumPrivacy: "training_eligible", estimatedInputTokens: Math.max(1, Math.ceil(payload.length / 4)), requestedOutputTokens: input.role === "solution_reconciliation" ? 12_000 : 6_000, allowPaid: false, allowPromotionalCredit: false, preferredProviderIds: roleProviderIds, avoidedProviderIds: connections.filter((connection) => !roleProviderIds.includes(connection.providerId)).map((connection) => connection.providerId), now },
       executor: { execute: async ({ candidate }) => {
         if (!permit.providerIds.includes(candidate.providerId) || candidate.paid || candidate.billingMode !== "free_tier") throw failure("provider-not-consented", 403);
         const connection = candidate.providerConnectionId ? byId.get(candidate.providerConnectionId) : null;
@@ -78,9 +79,44 @@ export class FreeProviderSolutionModel implements RoutedSolutionModel {
 }
 
 function preferredProvidersForRole(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): readonly string[] {
-  if (role === "technical_research" || role === "product_review" || role === "delivery_review") return ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere"];
+  if (role === "technical_research" || role === "product_review" || role === "delivery_review") return ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere", "openrouter"];
   if (role === "technical_review" || role === "technical_delivery_review") return ["nvidia-nim", "mistral", "gemini", "huggingface", "kilo", "groq", "cohere"];
   return ["gemini", "mistral", "nvidia-nim", "huggingface", "kilo", "groq", "cohere"];
+}
+
+export function providerIdsForRole(
+  role: Parameters<RoutedSolutionModel["run"]>[0]["role"],
+  consentedProviderIds: readonly string[],
+  order: readonly string[]
+): readonly string[] {
+  const consented = new Set(consentedProviderIds);
+  const ordered = order.filter((providerId) => consented.has(providerId));
+  if (role === "product_review" || role === "technical_review") {
+    // Independent review means independent provider/model infrastructure, not
+    // two personas declared by the same model. Reserve disjoint provider pools
+    // and fail closed until one member of each pool is available.
+    const reserved = role === "product_review"
+      ? new Set(["gemini", "huggingface", "cohere"])
+      : new Set(["nvidia-nim", "mistral", "kilo", "groq"]);
+    return ordered.filter((providerId) => reserved.has(providerId));
+  }
+  if (!["delivery_planning", "delivery_review", "technical_delivery_review"].includes(role)) {
+    return [...consentedProviderIds];
+  }
+  // Delivery planning has a deterministic local fallback. Giving it one
+  // external attempt prevents a large planning contract from opening every
+  // provider circuit before the two independent QA roles can run.
+  if (role === "delivery_planning") return ordered.slice(0, 1);
+
+  // Keep the two QA roles on disjoint fallback pools. A bad response or open
+  // circuit in one pool must not consume the capacity reserved for the other
+  // independent reviewer.
+  const reserved =
+    role === "delivery_review"
+      ? new Set(["mistral", "huggingface", "cohere", "zhipu", "openrouter"])
+      : new Set(["nvidia-nim", "kilo", "groq"]);
+  const pool = ordered.filter((providerId) => reserved.has(providerId));
+  return pool.length > 0 ? pool : ordered.slice(0, 1);
 }
 
 function providerPriority(providerId: string, order: readonly string[]): number {
@@ -99,6 +135,13 @@ function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"
     const result = researchEvidenceGraphSchema.safeParse(parsed);
     const discipline = role === "product_research" ? "product" : "technical";
     if (!result.success || result.data.discipline !== discipline) throw failure("response-contract-rejected", 400);
+    for (const source of result.data.sources) {
+      let url: URL;
+      try { url = new URL(source.url); }
+      catch { throw failure("unsafe-citation", 400); }
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw failure("unsafe-citation", 400);
+      if (isPrivateResearchHost(url.hostname)) throw failure("unsafe-citation", 400);
+    }
     return result.data;
   }
   if (role === "solution_reconciliation") return parseContract(solutionContentSchema, parsed);
@@ -118,6 +161,14 @@ function validateResponse(role: Parameters<RoutedSolutionModel["run"]>[0]["role"
     return result;
   }
   return parsed;
+}
+function isPrivateResearchHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host === "::1") return true;
+  const match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) return false;
+  const [a, b] = match.slice(1).map(Number);
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b! >= 16 && b! <= 31) || (a === 192 && b === 168) || a! >= 224;
 }
 function canonicalizeDeliveryPlan(value: unknown, input?: Parameters<RoutedSolutionModel["run"]>[0]): unknown {
   if (!input || typeof value !== "object" || value === null || !Array.isArray((value as { items?: unknown }).items)) return value;
@@ -171,6 +222,30 @@ function parseContract<T>(schema: { safeParse(value: unknown): { success: true; 
 }
 function schemaFor(role: Parameters<RoutedSolutionModel["run"]>[0]["role"]): Readonly<Record<string, unknown>> {
   if (role === "product_research" || role === "technical_research") return researchEvidenceResponseSchema(role === "product_research" ? "product" : "technical");
+  if (role === "solution_revision_scope") {
+    return {
+      type: "object",
+      additionalProperties: false,
+      required: ["schemaVersion", "sections", "rationale"],
+      properties: {
+        schemaVersion: { const: 1 },
+        sections: {
+          type: "array",
+          minItems: 1,
+          maxItems: 12,
+          uniqueItems: true,
+          items: {
+            enum: [
+              "title", "summary", "behavior", "architecture", "userExperience",
+              "data", "integrations", "security", "privacy", "reliability",
+              "rollout", "metrics", "alternatives", "unresolvedBlockers",
+            ],
+          },
+        },
+        rationale: { type: "string" },
+      },
+    };
+  }
   const deliverySchema = role === "delivery_planning" ? deliveryPlanningResponseSchema() : null;
   if (deliverySchema) return deliverySchema;
   if (role === "delivery_review" || role === "technical_delivery_review") return { type: "object", additionalProperties: false, required: ["schemaVersion", "reviewerId", "discipline", "verdict", "findings"], properties: { schemaVersion: { const: 1 }, reviewerId: { type: "string" }, discipline: { enum: ["delivery", "technical"] }, verdict: { enum: ["pass", "fail"] }, findings: { type: "array", items: { type: "string" } } } };

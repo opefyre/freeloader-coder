@@ -7,11 +7,13 @@ test("Settings uses an honest minimal app-level connection catalogue", async () 
   for (const name of ["AI providers", "GitHub", "Jira", "Telegram", "Discord", "Slack", "Cloudflare", "Google Cloud", "AWS", "Vercel"]) {
     assert.equal(source.includes(name), true, `Missing connection: ${name}`);
   }
-  assert.equal(source.includes("Not connected"), true);
+  assert.equal(source.includes("Connect"), true);
   assert.equal(source.includes("opefyre"), false);
   assert.equal(source.includes("PIPE-72"), false);
   assert.equal(source.includes('type="password"'), true);
   assert.equal(source.includes('autoComplete="off"'), true);
-  assert.equal(source.includes("connectJiraConnection"), true);
+  assert.equal(source.includes("beginIntegrationOAuth"), true);
+  assert.equal(source.includes("connectTokenService"), true);
+  assert.equal(source.includes("disconnectServiceConnection"), true);
   assert.equal(source.includes("secret-token"), false);
 });

@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("provider consent remains implemented but is absent from the minimal Start history", async () => {
+test("projects automatically use the connected free-provider pool without a provider chooser", async () => {
   const source = await readFile("apps/studio/src/components/projects/project-research-control.tsx", "utf8");
   const portfolio = await readFile("apps/studio/src/components/projects/project-portfolio.tsx", "utf8");
   assert.doesNotMatch(portfolio, /ProjectResearchControl/);
-  for (const copy of ["Choose free providers", "Test context", "Project context", "Start solution research?", "Context version", "Maximum cost", "$0", "Allow and start", "Change sharing"]) assert.equal(source.includes(copy), true, `missing ${copy}`);
-  assert.match(source, /useState<readonly string\[]>\(\[\]\)/);
+  assert.match(source, /All connected free providers are included automatically/);
+  assert.match(source, /never uses paid capacity/);
+  assert.match(source, /Start research/);
+  for (const removed of ["Choose free providers", "Test context", "Project context", "Allow and start", "Change sharing"]) assert.equal(source.includes(removed), false, `obsolete ${removed}`);
   assert.doesNotMatch(source, /<input|<textarea/);
+  assert.match(source, /credentialState === "active"/);
   assert.match(source, /provider\.cost\.zeroCost/);
   assert.match(source, /!provider\.cost\.billingEnabled/);
 });

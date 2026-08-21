@@ -1,3 +1,4 @@
+<!-- codkesh-artifact:{"schemaVersion":1,"kind":"security","revision":1,"updatedAt":"2026-08-12T10:07:40.649Z","producer":"codkesh:project-intake","bodyDigest":"546ccacf50936494fcbdb552ff6f75481bbe49eada198d3eace4a534958af626","approvedDigest":null,"supersedesDigest":null,"confidence":"unknown","approvalState":"pending","citations":[]} -->
 # Security policy
 
 Do not report vulnerabilities in public issues or Discussions. Use

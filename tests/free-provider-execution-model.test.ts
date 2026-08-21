@@ -30,6 +30,51 @@ test("execution model admits an exact free assignment, records it, and replays d
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("execution model clamps admission and dispatch to the verified provider output ceiling", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-model-limit-"));
+  try {
+    let observedMaxOutputTokens = 0;
+    const stored = connection({
+      id: "connection-cohere",
+      providerId: "cohere",
+      modelId: "command-a-03-2025",
+      apiBaseUrl: "https://api.cohere.ai/compatibility/v1",
+      contextWindowTokens: 256_000,
+      maxOutputTokens: 8_192,
+      quota: { ...connection().quota, tokensPerMinute: null, tokensPerDay: null }
+    });
+    const repository = { list: async () => [stored], read: async (id: string) => id === stored.id ? stored : null };
+    const model = new FreeProviderExecutionModel(root, repository, { read: async () => "safe-test-credential" }, { adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
+      observedMaxOutputTokens = request.maxOutputTokens;
+      return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ summary: "Bounded change", operations: [] }), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
+    } }) as unknown as ProviderAdapter }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["cohere"], approvedAt: now - 1, expiresAt: now + 60_000 };
+
+    await model.run({ projectId, taskId, assignment: { providerId: "cohere", modelId: stored.modelId, deviceId: `provider:${stored.id}` }, role: "implementer", permit, system: "Return JSON.", instruction: "Propose bounded changes.", sources: [], responseSchema: { type: "object" }, maxOutputTokens: 32_000 });
+
+    assert.equal(observedMaxOutputTokens, 8_192);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("execution model automatically refreshes expired free-provider evidence before assignment", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-model-refresh-"));
+  try {
+    let stored = connection({ state: "stale", quota: { ...connection().quota, expiresAt: now - 1 } });
+    let refreshes = 0;
+    const repository = { list: async () => [stored], read: async (id: string) => id === stored.id ? stored : null };
+    const model = new FreeProviderExecutionModel(root, repository, { read: async () => "safe-test-credential" }, { adapter: () => null }, () => now, { reProbe: async () => {
+      refreshes += 1;
+      stored = connection();
+    } });
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+
+    const candidates = await model.candidates(permit, "implementer");
+
+    assert.equal(refreshes, 1);
+    assert.equal(candidates.length, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("execution model blocks billing, stale consent, and assignment drift before dispatch", async () => {
   const root = await mkdtemp(join(tmpdir(), "execution-model-denied-"));
   try {

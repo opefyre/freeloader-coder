@@ -50,7 +50,7 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
       setSelectedProviderId((current) => current || next.catalog[0]?.id || "");
     } catch (caught) {
       if (signal?.aborted) return;
-      setError(safeMessage(caught, "The local core is unavailable. Start or repair Pipeline Studio, then retry."));
+      setError(safeMessage(caught, "The local core is unavailable. Start or repair Codkesh, then retry."));
     }
   }, [endpoint]);
 
@@ -68,11 +68,9 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
   useEffect(() => {
     if (!selectedProvider) return;
     setModelId(selectedProvider.models[0]?.id ?? "");
-    setConnectionName((current) =>
-      current && !collection?.connections.some((connection) => connection.id === current)
-        ? current
-        : uniqueConnectionName(selectedProvider.id, collection?.connections ?? [])
-    );
+    setConnectionName(uniqueConnectionName(selectedProvider.id, collection?.connections ?? []));
+    setSecret("");
+    setAttested(false);
   }, [selectedProvider, collection?.connections]);
 
   const connect = async () => {
@@ -138,6 +136,7 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
     setBusy(action);
     setBusyConnectionId(connection.id);
     setError(null);
+    setNotice(action === "reprobe" ? `Re-checking ${connection.providerLabel}…` : null);
     try {
       const result = await mutateProviderConnection({
         endpoint,
@@ -185,7 +184,10 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
         </CardHeader>
         <CardContent className="mt-6 grid min-w-0 gap-5 xl:grid-cols-[16rem_minmax(0,1fr)_20rem]">
           <div className="space-y-2" role="list" aria-label="Verified free provider catalog">
-            {(collection?.catalog ?? []).map((provider) => (
+            {(collection?.catalog ?? []).map((provider) => {
+              const connection = collection?.connections.find((candidate) => candidate.providerId === provider.id);
+              const status = connectionStatus(connection);
+              return (
               <button
                 key={provider.id}
                 type="button"
@@ -206,11 +208,15 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
                     {provider.freeAccess === "permanent" ? "Permanent free" : "Account-limited free"}
                   </span>
                 </span>
-                {collection?.connections.some((connection) => connection.providerId === provider.id && connection.admission.admitted) && (
+                {status === "ready" && (
                   <CheckCircle size={17} weight="fill" className="text-emerald-500" />
                 )}
+                {status === "recheck" && (
+                  <Warning size={17} weight="fill" className="text-amber-500" />
+                )}
               </button>
-            ))}
+              );
+            })}
             {!collection && (
               <div className="rounded-2xl bg-amber-400/10 p-4 text-xs leading-5 text-muted-foreground">
                 Start the local core to load the verified connection catalog.
@@ -238,16 +244,7 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
                   </a>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">{selectedProvider.summary}</p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <Field label="Connection name">
-                    <input
-                      value={connectionName}
-                      onChange={(event) => setConnectionName(event.target.value)}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className={fieldClass}
-                    />
-                  </Field>
+                <div className="mt-5 grid gap-3">
                   <Field label="Verified model">
                     <select value={modelId} onChange={(event) => setModelId(event.target.value)} className={fieldClass}>
                       {selectedProvider.models.map((model) => (
@@ -276,7 +273,7 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
                   <span>
                     <strong className="block text-foreground">I confirm this provider account has no billing enabled.</strong>
                     <span className="text-muted-foreground">
-                      This attestation expires. Pipeline Studio will never upgrade, top up, or route to paid models.
+                      This attestation expires. Codkesh will never upgrade, top up, or route to paid models.
                     </span>
                   </span>
                 </label>
@@ -328,7 +325,7 @@ export function ProviderConnectionWizard({ endpoint }: { endpoint: string }) {
           role="status"
           aria-live="polite"
           className={cn(
-            "flex items-start gap-3 rounded-3xl p-4 text-sm",
+            "fixed bottom-5 right-5 z-[100] flex max-w-md items-start gap-3 rounded-3xl bg-popover p-4 text-sm shadow-2xl",
             error ? "bg-red-400/10" : "bg-emerald-400/10"
           )}
         >
@@ -384,14 +381,15 @@ function ConnectionCard({
 }) {
   const [replacement, setReplacement] = useState(connection.modelId);
   const freshUntil = Math.min(connection.cost.expiresAt, connection.quota.expiresAt, connection.canary.expiresAt);
+  const status = connectionStatus(connection);
   return (
     <section className="rounded-3xl bg-muted/45 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <strong>{connection.providerLabel}</strong>
-            <Badge tone={connection.admission.admitted ? "positive" : "caution"}>
-              {connection.admission.admitted ? "Routing ready" : connection.state}
+            <Badge tone={status === "ready" ? "positive" : "caution"}>
+              {connectionStatusLabel(connection)}
             </Badge>
           </div>
           <span className="mt-1 block text-xs text-muted-foreground">{connection.id} · {connection.modelId}</span>
@@ -429,6 +427,19 @@ function ConnectionCard({
       </div>
     </section>
   );
+}
+
+function connectionStatus(connection: PublicProviderConnection | undefined): "ready" | "recheck" | "disconnected" {
+  if (!connection) return "disconnected";
+  if (connection.admission.admitted) return "ready";
+  return connection.credentialState === "active" ? "recheck" : "disconnected";
+}
+
+function connectionStatusLabel(connection: PublicProviderConnection): string {
+  const status = connectionStatus(connection);
+  if (status === "ready") return "Ready";
+  if (status === "recheck") return "Re-check required";
+  return connection.credentialState === "revoked" ? "Key revoked" : "Not ready";
 }
 
 function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {

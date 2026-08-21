@@ -161,12 +161,13 @@ export class ProviderConnectionLifecycle {
         roles: current.capabilityRoles,
         privacyClass: current.privacyClass
       });
-    } catch {
+    } catch (error) {
       await this.repository.write(providerConnectionSchema.parse({
         ...current,
         state: "stale",
         updatedAt: input.now
       }));
+      if (error instanceof ProviderConnectionLifecycleError) throw error;
       throw new ProviderConnectionLifecycleError(
         "probe-failed",
         "The provider checks did not complete. Queued work remains safe; retry after the provider recovers."

@@ -70,6 +70,16 @@ export function createOpenAiCompatibleAdapter(input: {
         },
       });
       if (!response.ok) {
+        const diagnostic = await safeProviderErrorDiagnostic(response.clone());
+        if (diagnostic) {
+          process.stderr.write(`${JSON.stringify({
+            event: "provider_request_rejected",
+            providerId: provider.id,
+            status: response.status,
+            diagnostic: diagnostic.code,
+            safeDetail: diagnostic.safeDetail,
+          })}\n`);
+        }
         throw new ProviderAdapterFailure(
           normalizeProviderFailure({
             status: response.status,
@@ -132,7 +142,7 @@ export function createOpenAiCompatibleAdapter(input: {
       );
       const discovered = modelIds(value);
       return provider.models
-        .filter((model) => discovered.has(model.id))
+        .filter((model) => provider.id === "zhipu" || discovered.has(model.id))
         .map((model) =>
           providerAdapterModelSchema.parse({
             id: model.id,
@@ -166,7 +176,7 @@ export function createOpenAiCompatibleAdapter(input: {
         provider.chatCompletionsPath ?? "/chat/completions",
         {
           method: "POST",
-          body: JSON.stringify(toProviderRequest(chatRequest)),
+          body: JSON.stringify(toProviderRequest(chatRequest, provider.id)),
         },
         chatRequest.timeoutMs
       );
@@ -188,6 +198,52 @@ export function createOpenAiCompatibleAdapter(input: {
   };
 }
 
+async function safeProviderErrorDiagnostic(response: Response): Promise<{ code: string; safeDetail: string | null } | null> {
+  let text = "";
+  try {
+    text = (await response.text()).slice(0, 8_192);
+  } catch {
+    return { code: "unreadable_error_response", safeDetail: null };
+  }
+  const message = providerErrorMessage(text);
+  const searchable = message.toLowerCase();
+  const patterns: readonly [RegExp, string][] = [
+    [/tool.{0,80}(name|schema|parameter|function)/s, "tool_contract_rejected"],
+    [/(context|prompt).{0,80}(length|long|token|window|limit)/s, "context_limit_rejected"],
+    [/(max_tokens|max_completion_tokens).{0,80}(invalid|limit|maximum|less)/s, "output_limit_rejected"],
+    [/(response_format|json_schema|schema).{0,120}(invalid|unsupported|required|not supported|must)/s, "structured_output_contract_rejected"],
+    [/(message|role).{0,80}(invalid|unsupported|required)/s, "message_contract_rejected"],
+    [/(rate.?limit|too many requests)/s, "rate_limit_rejected"],
+    [/(model).{0,80}(unsupported|not found|decommission|invalid)/s, "model_rejected"],
+  ];
+  return {
+    code: patterns.find(([pattern]) => pattern.test(searchable))?.[1] ?? "request_contract_rejected",
+    safeDetail: sanitizeProviderErrorMessage(message),
+  };
+}
+
+function providerErrorMessage(text: string): string {
+  try {
+    const value = JSON.parse(text) as { error?: { message?: unknown }; message?: unknown };
+    const candidate = value.error?.message ?? value.message;
+    return typeof candidate === "string" ? candidate : "Provider rejected the request without a message.";
+  } catch {
+    return text || "Provider rejected the request without a message.";
+  }
+}
+
+function sanitizeProviderErrorMessage(value: string): string | null {
+  const sanitized = value
+    .replace(/(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)\s*[:=]\s*\S+/gi, "[redacted]")
+    .replace(/\b(?:sk|hf|gsk|nvapi)-[A-Za-z0-9._-]{8,}\b/g, "[redacted]")
+    .replace(/\/Users\/[^/\s]+\//g, "/Users/[redacted]/")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/[\r\n\t]+/g, " ")
+    .trim()
+    .slice(0, 500);
+  return sanitized || null;
+}
+
 function canonicalBaseUrl(value: string): string {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
@@ -202,14 +258,19 @@ function assertCredential(input: ProviderCredentialInput): void {
   }
 }
 
-function toProviderRequest(request: ProviderChatRequest): Record<string, unknown> {
+function toProviderRequest(
+  request: ProviderChatRequest,
+  providerId: string,
+): Record<string, unknown> {
   return {
     model: request.modelId,
     messages: request.messages,
     max_tokens: request.maxOutputTokens,
     temperature: request.temperature,
     stream: false,
-    ...(request.responseSchema
+    ...(providerId === "zhipu" ? { thinking: { type: "disabled" } } : {}),
+    ...(providerId === "aion" ? { reasoning_effort: "none" } : {}),
+    ...(request.responseSchema && providerId !== "aion"
       ? {
           response_format: {
             type: "json_schema",
@@ -334,7 +395,8 @@ function modelIds(value: unknown): Set<string> {
   return new Set(
     data.flatMap((item) => {
       const id = record(item).id;
-      return typeof id === "string" ? [id] : [];
+      if (typeof id !== "string") return [];
+      return id.startsWith("models/") ? [id.slice("models/".length)] : [id];
     })
   );
 }

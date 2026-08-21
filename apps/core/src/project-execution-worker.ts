@@ -3,6 +3,7 @@ import type { QualityReview } from "../../../packages/orchestration/src/quality-
 import type { HealingFailureClass, HealingPolicy } from "../../../packages/orchestration/src/healing.js";
 import type { ProjectExecutionService } from "./project-execution-service.js";
 import { FreeProviderExecutionError } from "./free-provider-execution-model.js";
+import { ProjectTaskWorkspaceError } from "./project-task-workspace.js";
 
 export type WorkerValidation = { tier: "fast" | "full" | "integration"; commandLabel: string; passed: boolean; exitCode: number; evidenceDigest: string };
 export type ImplementationResult = { evidenceDigest: string; changedFiles: readonly string[]; goldenScore: number; previousGoldenScore: number };
@@ -67,14 +68,30 @@ export class ProjectExecutionWorker {
       task = await this.service.recordReviews(projectId, task.id, lease.leaseId, this.workerId, await this.adapters.review(projectId, task));
       if (task.status !== "integrating") return await this.service.get(projectId);
       const integration = await this.adapters.integrate(projectId, task);
+      if (!integration.validation.passed) {
+        await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, "Execution needs attention: Clean-checkout validation failed before integration; no unverified commit was retained.", "implementation");
+        return await this.service.get(projectId);
+      }
       task = await this.service.recordIntegration(projectId, task.id, lease.leaseId, this.workerId, integration);
-      await this.adapters.observe?.(projectId, task);
+      await this.adapters.observe?.(projectId, task).catch((error) => {
+        console.warn("Completed execution could not be synchronized to its external observer; canonical completion proof is preserved for retry.", {
+          projectId,
+          taskId: task.id,
+          error: error instanceof Error ? error.message.slice(0, 300) : "External observation failed.",
+        });
+      });
       return await this.service.get(projectId);
     } catch (error) {
+      if (task.status === "completed") return await this.service.get(projectId);
       if (error instanceof FreeProviderExecutionError && (error.code === "capacity_unavailable" || error.code === "provider_failed")) {
         await this.service.releaseForRetry(projectId, task.id, lease.leaseId, this.workerId, "The assigned free provider is temporarily unavailable. The task is safely queued for its next eligible window.");
       } else {
-        await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, safeError(error));
+        const failureClass = error instanceof ProjectTaskWorkspaceError && ["operation_denied", "stale_source", "integration_conflict"].includes(error.code)
+          ? "implementation" as const
+          : error instanceof Error && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state)/.test(error.message)
+          ? "implementation" as const
+          : undefined;
+        await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, safeError(error), failureClass);
       }
       await this.adapters.observe?.(projectId, task).catch(() => undefined);
       throw error;

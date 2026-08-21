@@ -71,7 +71,7 @@ export function AutonomousWorkCenter({ endpoint }: { endpoint: string }) {
   }
 
   if (!snapshot && connection === "loading") return <State title="Connecting to autonomous work…" detail="Reading canonical requests, boundaries, schedules, and safe-step policy." />;
-  if (!snapshot) return <State title="Coordinator is offline" detail="Start Pipeline Studio locally. No sample queue or inferred action is shown." action={<Button onClick={() => void refresh()}><ArrowClockwise />Retry</Button>} />;
+  if (!snapshot) return <State title="Coordinator is offline" detail="Start Codkesh locally. No sample queue or inferred action is shown." action={<Button onClick={() => void refresh()}><ArrowClockwise />Retry</Button>} />;
 
   return (
     <section aria-labelledby="autonomous-work-title" className="space-y-4">

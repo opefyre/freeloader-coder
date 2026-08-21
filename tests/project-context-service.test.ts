@@ -5,7 +5,22 @@ import test from "node:test";
 
 import { LocalProjectRegistry } from "../apps/core/src/local-project-registry.js";
 import { ProjectArtifactStore } from "../apps/core/src/project-artifact-store.js";
-import { ProjectContextService } from "../apps/core/src/project-context-service.js";
+import {
+  ProjectContextService,
+  deduplicateClarificationClaims,
+} from "../apps/core/src/project-context-service.js";
+
+test("context conflicts collapse punctuation-equivalent clarification choices", () => {
+  const claims = deduplicateClarificationClaims([
+    { value: "Local-first (private)" },
+    { value: "local first private" },
+    { value: "Cloud synchronized" },
+  ]);
+  assert.deepEqual(
+    claims.map(({ value }) => value),
+    ["Local-first (private)", "Cloud synchronized"],
+  );
+});
 
 test("context generation is cited, atomic, digest-bound, and preserves accepted decisions", async () => {
   const { root, state, workspace } = await createContextFixture();

@@ -34,39 +34,39 @@ test("every Studio view has a stable clean route", () => {
   );
 });
 
-test("direct and trailing-slash routes resolve without query state", () => {
+test("direct routes resolve into the four owner workflows", () => {
   assert.equal(
     viewFromLocation({ pathname: "/projects", search: "" }),
     "projects"
   );
   assert.equal(
     viewFromLocation({ pathname: "/conversation/", search: "" }),
-    "conversation"
+    "overview"
   );
-  assert.equal(viewFromLocation({ pathname: "/help", search: "" }), "help");
+  assert.equal(viewFromLocation({ pathname: "/help", search: "" }), "settings");
   assert.equal(viewFromLocation({ pathname: "/activity", search: "" }), "activity");
-  assert.equal(viewFromLocation({ pathname: "/decisions", search: "" }), "decisions");
-  assert.equal(viewFromLocation({ pathname: "/attention", search: "" }), "attention");
-  assert.equal(viewFromLocation({ pathname: "/launch", search: "" }), "launch");
+  assert.equal(viewFromLocation({ pathname: "/decisions", search: "" }), "activity");
+  assert.equal(viewFromLocation({ pathname: "/attention", search: "" }), "activity");
+  assert.equal(viewFromLocation({ pathname: "/launch", search: "" }), "projects");
   assert.equal(
     viewFromLocation({ pathname: "/releases", search: "" }),
-    "releases"
+    "projects"
   );
-  assert.equal(viewFromLocation({ pathname: "/trust", search: "" }), "trust");
+  assert.equal(viewFromLocation({ pathname: "/trust", search: "" }), "settings");
   assert.equal(
     viewFromLocation({ pathname: "/accessibility", search: "" }),
-    "accessibility"
+    "settings"
   );
 });
 
-test("legacy view links still resolve and canonicalize without losing safe query data", () => {
+test("legacy view links consolidate and canonicalize without losing safe query data", () => {
   const legacy = new URL(
     "http://127.0.0.1:4311/?view=providers&mode=guided#workspace"
   );
   const view = viewFromLocation(legacy);
   const canonical = canonicalStudioUrl(legacy, view);
-  assert.equal(view, "providers");
-  assert.equal(canonical.pathname, "/providers");
+  assert.equal(view, "settings");
+  assert.equal(canonical.pathname, "/settings");
   assert.equal(canonical.search, "?mode=guided");
   assert.equal(canonical.hash, "#workspace");
 });

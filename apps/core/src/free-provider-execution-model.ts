@@ -14,17 +14,27 @@ const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secr
 export class FreeProviderExecutionModel {
   readonly #runtime: ProviderRuntimeService;
   readonly #capacity: ProviderCapacityStore;
+  #refreshInFlight: Promise<void> | null = null;
   constructor(
     private readonly stateDirectory: string,
     private readonly connections: Pick<ProviderConnectionRepository, "read" | "list">,
     private readonly vault: Pick<CredentialVault, "read">,
     private readonly adapters: { adapter(providerId: string): ProviderAdapter | null },
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly refresher?: { reProbe(id: string, now?: number): Promise<unknown> }
   ) { this.#runtime = new ProviderRuntimeService(stateDirectory); this.#capacity = new ProviderCapacityStore(resolve(stateDirectory, "provider-capacity.json")); }
 
   async candidates(permit: ProjectEgressPermit, role: "implementer" | "reviewer"): Promise<readonly ExecutionCandidate[]> {
     const now = this.now();
-    const connections = await this.connections.list();
+    let connections = await this.connections.list();
+    const stale = connections.filter((connection) =>
+      permit.providerIds.includes(connection.providerId) && connection.credentialState === "active" &&
+      (connection.state === "stale" || connection.cost.expiresAt <= now || connection.quota.expiresAt <= now || connection.canary.expiresAt <= now)
+    );
+    if (stale.length && this.refresher) {
+      await this.#refresh(stale.map((connection) => connection.id), now);
+      connections = await this.connections.list();
+    }
     const capacity = await this.#capacity.snapshot(connections.map((connection) => connection.id), now);
     return connections.filter((connection) =>
       permit.expiresAt > now && permit.providerIds.includes(connection.providerId) && connection.capabilityRoles.includes(role) &&
@@ -62,7 +72,7 @@ export class FreeProviderExecutionModel {
       taskId: input.taskId, workUnitId: `${input.role}-${requestDigest.slice(0, 20)}`, requestDigest, connections: [connection],
       priorityByConnectionId: { [connection.id]: 1 }, usageByConnectionId: capacity.usageByConnectionId,
       circuitOpenUntilByConnectionId: capacity.circuitOpenUntilByConnectionId, requiredCapabilities: ["chat", "structured_output"],
-      routeRequest: { role: input.role, kind: input.role === "reviewer" ? "review" : "code", dataClass: input.permit.dataClass, minimumPrivacy: "training_eligible", estimatedInputTokens: Math.max(1, Math.ceil(payload.length / 4)), requestedOutputTokens: input.maxOutputTokens ?? 16_384, allowPaid: false, allowPromotionalCredit: false, preferredProviderIds: [connection.providerId], avoidedProviderIds: [], now },
+      routeRequest: { role: input.role, kind: input.role === "reviewer" ? "review" : "code", dataClass: input.permit.dataClass, minimumPrivacy: "training_eligible", estimatedInputTokens: Math.max(1, Math.ceil(payload.length / 4)), requestedOutputTokens: Math.min(connection.maxOutputTokens, input.maxOutputTokens ?? 16_384), allowPaid: false, allowPromotionalCredit: false, preferredProviderIds: [connection.providerId], avoidedProviderIds: [], now },
       executor: { execute: async ({ candidate }) => {
         if (candidate.providerConnectionId !== connection.id || candidate.providerId !== input.assignment.providerId || candidate.modelId !== input.assignment.modelId || candidate.paid || candidate.billingMode !== "free_tier") throw failure("assignment-mismatch", 403);
         const adapter = this.adapters.adapter(candidate.providerId); const secret = await this.vault.read(connection.credentialReference);
@@ -81,6 +91,11 @@ export class FreeProviderExecutionModel {
     const artifactDigest = outcome.result.projection.outputDigest?.replace(/^sha256:/, "");
     if (!attempt || !artifactDigest) throw new FreeProviderExecutionError("evidence_incomplete", null, "Free-provider execution evidence is incomplete.");
     return { providerId: attempt.providerId, modelId: attempt.modelId, response: JSON.parse(await readPrivateProposalArtifact({ directory, digest: artifactDigest })), artifactDigest };
+  }
+
+  async #refresh(ids: readonly string[], now: number) {
+    if (!this.#refreshInFlight) this.#refreshInFlight = Promise.allSettled([...new Set(ids)].map((id) => this.refresher!.reProbe(id, now))).then(() => undefined).finally(() => { this.#refreshInFlight = null; });
+    await this.#refreshInFlight;
   }
 }
 

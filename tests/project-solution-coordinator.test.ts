@@ -27,6 +27,27 @@ test("solution coordinator returns immediately, persists completion, and does no
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner revision feedback starts a fresh reviewed solution after completion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-coordinator-owner-revision-"));
+  try {
+    let calls = 0;
+    const coordinator = new ProjectSolutionCoordinator(
+      root,
+      { run: async () => { calls += 1; return {} as any; } } as any,
+      () => 100 + calls,
+    );
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    const queued = await coordinator.schedule(projectId, { forceRegenerate: true });
+    assert.equal(queued.state, "queued");
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed" && calls === 2);
+    assert.equal((await coordinator.get(projectId))?.attempts, 2);
+    await coordinator.shutdown();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("solution coordinator projects owner-safe consent failures without retry loops", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-coordinator-denied-"));
   try {

@@ -40,6 +40,22 @@ test("coordinator durably defers temporary free-provider denial", async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("coordinator quickly fails over after a provider failure while capacity denials remain deferred", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-coordinator-failover-"));
+  try {
+    let now = 10_000;
+    const service = { get: async () => executionRecord("running"), reconcileExpired: async () => undefined };
+    const worker = { tick: async () => { throw new FreeProviderExecutionError("provider_failed", now + 60_000, "provider rejected this contract"); } };
+    const coordinator = new ProjectExecutionCoordinator(root, service, worker, () => now, 300_000);
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "deferred");
+    const run = await coordinator.get(projectId);
+    assert.equal(run?.retryAt, 11_000);
+    assert.match(run?.safeMessage ?? "", /another verified free route/);
+    await coordinator.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("offline worker defers without a busy loop and resumes after restart", async () => {
   const root = await mkdtemp(join(tmpdir(), "execution-coordinator-offline-"));
   try {
@@ -53,6 +69,63 @@ test("offline worker defers without a busy loop and resumes after restart", asyn
     now = 61_000;
     const restarted = new ProjectExecutionCoordinator(root, service, { tick: async () => { calls += 1; return executionRecord("completed"); } }, () => now, 60_000);
     await restarted.resumePending(); await waitFor(async () => (await restarted.get(projectId))?.state === "completed"); assert.equal(calls, 2); await restarted.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("restart reconciles stale scheduler attention against verified claimable execution work", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-coordinator-reconcile-"));
+  try {
+    const running = executionRecord("running");
+    const service = { get: async () => running, reconcileExpired: async () => undefined };
+    const failed = new ProjectExecutionCoordinator(root, service, { tick: async () => { throw new Error("post-completion observer race"); } }, Date.now, 60_000);
+    await failed.schedule(projectId);
+    await waitFor(async () => (await failed.get(projectId))?.state === "needs_user");
+    await failed.shutdown();
+
+    let calls = 0;
+    const restarted = new ProjectExecutionCoordinator(root, service, { tick: async () => { calls += 1; return executionRecord("completed"); } }, Date.now, 60_000);
+    await restarted.resumePending();
+    await waitFor(async () => (await restarted.get(projectId))?.state === "completed");
+    assert.equal(calls, 1);
+    await restarted.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("restart reconciles a stale scheduler stop after canonical execution already completed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-coordinator-completed-reconcile-"));
+  try {
+    const completed = executionRecord("completed");
+    const service = { get: async () => completed, reconcileExpired: async () => undefined };
+    const failed = new ProjectExecutionCoordinator(root, service, { tick: async () => { throw new Error("completion observer failed"); } }, Date.now, 60_000);
+    await failed.schedule(projectId);
+    await waitFor(async () => (await failed.get(projectId))?.state === "needs_user");
+    await failed.shutdown();
+
+    let completions = 0;
+    let workerCalls = 0;
+    const restarted = new ProjectExecutionCoordinator(root, service, { tick: async () => { workerCalls += 1; return completed; } }, Date.now, 60_000, async () => { completions += 1; });
+    await restarted.resumePending();
+    assert.equal((await restarted.get(projectId))?.state, "completed");
+    assert.equal(completions, 1);
+    assert.equal(workerCalls, 0);
+    await restarted.shutdown();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("coordinator re-arms the next attempt after releasing the in-flight project lock", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-coordinator-rearm-"));
+  try {
+    let calls = 0;
+    const running = executionRecord("running");
+    const service = { get: async () => running, reconcileExpired: async () => undefined };
+    const worker = { tick: async () => { calls += 1; return calls === 1 ? running : executionRecord("completed"); } };
+    const coordinator = new ProjectExecutionCoordinator(root, service, worker, Date.now, 20);
+
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+
+    assert.equal(calls, 2);
+    await coordinator.shutdown();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

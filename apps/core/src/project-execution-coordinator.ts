@@ -52,7 +52,22 @@ export class ProjectExecutionCoordinator {
   async resumePending() {
     this.#stopped = false;
     const state = await this.#load();
-    for (const run of Object.values(state.runs).sort((left, right) => left.updatedAt - right.updatedAt || left.projectId.localeCompare(right.projectId))) if (["queued", "running", "deferred"].includes(run.state)) this.#arm(run.projectId, Math.max(this.now(), run.retryAt ?? this.now()));
+    for (const run of Object.values(state.runs).sort((left, right) => left.updatedAt - right.updatedAt || left.projectId.localeCompare(right.projectId))) {
+      if (["queued", "running", "deferred"].includes(run.state)) {
+        this.#arm(run.projectId, Math.max(this.now(), run.retryAt ?? this.now()));
+        continue;
+      }
+      if (run.state !== "needs_user") continue;
+      const record = await this.service.get(run.projectId);
+      if (record?.state === "completed") {
+        await this.onCompleted(run.projectId);
+        await this.#saveRun(run.projectId, { state: "completed", retryAt: null, safeMessage: "All implementation and evidence gates passed; project completion was reconciled." });
+        continue;
+      }
+      if (record?.state !== "running" || !hasReadyTask(record)) continue;
+      await this.#saveRun(run.projectId, { state: "queued", retryAt: null, safeMessage: "Recovered verified queued work after reconciling scheduler and execution state." });
+      this.#arm(run.projectId, this.now());
+    }
   }
 
   stop() { this.#stopped = true; for (const timer of this.#timers.values()) clearTimeout(timer); this.#timers.clear(); this.#readyQueue.length = 0; this.#queued.clear(); }
@@ -104,13 +119,25 @@ export class ProjectExecutionCoordinator {
       this.#arm(projectId, retryAt);
     } catch (error) {
       if (error instanceof FreeProviderExecutionError && (error.code === "capacity_unavailable" || error.code === "provider_failed")) {
-        const retryAt = Math.max(this.now() + 1_000, error.retryAt ?? this.now() + this.defaultRetryMs);
-        await this.#saveRun(projectId, { state: "deferred", retryAt, safeMessage: "Free-provider capacity is temporarily unavailable. Retry is scheduled without consuming paid capacity." });
+        const retryAt = error.code === "provider_failed"
+          ? this.now() + 1_000
+          : Math.max(this.now() + 1_000, error.retryAt ?? this.now() + this.defaultRetryMs);
+        await this.#saveRun(projectId, { state: "deferred", retryAt, safeMessage: error.code === "provider_failed" ? "The failed provider was isolated; another verified free route will be tried." : "Free-provider capacity is temporarily unavailable. Retry is scheduled without consuming paid capacity." });
         this.#arm(projectId, retryAt);
       } else {
+        console.error("Project execution coordinator stopped after an unexpected error.", {
+          projectId,
+          error: error instanceof Error ? error.stack ?? error.message : String(error),
+        });
         await this.#saveRun(projectId, { state: "needs_user", retryAt: null, safeMessage: "Execution stopped safely and needs owner attention." });
       }
-    } finally { this.#inFlight.delete(projectId); }
+    } finally {
+      this.#inFlight.delete(projectId);
+      const pending = await this.get(projectId);
+      if (pending && ["queued", "deferred"].includes(pending.state)) {
+        this.#arm(projectId, Math.max(this.now(), pending.retryAt ?? this.now()));
+      }
+    }
   }
 
   async #saveRun(projectId: string, patch: Pick<ProjectExecutionRun, "state" | "retryAt" | "safeMessage">, increment = false) {

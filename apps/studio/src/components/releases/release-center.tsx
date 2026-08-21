@@ -70,7 +70,7 @@ const releaseManifest: ReleaseManifest = {
   })),
   requiredChecks: ["typecheck", "tests", "build", "security", "compatibility", "rollback"],
   passedChecks: ["typecheck", "tests", "build", "security", "compatibility", "rollback"],
-  signer: "Pipeline Studio local release owner",
+  signer: "Codkesh local release owner",
   signatureVerified: true,
   previousCompatibleVersion: "0.7.3",
 };
@@ -84,7 +84,6 @@ const compatibilityEntries: readonly CompatibilityEntry[] = [
   compatibility("node-20", "runtime", "Node.js", "20.x", "blocked", "Required permission and SQLite contracts target Node.js 22.", "https://nodejs.org/", "Install Node.js 22, then rerun setup."),
   compatibility("groq-free", "provider", "Groq", "free account", "supported", "Connection, quota, fallback, and redaction canaries passed.", "https://console.groq.com/docs/"),
   compatibility("gemini-free", "provider", "Gemini API", "free project", "supported", "Free-project evidence and paid-route denial passed.", "https://ai.google.dev/"),
-  compatibility("deepseek-credit", "provider", "DeepSeek", "promotional credit", "blocked", "Promotional credit is not permanent free capacity.", "https://platform.deepseek.com/", "Enable only through a future explicit credit budget."),
   compatibility("gpt-oss-120b", "model", "GPT-OSS 120B", "coding + review", "supported", "Structured output and coding canaries passed on eligible routes.", "https://console.groq.com/docs/models"),
   compatibility("jira-cloud", "connector", "Jira Cloud", "OAuth/API token", "supported", "Selection, grounding, status, and comment contracts passed.", "https://developer.atlassian.com/cloud/jira/platform/"),
   compatibility("github-app", "connector", "GitHub", "App/PAT", "supported", "Repository selection, publishing, and idempotency passed.", "https://docs.github.com/"),

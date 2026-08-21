@@ -72,7 +72,11 @@ export class JiraDeliveryService {
     const catalog = await client.catalog(selected.projectId);
     for (const item of orderedItems(draft)) {
       if (receipt.issues[item.id]) continue;
-      const marker = `pipeline_plan_${item.id.slice(5)}`;
+      // Plan item IDs are deterministic and may repeat across separate local
+      // projects with similar requirements. Scope the Jira idempotency marker
+      // to the Codkesh project so one Pilot can never adopt another Pilot's
+      // issues or report a false human-edit conflict.
+      const marker = `codkesh_${projectId.slice(8)}_${item.id.slice(5)}`;
       const observed = await client.findByMarker(selected.projectKey, marker);
       let issue = observed;
       if (observed && observed.summary !== null && observed.summary !== item.title) {

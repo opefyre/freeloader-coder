@@ -305,7 +305,7 @@ export function RuntimeSetupPanel() {
                   </strong>
                   <p className="mt-2 max-w-2xl text-xs leading-5 text-muted-foreground">
                     Install Docker Desktop or Podman only when a future project or policy
-                    requires strong isolation. Pipeline Studio will verify the runtime and
+                    requires strong isolation. Codkesh will verify the runtime and
                     isolation canary before enabling it.
                   </p>
                 </div>
@@ -397,4 +397,3 @@ export function RuntimeSetupPanel() {
     </section>
   );
 }
-

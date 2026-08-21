@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, open, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import type { ExecutionTask } from "../../../packages/orchestration/src/project-execution.js";
@@ -22,8 +23,7 @@ export class ProjectTaskWorkspaceService {
   async prepare(projectId: string, canonicalRoot: string, task: ExecutionTask): Promise<PreparedTaskWorkspace> {
     const root = await realpath(canonicalRoot);
     await assertRepository(root);
-    const baseline = await ensureBaseline(root);
-    if ((await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0) throw new ProjectTaskWorkspaceError("canonical_dirty", "Commit or stash canonical changes before autonomous implementation.");
+    const baseline = await ensureExecutionBaseline(root);
     const authorityDigest = hash(JSON.stringify({ projectId, taskId: task.id, baseline, allowedFiles: [...task.allowedFiles].sort(), validationProfiles: [...task.validationProfiles].sort() }));
     const workspaceRoot = resolve(this.stateDirectory, "project-task-worktrees");
     await mkdir(workspaceRoot, { recursive: true, mode: 0o700 });
@@ -61,6 +61,26 @@ export class ProjectTaskWorkspaceService {
     return sources;
   }
 
+  async resetAuthorizedFiles(workspace: PreparedTaskWorkspace, task: ExecutionTask) {
+    for (const path of task.allowedFiles) {
+      const target = await approvedTarget(workspace.root, path, false);
+      const tracked = await run("git", ["cat-file", "-e", `${workspace.baseline}:${path}`], workspace.root, GIT_TIMEOUT_MS).then(() => true, () => false);
+      if (tracked) {
+        await run("git", ["checkout", workspace.baseline, "--", path], workspace.root, GIT_TIMEOUT_MS);
+        continue;
+      }
+      try {
+        const info = await lstat(target);
+        if (!info.isFile() || info.isSymbolicLink()) throw new ProjectTaskWorkspaceError("workspace_conflict", "Repair target is not a safe regular file.");
+        await unlink(target);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    const changed = parseChanged(await git(workspace.root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]));
+    if (changed.some((path) => !path.startsWith("node_modules/"))) throw new ProjectTaskWorkspaceError("workspace_conflict", "Rejected task evidence could not be isolated from the fresh canonical baseline.");
+  }
+
   async apply(workspace: PreparedTaskWorkspace, task: ExecutionTask, operations: readonly WorkspaceOperation[]) {
     if (operations.length === 0 || operations.length > task.allowedFiles.length) throw new ProjectTaskWorkspaceError("operation_denied", "Implementation must contain bounded file operations.");
     if (new Set(operations.map((operation) => operation.path)).size !== operations.length) throw new ProjectTaskWorkspaceError("operation_denied", "Implementation contains duplicate file operations.");
@@ -95,8 +115,32 @@ export class ProjectTaskWorkspaceService {
     return { changedFiles: changed, evidenceDigest: hash(JSON.stringify({ authorityDigest: workspace.authorityDigest, operations, changed })) };
   }
 
+  async prepareDependencies(workspace: PreparedTaskWorkspace, task: ExecutionTask) {
+    try { await lstat(resolve(workspace.root, "package.json")); } catch { return null; }
+    let lockfileExisted = true;
+    try { await lstat(resolve(workspace.root, "package-lock.json")); } catch { lockfileExisted = false; }
+    const canUpdateLockfile = task.allowedFiles.includes("package.json") && task.allowedFiles.includes("package-lock.json");
+    if (!lockfileExisted && !canUpdateLockfile) {
+        throw new ProjectTaskWorkspaceError("validation_unavailable", "Dependency installation requires a reviewed lockfile or exact scaffold authority.");
+    }
+    if (canUpdateLockfile) {
+      await run("npm", ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], workspace.root, VALIDATION_TIMEOUT_MS);
+    }
+    await run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], workspace.root, VALIDATION_TIMEOUT_MS);
+    const changed = parseChanged(await git(workspace.root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]));
+    const allowed = new Set(task.allowedFiles);
+    if ((!lockfileExisted && !changed.includes("package-lock.json")) || changed.some((path) => !allowed.has(path))) throw new ProjectTaskWorkspaceError("operation_denied", "Dependency preparation changed files outside exact scaffold authority.");
+    return { changedFiles: changed, evidenceDigest: hash(JSON.stringify({ authorityDigest: workspace.authorityDigest, command: "npm-install-lock-and-ci-ignore-scripts", changed })) };
+  }
+
   async validate(root: string, task: ExecutionTask): Promise<WorkspaceValidation[]> {
     const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+    if (task.allowedFiles.includes("package.json") && task.validationProfiles.includes("unit")) {
+      const testCommand = manifest.scripts?.[scripts.unit];
+      if (testCommand && !isProjectWideTestCommand(testCommand)) {
+        throw new ProjectTaskWorkspaceError("validation_unavailable", "A new-product test command must discover the complete test suite, not only the scaffold test.");
+      }
+    }
     const results: WorkspaceValidation[] = [];
     for (const profile of task.validationProfiles) {
       const script = scripts[profile];
@@ -105,7 +149,14 @@ export class ProjectTaskWorkspaceService {
         throw new ProjectTaskWorkspaceError("validation_unavailable", `Validation profile ${profile} is configured with a no-op command and cannot produce trustworthy evidence.`);
       }
       try {
-        const result = await run("npm", ["run", script], root, VALIDATION_TIMEOUT_MS);
+        const command = manifest.scripts[script];
+        const result = profile === "format" && isScopedPrettierCheck(command)
+          ? await run(resolve(root, "node_modules", ".bin", "prettier"), ["--check", ...await existingAllowedFiles(root, task.allowedFiles)], root, VALIDATION_TIMEOUT_MS)
+          : profile === "typecheck" && isScopedTypeScriptCheck(command)
+            ? await run(resolve(root, "node_modules", ".bin", "tsc"), ["--noEmit", "--typeRoots", "./node_modules/@types"], root, VALIDATION_TIMEOUT_MS)
+            : profile === "unit"
+              ? await runUnitValidation(root, task)
+              : await run("npm", ["run", script], root, VALIDATION_TIMEOUT_MS);
         const output = bounded(`${result.stdout}\n${result.stderr}`);
         results.push({ profile, passed: true, exitCode: 0, output, evidenceDigest: hash(`${profile}:0:${output}`) });
       } catch (error) {
@@ -118,9 +169,33 @@ export class ProjectTaskWorkspaceService {
     return results;
   }
 
+  async validateCommit(repositoryRoot: string, commitDigest: string, task: ExecutionTask) {
+    const repository = await realpath(repositoryRoot);
+    const checkout = await mkdtemp(join(tmpdir(), "codkesh-clean-validation-"));
+    try {
+      await git(repository, ["worktree", "add", "--detach", checkout, commitDigest]);
+      const workspace: PreparedTaskWorkspace = { projectId: "project_0000000000000000", taskId: task.id, root: checkout, branch: "detached", baseline: commitDigest, authorityDigest: hash(`clean-validation:${commitDigest}`) };
+      await this.prepareDependencies(workspace, task);
+      return await this.validate(checkout, task);
+    } finally {
+      await git(repository, ["worktree", "remove", "--force", checkout]).catch(() => undefined);
+      await rm(checkout, { recursive: true, force: true });
+    }
+  }
+
   async commit(workspace: PreparedTaskWorkspace, task: ExecutionTask) {
     const changed = parseChanged(await git(workspace.root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]));
-    if (changed.length === 0 || changed.some((path) => !task.allowedFiles.includes(path))) throw new ProjectTaskWorkspaceError("operation_denied", "Commit changes do not match exact file authority.");
+    if (changed.length === 0) {
+      const existing = await existingAllowedFiles(workspace.root, task.allowedFiles);
+      if (!task.reviewAttempts?.length || existing.length !== task.allowedFiles.length) {
+        throw new ProjectTaskWorkspaceError("operation_denied", "Commit changes do not match exact file authority.");
+      }
+      return {
+        commitDigest: workspace.baseline,
+        evidenceDigest: hash(JSON.stringify({ commitDigest: workspace.baseline, changed, authorityDigest: workspace.authorityDigest, revalidatedExistingDelivery: true })),
+      };
+    }
+    if (changed.some((path) => !task.allowedFiles.includes(path))) throw new ProjectTaskWorkspaceError("operation_denied", "Commit changes do not match exact file authority.");
     await git(workspace.root, ["add", "--", ...changed]);
     await git(workspace.root, ["-c", "user.name=Pipeline Studio", "-c", "user.email=pipeline-studio@localhost", "commit", "--no-verify", "-m", `${task.jiraIssueKey}: ${task.title}`]);
     const commitDigest = (await git(workspace.root, ["rev-parse", "--verify", "HEAD"])).trim();
@@ -129,7 +204,7 @@ export class ProjectTaskWorkspaceService {
 
   async integrate(canonicalRoot: string, workspace: PreparedTaskWorkspace, commitDigest: string) {
     const root = await realpath(canonicalRoot);
-    if ((await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0) throw new ProjectTaskWorkspaceError("canonical_dirty", "Canonical project changed before integration.");
+    if (parseChanged(await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0) throw new ProjectTaskWorkspaceError("canonical_dirty", "Canonical project changed before integration.");
     if ((await git(root, ["rev-parse", "--verify", "HEAD"])).trim() !== workspace.baseline) throw new ProjectTaskWorkspaceError("integration_conflict", "Canonical baseline changed before integration.");
     await git(root, ["merge", "--ff-only", commitDigest]);
     const observed = (await git(root, ["rev-parse", "--verify", "HEAD"])).trim();
@@ -139,7 +214,7 @@ export class ProjectTaskWorkspaceService {
 
   async revertIntegration(canonicalRoot: string, workspace: PreparedTaskWorkspace, commitDigest: string) {
     const root = await realpath(canonicalRoot);
-    if ((await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0 || (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() !== commitDigest) throw new ProjectTaskWorkspaceError("integration_conflict", "Automatic integration restore was refused because canonical Git changed.");
+    if (parseChanged(await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0 || (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() !== commitDigest) throw new ProjectTaskWorkspaceError("integration_conflict", "Automatic integration restore was refused because canonical Git changed.");
     await git(root, ["-c", "user.name=Pipeline Studio", "-c", "user.email=pipeline-studio@localhost", "revert", "--no-edit", commitDigest]);
     await git(root, ["diff", "--quiet", workspace.baseline, "HEAD"]);
     return { restoreDigest: hash(JSON.stringify({ baseline: workspace.baseline, failedCommit: commitDigest, restoredHead: (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() })) };
@@ -155,33 +230,95 @@ function isNoOpValidationScript(command: string) {
     || /console\.log\s*\(/.test(normalized) && !/[;&|]\s*(?:node|npm|npx|tsc|eslint|prettier|vitest|jest)\b/.test(normalized);
 }
 
+function isScopedPrettierCheck(command: string) {
+  return /^prettier --check \.(?: --ignore-unknown)?$/.test(command.trim().replace(/\s+/g, " "));
+}
+
+function isScopedTypeScriptCheck(command: string) {
+  return /^tsc --noemit$/i.test(command.trim().replace(/\s+/g, " "));
+}
+
+function isProjectWideTestCommand(command: string) {
+  const normalized = command.trim().replace(/\s+/g, " ").toLowerCase();
+  if (/\btests?\/scaffold\.test\.[cm]?[jt]sx?\b/.test(normalized)) return false;
+  return /\b(?:tests?|__tests__)\/(?:\*|\.\*|\*\*)/.test(normalized)
+    || /\b(?:vitest|jest)(?:\s|$)/.test(normalized)
+    || /\bnode\b.*\s--test(?:\s|$)(?!.*\btests?\/[\w.-]+\.test\.)/.test(normalized);
+}
+
+async function existingAllowedFiles(root: string, allowedFiles: readonly string[]) {
+  const existing: string[] = [];
+  for (const path of allowedFiles) {
+    try {
+      const info = await lstat(await approvedTarget(root, path, false));
+      if (info.isFile() && !info.isSymbolicLink()) existing.push(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  if (existing.length === 0) throw new ProjectTaskWorkspaceError("validation_unavailable", "No authorized files are available for formatting validation.");
+  return existing;
+}
+
+async function runUnitValidation(root: string, task: ExecutionTask) {
+  const projectResult = await run("npm", ["run", scripts.unit], root, VALIDATION_TIMEOUT_MS);
+  const declaredTests = task.allowedFiles.filter((path) => /(^|\/)(?:tests?|__tests__)\/.*\.(?:[cm]?[jt]sx?)$|\.(?:test|spec)\.[cm]?[jt]sx?$/.test(path));
+  if (declaredTests.length === 0) return projectResult;
+  const taskTests = await existingAllowedFiles(root, declaredTests).catch((): string[] => []);
+  if (taskTests.length !== declaredTests.length) {
+    const missing = declaredTests.filter((path) => !taskTests.includes(path));
+    throw new ProjectTaskWorkspaceError("validation_unavailable", `Task-owned unit tests are missing: ${missing.join(", ")}.`);
+  }
+  const usesTypeScript = taskTests.some((path) => /\.[cm]?tsx?$/.test(path));
+  const args = usesTypeScript ? ["--import", "tsx", "--test", ...taskTests] : ["--test", ...taskTests];
+  const focusedResult = await run("node", args, root, VALIDATION_TIMEOUT_MS);
+  return {
+    stdout: `${projectResult.stdout}\n${focusedResult.stdout}`,
+    stderr: `${projectResult.stderr}\n${focusedResult.stderr}`,
+  };
+}
+
 export class ProjectTaskWorkspaceError extends Error { constructor(readonly code: "repository_invalid" | "canonical_dirty" | "workspace_conflict" | "source_unsupported" | "operation_denied" | "stale_source" | "validation_unavailable" | "integration_conflict", message: string) { super(message); } }
 
 async function assertRepository(root: string) { const top = await realpath((await git(root, ["rev-parse", "--show-toplevel"])).trim()); if (top !== root) throw new ProjectTaskWorkspaceError("repository_invalid", "Selected folder is not the canonical Git repository root."); }
-async function ensureBaseline(root: string) {
+async function ensureExecutionBaseline(root: string) {
   const existing = await optionalHead(root);
-  if (existing) return existing;
   const changed = parseChanged(await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]));
-  if (changed.length === 0) throw new ProjectTaskWorkspaceError("repository_invalid", "The new project has no approved files for its first Git checkpoint.");
+  if (existing && changed.length === 0) return existing;
+  if (!existing && changed.length === 0) throw new ProjectTaskWorkspaceError("repository_invalid", "The new project has no approved files for its first Git checkpoint.");
   if (changed.some((path) => !isCodkeshOwnedBaselinePath(path))) {
-    throw new ProjectTaskWorkspaceError("canonical_dirty", "The commitless project contains files Codkesh does not own. Review and checkpoint them before autonomous implementation.");
+    throw new ProjectTaskWorkspaceError("canonical_dirty", "The project contains changes Codkesh does not own. Review and checkpoint them before autonomous implementation.");
   }
+  if (existing) await verifyGovernedArtifactMirrors(root, changed);
   await git(root, ["add", "--", ...changed]);
-  await git(root, ["-c", "user.name=Codkesh", "-c", "user.email=codkesh@localhost", "commit", "--no-verify", "-m", "chore: save approved Codkesh baseline"]);
+  await git(root, ["-c", "user.name=Codkesh", "-c", "user.email=codkesh@localhost", "commit", "--no-verify", "-m", existing ? "chore: checkpoint approved Codkesh plan" : "chore: save approved Codkesh baseline"]);
   const baseline = await optionalHead(root);
   if (!baseline || (await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0) {
     throw new ProjectTaskWorkspaceError("repository_invalid", "Codkesh could not verify the new project's first Git checkpoint.");
   }
   return baseline;
 }
+async function verifyGovernedArtifactMirrors(root: string, changed: readonly string[]) {
+  const topLevelArtifacts = changed.filter((path) => GOVERNED_ARTIFACTS.has(path));
+  for (const path of topLevelArtifacts) {
+    const historyRoot = join(root, ".codkesh", "artifacts", basename(path));
+    let versions: string[];
+    try { versions = (await readdir(historyRoot)).filter((entry) => entry.endsWith(".md")).sort().map((entry) => join(historyRoot, entry)); }
+    catch { throw new ProjectTaskWorkspaceError("canonical_dirty", `${path} has no immutable Codkesh artifact evidence.`); }
+    const latest = versions.at(-1);
+    if (!latest || hash(await readFile(join(root, path), "utf8")) !== hash(await readFile(latest, "utf8"))) {
+      throw new ProjectTaskWorkspaceError("canonical_dirty", `${path} differs from its latest immutable Codkesh artifact evidence.`);
+    }
+  }
+}
 async function optionalHead(root: string) {
   try { return (await run("git", ["rev-parse", "--verify", "HEAD"], root, GIT_TIMEOUT_MS)).stdout.trim() || null; }
   catch { return null; }
 }
 function isCodkeshOwnedBaselinePath(path: string) {
-  const artifacts = new Set(["CONTEXT.md", "DECISIONS.md", "DELIVERY-PLAN.md", "DESIGN.md", "INFRA.md", "MEMORY.md", "OPS-RULES.md", "PRODUCT.md", "RESEARCH.md", "SECURITY.md", "STATUS.md"]);
-  return artifacts.has(path) || path.startsWith(".pipeline/") || path.startsWith(".codkesh/artifacts/");
+  return GOVERNED_ARTIFACTS.has(path) || path.startsWith(".pipeline/") || path.startsWith(".codkesh/artifacts/");
 }
+const GOVERNED_ARTIFACTS = new Set(["CONTEXT.md", "DECISIONS.md", "DELIVERY-PLAN.md", "DESIGN.md", "INFRA.md", "MEMORY.md", "OPS-RULES.md", "PRODUCT.md", "RESEARCH.md", "SECURITY.md", "STATUS.md"]);
 async function approvedTarget(rootValue: string, path: string, creating: boolean) {
   if (!path || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw new ProjectTaskWorkspaceError("operation_denied", "Task path is unsafe.");
   const root = await realpath(rootValue);
@@ -204,7 +341,7 @@ async function approvedTarget(rootValue: string, path: string, creating: boolean
   return target;
 }
 function assertWithin(root: string, target: string, allowRoot = false) { const relation = relative(root, target); if ((!allowRoot && !relation) || relation === ".." || relation.startsWith(`..${sep}`) || isAbsolute(relation)) throw new ProjectTaskWorkspaceError("operation_denied", "Path escaped the isolated workspace."); }
-function parseChanged(status: string) { if (!status) return []; const entries = status.split("\0").filter(Boolean); const paths: string[] = []; for (let index = 0; index < entries.length; index += 1) { const code = entries[index]!.slice(0, 2); let path = entries[index]!.slice(3); if (code.includes("R")) { path = entries[index + 1] ?? path; index += 1; } if (!path || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw new ProjectTaskWorkspaceError("operation_denied", "Git returned an unsafe changed path."); paths.push(path); } return [...new Set(paths)].sort(); }
+function parseChanged(status: string) { if (!status) return []; const entries = status.split("\0").filter(Boolean); const paths: string[] = []; for (let index = 0; index < entries.length; index += 1) { const code = entries[index]!.slice(0, 2); let path = entries[index]!.slice(3); if (code.includes("R")) { path = entries[index + 1] ?? path; index += 1; } if (!path || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw new ProjectTaskWorkspaceError("operation_denied", "Git returned an unsafe changed path."); if (code === "??" && (path === "node_modules" || path.startsWith("node_modules/"))) continue; paths.push(path); } return [...new Set(paths)].sort(); }
 async function git(cwd: string, args: readonly string[]) { try { return (await run("git", args, cwd, GIT_TIMEOUT_MS)).stdout; } catch (error) { throw new ProjectTaskWorkspaceError("repository_invalid", error instanceof Error ? error.message.replaceAll(cwd, "<repository>").slice(0, 300) : "Git operation failed."); } }
 async function run(command: string, args: readonly string[], cwd: string, timeout: number) { return runFile(command, [...args], { cwd, timeout, maxBuffer: MAX_OUTPUT, windowsHide: true, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "", GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" } }); }
 function bounded(value: string) { return value.length <= MAX_OUTPUT ? value : `${value.slice(0, MAX_OUTPUT)}\n[truncated]`; }

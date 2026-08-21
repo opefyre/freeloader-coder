@@ -45,5 +45,5 @@ test("public discovery metadata uses one canonical, crawlable origin", () => {
   assert.match(robots, /Sitemap: https:\/\/pipeline-studio\.pages\.dev\/sitemap\.xml/);
   assert.match(sitemap, /<loc>https:\/\/pipeline-studio\.pages\.dev\/<\/loc>/);
   assert.equal(manifest.start_url, "/");
-  assert.equal(manifest.name, "Pipeline Studio");
+  assert.equal(manifest.name, "Codkesh");
 });

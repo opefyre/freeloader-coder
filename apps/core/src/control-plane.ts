@@ -1629,6 +1629,9 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
                 : 400;
         sendJson(response, status, { error: error.message, code: error.code });
       } else if (error instanceof ControlPlaneRequestError || error instanceof ZodError) {
+        if (error instanceof ZodError) {
+          console.error("Control-plane contract validation failed", error.issues.map(({ code, path, message }) => ({ code, path, message })));
+        }
         sendJson(response, 400, {
           error:
             error instanceof ControlPlaneRequestError
@@ -1636,6 +1639,14 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
               : "Request data does not match the local API contract.",
         });
       } else {
+        console.error("Local control-plane request failed", {
+          name: error instanceof Error ? error.name : "UnknownError",
+          message: error instanceof Error ? error.message : "Unknown failure",
+          code:
+            typeof error === "object" && error !== null && "code" in error
+              ? String(error.code)
+              : undefined,
+        });
         sendJson(response, 500, { error: "Local control-plane request failed." });
       }
     } finally {

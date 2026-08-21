@@ -16,9 +16,18 @@ export class ProjectSolutionCoordinator {
   #mutation = Promise.resolve();
   constructor(stateDirectory: string, private readonly orchestrator: ProjectSolutionOrchestrator, private readonly now: () => number = Date.now) { this.#path = resolve(stateDirectory, "project-solution-runs.json"); }
 
-  async schedule(projectId: string, options: { forceDeferredRetry?: boolean } = {}): Promise<SolutionRun> {
+  async schedule(projectId: string, options: { forceDeferredRetry?: boolean; forceRegenerate?: boolean } = {}): Promise<SolutionRun> {
     let run = await this.get(projectId);
-    if (run?.state === "completed") return run;
+    if (run?.state === "completed" && !options.forceRegenerate) return run;
+    if (run?.state === "completed" && options.forceRegenerate) {
+      run = await this.#set({
+        ...run,
+        state: "queued",
+        retryAt: null,
+        safeMessage: "Owner feedback is queued for a fresh reviewed solution.",
+        updatedAt: this.now(),
+      });
+    }
     if (!run || run.state === "needs_user") run = await this.#set({ schemaVersion: 1, projectId, state: "queued", attempts: run?.attempts ?? 0, retryAt: null, safeMessage: "Solution research is queued.", updatedAt: this.now() });
     if (run.state === "deferred" && options.forceDeferredRetry) {
       const timer = this.#timers.get(projectId);
@@ -46,6 +55,11 @@ export class ProjectSolutionCoordinator {
       await this.orchestrator.run(projectId);
       await this.#set({ schemaVersion: 1, projectId, state: "completed", attempts, retryAt: null, safeMessage: "Reviewed solution is ready for owner approval.", updatedAt: this.now() });
     } catch (error) {
+      console.error(JSON.stringify({
+        event: "project_solution_run_failed",
+        projectId,
+        error: diagnosticError(error),
+      }));
       if (error instanceof FreeProviderSolutionUnavailableError && error.retryAt !== null) {
         const retryAt = error.retryAt > this.now() ? error.retryAt : this.now() + 60_000;
         await this.#set({ schemaVersion: 1, projectId, state: "deferred", attempts, retryAt, safeMessage: error.message, updatedAt: this.now() }); this.#scheduleRetry(projectId, retryAt); return;
@@ -59,6 +73,18 @@ export class ProjectSolutionCoordinator {
   async #set(run: SolutionRun) { return this.#mutate(async (state) => ({ state: { ...state, runs: { ...state.runs, [run.projectId]: solutionRunSchema.parse(run) } }, result: run })); }
   async #mutate<T>(operation: (state: z.infer<typeof stateSchema>) => Promise<{ state: z.infer<typeof stateSchema>; result: T }>) { let result!: T; const next = this.#mutation.then(async () => { const outcome = await operation(await this.#load()); await atomicWrite(this.#path, `${JSON.stringify(stateSchema.parse(outcome.state), null, 2)}\n`); result = outcome.result; }); this.#mutation = next.catch(() => undefined); await next; return result; }
   async #load() { try { return stateSchema.parse(JSON.parse(await readFile(this.#path, "utf8"))); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return stateSchema.parse({ schemaVersion: 1, runs: {} }); throw new Error("Solution coordinator state is corrupt."); } }
+}
+function diagnosticError(error: unknown) {
+  if (!(error instanceof Error)) return { name: "UnknownError", message: "Non-error failure" };
+  const record = error as Error & { code?: unknown; status?: unknown; retryAt?: unknown };
+  return {
+    name: error.name,
+    message: error.message.slice(0, 500),
+    code: typeof record.code === "string" ? record.code : null,
+    status: typeof record.status === "number" ? record.status : null,
+    retryAt: typeof record.retryAt === "number" ? record.retryAt : null,
+    stack: error.stack?.split("\n").slice(0, 8).join("\n") ?? null,
+  };
 }
 function safeUnexpectedMessage(error: unknown) {
   if (error instanceof z.ZodError) return "Solution evidence did not match the required structure. Review provider output before retrying.";

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { FreeProviderSolutionModel } from "../apps/core/src/free-provider-solution-model.js";
+import { FreeProviderSolutionModel, providerIdsForRole } from "../apps/core/src/free-provider-solution-model.js";
 import type { ProviderAdapter } from "../packages/providers/src/index.js";
 import type { ProviderConnection } from "../packages/schemas/src/index.js";
 
@@ -59,6 +59,24 @@ test("solution model accepts ISO dates while still rejecting international phone
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution revision scope uses a portable strict response contract", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-revision-scope-"));
+  try {
+    let observedSchema: any;
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
+        observedSchema = request.responseSchema;
+        return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ schemaVersion: 1, sections: ["architecture", "data"], rationale: "Owner feedback changes storage design." }), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
+      } }) as unknown as ProviderAdapter,
+    }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const result = await model.run({ projectId, role: "solution_revision_scope", contextDigest, instruction: "Scope the revision.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit });
+    assert.deepEqual(result.response, { schemaVersion: 1, sections: ["architecture", "data"], rationale: "Owner feedback changes storage design." });
+    assert.equal(observedSchema.additionalProperties, false);
+    assert.deepEqual(observedSchema.required, ["schemaVersion", "sections", "rationale"]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("solution model refreshes stale consented provider evidence before routing", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-model-refresh-"));
   try {
@@ -86,6 +104,26 @@ test("solution model rejects structurally incomplete research before it becomes 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution model rejects private research citations at the provider boundary and falls back", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-private-citation-"));
+  try {
+    let calls = 0;
+    const connections = [connection("groq", "openai/gpt-oss-120b"), connection("mistral", "mistral-small-latest")];
+    const model = new FreeProviderSolutionModel(root, { list: async () => connections } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
+        calls += 1;
+        const response = researchResponse("product") as any;
+        if (providerId === "mistral") response.sources = [{ sourceId: "source-private", url: "http://127.0.0.1/private", title: "Private", retrievedAt: "2026-08-20T12:00:00Z", excerpt: "Private evidence", excerptDigest: "0".repeat(64), confidence: "low", relevance: "low", freshness: "unknown" }];
+        return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(response), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
+      } }) as unknown as ProviderAdapter,
+    }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq", "mistral"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const result = await model.run({ projectId, role: "product_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit });
+    assert.equal(result.providerId, "groq");
+    assert.equal(calls, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("solution model rejects an incomplete delivery plan at the provider boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-model-delivery-contract-"));
   try {
@@ -95,6 +133,17 @@ test("solution model rejects an incomplete delivery plan at the provider boundar
     const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
     await assert.rejects(() => model.run({ projectId, role: "delivery_planning", contextDigest, instruction: "Plan delivery.", sources: [{ name: "SOLUTION.md", content: "Safe approved solution." }], permit }));
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("delivery roles reserve independent provider capacity instead of exhausting the mesh", () => {
+  const consented = ["gemini", "mistral", "nvidia-nim", "groq", "huggingface", "cohere", "zhipu", "kilo", "openrouter"];
+  assert.deepEqual(providerIdsForRole("delivery_planning", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), ["gemini"]);
+  assert.deepEqual(providerIdsForRole("delivery_review", consented, ["mistral", "huggingface", "cohere", "zhipu", "openrouter", "nvidia-nim", "gemini", "groq"]), ["mistral", "huggingface", "cohere", "zhipu", "openrouter"]);
+  assert.deepEqual(providerIdsForRole("technical_delivery_review", consented, ["nvidia-nim", "kilo", "groq", "mistral", "gemini"]), ["nvidia-nim", "kilo", "groq"]);
+  assert.deepEqual(providerIdsForRole("delivery_review", ["gemini"], ["mistral", "gemini"]), ["gemini"]);
+  assert.deepEqual(providerIdsForRole("product_research", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), consented);
+  assert.deepEqual(providerIdsForRole("product_review", consented, ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere"]), ["gemini", "huggingface", "cohere"]);
+  assert.deepEqual(providerIdsForRole("technical_review", consented, ["nvidia-nim", "mistral", "gemini", "huggingface", "kilo", "groq", "cohere"]), ["nvidia-nim", "mistral", "kilo", "groq"]);
 });
 
 test("delivery planning publishes the canonical wire constraints providers must satisfy", async () => {

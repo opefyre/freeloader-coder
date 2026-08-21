@@ -94,6 +94,25 @@ test("owner can resume a pre-implementation environment failure after repair", a
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner can resume preserved pre-review evidence after repairing the execution runtime", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-runtime-retry-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    const failed = await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 127, evidenceDigest: evidence });
+    await service.assessHealing(projectId, taskId, lease.leaseId, "worker-a", { failureClass: "implementation", changedFiles: ["src/app.ts"], policy: { maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: [".env"], requiredChecks: ["typecheck"], requiredReviewRoles: ["functional", "security"], minimumGoldenScore: 90 }, goldenScore: 100, previousGoldenScore: 100 });
+    const interrupted = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "Dependency preparation was unavailable.");
+    const retried = await service.authorizeEnvironmentRetry(projectId, { taskId, expectedRevision: interrupted.revision, rationale: "Verified dependency preparation is installed." });
+    assert.equal(retried.status, "queued");
+    assert.equal(retried.implementationEvidence.length, 1, "preserved evidence is not erased");
+    assert.equal(retried.validations.length, 1, "failed evidence remains auditable");
+    assert.equal(failed.failureClass, null);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("protected paths are rejected before execution and reviewer dissent cannot integrate", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-guards-"));
   try {
@@ -149,6 +168,113 @@ test("owner-authorized dissent repair preserves rejected evidence and reruns eve
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner-authorized provider proposal repair is bounded and archives the failed attempt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-proposal-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    const interrupted = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "Execution needs attention: Provider proposal exceeded grounded file authority.", "implementation");
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, {
+      approvalId: "approval_33333333333333333333",
+      expectedRevision: interrupted.revision,
+      rationale: "Retry the bounded provider proposal with exact immutable file authority.",
+    });
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.attempt, 1);
+    assert.equal(repaired.reviewAttempts?.length, 1);
+    assert.deepEqual(repaired.reviewAttempts?.[0]?.reviews, []);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("owner-authorized deterministic validation repair preserves its bounded budget and archives failed proof", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-validation-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 1, evidenceDigest: evidence });
+    const interrupted = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "Execution needs attention: Healing budget is invalid.", "implementation");
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, {
+      approvalId: "approval_55555555555555555555",
+      expectedRevision: interrupted.revision,
+      rationale: "The repaired prerequisite invalidated this deterministic failure; rerun every gate within the remaining bounded budget.",
+    });
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.attempt, interrupted.attempt, "owner repair does not replenish the bounded automatic-healing budget");
+    assert.equal(repaired.reviewAttempts?.at(-1)?.validations.some((validation) => !validation.passed), true);
+    assert.equal(repaired.validations.length, 0);
+    assert.equal(repaired.implementationEvidence.length, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("owner can revalidate unchanged delivered files after a legacy post-review commit-authority stop", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-commit-revalidation-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: true, exitCode: 0, evidenceDigest: evidence });
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: evidence });
+    await service.recordReviews(projectId, taskId, lease.leaseId, "worker-a", [review("functional-reviewer", "gemini", "functional"), review("design-reviewer", "cloudflare", "design")]);
+    const interrupted = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "Execution needs attention: Commit changes do not match exact file authority.");
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, {
+      approvalId: "approval_66666666666666666666",
+      expectedRevision: interrupted.revision,
+      rationale: "Revalidate the unchanged previously delivered files and rerun every deterministic and independent review gate.",
+    });
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.reviewAttempts?.at(-1)?.reviews.length, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("owner-authorized completed prerequisite repair preserves proof and reopens execution", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-completed-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "initial typecheck", passed: false, exitCode: 1, evidenceDigest: "f".repeat(64) });
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: true, exitCode: 0, evidenceDigest: evidence });
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: evidence });
+    await service.recordReviews(projectId, taskId, lease.leaseId, "worker-a", [review("functional-reviewer", "gemini", "functional"), review("design-reviewer", "cloudflare", "design")]);
+    const completed = await service.recordIntegration(projectId, taskId, lease.leaseId, "worker-a", { commitDigest: "1".repeat(40), integrationDigest: "2".repeat(64), validation: { tier: "integration", commandLabel: "post integration", passed: true, exitCode: 0, evidenceDigest: evidence } });
+    const repaired = await service.authorizeCompletedRepair(projectId, taskId, {
+      approvalId: "approval_44444444444444444444",
+      expectedRevision: completed.revision,
+      rationale: "Downstream deterministic evidence invalidated the accepted TypeScript toolchain contract.",
+    });
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.commitDigest, null);
+    assert.equal(repaired.reviewAttempts?.at(-1)?.reviews.length, 2);
+    assert.equal((await service.get(projectId))?.state, "running");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("owner-facing work cannot start without build and visual journey validation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-ui-acceptance-"));
+  try {
+    const uiDraft = {
+      ...draft,
+      items: draft.items.map((item) => item.id === taskId ? {
+        ...item,
+        title: "Build the owner-facing project page",
+        description: "Implement the approved responsive UI and owner journey.",
+        validationProfiles: item.validationProfiles,
+      } : item),
+    };
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft: uiDraft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
+    await assert.rejects(() => service.initialize(projectId), /lacks build and visual journey validation/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("repeated validation failures exhaust the bounded repair budget and quarantine once", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-budget-"));
   try {
@@ -167,6 +293,24 @@ test("repeated validation failures exhaust the bounded repair budget and quarant
     assert.equal(task.attempt, 2);
     assert.equal(task.lease, null);
     assert.equal((await service.get(projectId))?.state, "quarantined");
+    await assert.rejects(() => service.authorizeQuarantineRecovery(projectId, {
+      taskId,
+      expectedRevision: task.revision,
+      approvalId: "approval_1234567890abcdef1234",
+      rationale: "The deterministic validation root cause was repaired and independently verified.",
+    }, []), /fresh passing evidence/i);
+    const recovered = await service.authorizeQuarantineRecovery(projectId, {
+      taskId,
+      expectedRevision: task.revision,
+      approvalId: "approval_1234567890abcdef1234",
+      rationale: "The deterministic validation root cause was repaired and independently verified.",
+    }, [
+      { profile: "typecheck", passed: true, exitCode: 0, evidenceDigest: evidence },
+      { profile: "unit", passed: true, exitCode: 0, evidenceDigest: evidence },
+    ]);
+    assert.equal(recovered.status, "queued");
+    assert.equal(recovered.attempt, 2, "recovery preserves the exhausted repair history");
+    assert.equal(recovered.validations.length, 3, "recovery preserves failed validation evidence");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

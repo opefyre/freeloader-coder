@@ -13,8 +13,12 @@
   ],
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "start": "node scripts/start.mjs",
+    "start": "node scripts/start-agent-canvas.mjs",
+    "start:services": "node scripts/start.mjs",
     "control-plane": "npm run build && node dist/apps/core/src/control-plane-main.js",
+    "agent-canvas:gateway": "node dist/apps/core/src/agent-canvas-model-gateway-main.js",
+    "agent-canvas:mcp": "node dist/apps/core/src/pipeline-mcp-main.js",
+    "agent-canvas:start": "npm start",
     "repair": "node scripts/setup.mjs --repair",
     "studio:dev": "vite --config apps/studio/vite.config.ts",
     "studio:build": "vite build --config apps/studio/vite.config.ts",

@@ -193,6 +193,31 @@ export const workspaceDefinitions = {
 
 export type StudioView = keyof typeof workspaceDefinitions;
 
+export type PrimaryStudioView = "overview" | "projects" | "activity" | "settings";
+
+const primaryViewAliases: Readonly<Record<StudioView, PrimaryStudioView>> = {
+  overview: "overview",
+  projects: "projects",
+  conversation: "overview",
+  work: "activity",
+  decisions: "activity",
+  attention: "activity",
+  activity: "activity",
+  providers: "settings",
+  integrations: "settings",
+  evidence: "projects",
+  help: "settings",
+  launch: "projects",
+  releases: "projects",
+  trust: "settings",
+  accessibility: "settings",
+  settings: "settings",
+};
+
+export function primaryView(view: StudioView): PrimaryStudioView {
+  return primaryViewAliases[view];
+}
+
 export const studioViews = Object.keys(workspaceDefinitions) as StudioView[];
 
 export function validateWorkspaceRegistry(
@@ -233,22 +258,23 @@ export function viewFromLocation(location: {
   if (projectIdFromLocation(location)) return "projects";
   const legacyView = new URLSearchParams(location.search).get("view");
   if (pathname === "/" && studioViews.includes(legacyView as StudioView)) {
-    return legacyView as StudioView;
+    return primaryView(legacyView as StudioView);
   }
 
   const route = studioViews.find(
     (view) => workspaceDefinitions[view].path === pathname
   );
-  return route ?? "overview";
+  return route ? primaryView(route) : "overview";
 }
 
 export function canonicalStudioUrl(url: URL, view: StudioView): URL {
   const canonical = new URL(url);
+  const destination = primaryView(view);
   const legacyProjectId = canonical.searchParams.get("project");
   const projectId = projectIdFromLocation(url) ?? (legacyProjectId && isProjectId(legacyProjectId) ? legacyProjectId : null);
-  canonical.pathname = (view === "projects" || (view === "overview" && legacyProjectId)) && projectId
+  canonical.pathname = (destination === "projects" || (destination === "overview" && legacyProjectId)) && projectId
     ? projectRoute(projectId)
-    : routeForView(view);
+    : routeForView(destination);
   canonical.searchParams.delete("view");
   canonical.searchParams.delete("project");
   return canonical;

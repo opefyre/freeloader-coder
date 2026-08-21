@@ -31,6 +31,7 @@ import { listLocalRequests } from "../../local-request-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { Card, CardContent } from "../ui/card.js";
+import { MarkdownDocument } from "../projects/markdown-document.js";
 
 export function ProjectActivityDashboard(props: {
   endpoint: string;
@@ -870,9 +871,9 @@ export function ProjectActivityDashboard(props: {
               </div>
               {solution ? (
                 <>
-                  <pre className="mt-5 max-h-[48vh] overflow-auto whitespace-pre-wrap rounded-3xl bg-muted/55 p-5 font-sans text-sm leading-7">
-                    {solution.markdown}
-                  </pre>
+                  <div className="mt-5 max-h-[52vh] overflow-y-auto rounded-3xl bg-muted/35 px-5 py-3 sm:px-7">
+                    <MarkdownDocument body={solution.markdown} />
+                  </div>
                   <textarea
                     aria-label="Requested solution changes"
                     value={feedback}

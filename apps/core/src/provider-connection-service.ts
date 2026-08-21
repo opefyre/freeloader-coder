@@ -30,7 +30,7 @@ import {
   type ProviderConnectionRepository
 } from "../../../packages/providers/src/lifecycle.js";
 
-const REQUIRED_CAPABILITIES = ["chat", "structured_output"] as const satisfies readonly ProviderCapability[];
+const REQUIRED_CAPABILITIES = ["chat", "structured_output", "tool_calling"] as const satisfies readonly ProviderCapability[];
 const COST_TTL_MS = 24 * 60 * 60_000;
 const CANARY_TTL_MS = 60 * 60_000;
 
@@ -92,7 +92,7 @@ export class LiveProviderConnectionProbes implements ProviderConnectionProbes {
         "The selected model is not available to this account. Choose one of the verified models returned by the provider."
       );
     }
-    const response = await adapter.chat(
+    const structuredResponse = await adapter.chat(
       { secret: input.secret },
       {
         requestId: `connection-canary-${input.providerId}-${input.now}`,
@@ -120,7 +120,7 @@ export class LiveProviderConnectionProbes implements ProviderConnectionProbes {
     );
     let parsed: unknown;
     try {
-      parsed = JSON.parse(response.content);
+      parsed = JSON.parse(structuredResponse.content);
     } catch {
       parsed = null;
     }
@@ -128,6 +128,52 @@ export class LiveProviderConnectionProbes implements ProviderConnectionProbes {
       throw new ProviderConnectionLifecycleError(
         "structured-output-failed",
         "The live model responded, but did not satisfy the required structured-output canary."
+      );
+    }
+    const toolResponse = await adapter.chat(
+      { secret: input.secret },
+      {
+        requestId: `connection-tool-canary-${input.providerId}-${input.now}`,
+        modelId: input.modelId,
+        messages: [
+          {
+            role: "system",
+            content: "Call the pipeline_capability_canary tool exactly once with {\"ok\":true}. Do not answer with text."
+          },
+          {
+            role: "user",
+            content: "Run the required tool now."
+          }
+        ],
+        maxOutputTokens: 128,
+        temperature: 0,
+        tools: [{
+          name: "pipeline_capability_canary",
+          description: "Verifies that the model can emit a valid agent tool call.",
+          inputSchema: {
+            type: "object",
+            additionalProperties: false,
+            properties: { ok: { type: "boolean" } },
+            required: ["ok"]
+          }
+        }],
+        timeoutMs: 45_000
+      }
+    );
+    const toolCall = toolResponse.toolCalls[0];
+    let toolArguments: unknown = null;
+    try { toolArguments = toolCall ? JSON.parse(toolCall.argumentsJson) : null; } catch { toolArguments = null; }
+    if (
+      toolResponse.finishReason !== "tool_call" ||
+      toolResponse.toolCalls.length !== 1 ||
+      toolCall?.name !== "pipeline_capability_canary" ||
+      !toolArguments ||
+      typeof toolArguments !== "object" ||
+      (toolArguments as { ok?: unknown }).ok !== true
+    ) {
+      throw new ProviderConnectionLifecycleError(
+        "tool-calling-failed",
+        "The live model responded, but did not produce the required coding-agent tool call."
       );
     }
     return providerCanaryEvidenceSchema.parse({
@@ -138,8 +184,8 @@ export class LiveProviderConnectionProbes implements ProviderConnectionProbes {
       capabilities: REQUIRED_CAPABILITIES.filter((capability) =>
         input.capabilities.includes(capability)
       ),
-      inputTokens: response.usage.inputTokens,
-      outputTokens: response.usage.outputTokens,
+      inputTokens: structuredResponse.usage.inputTokens + toolResponse.usage.inputTokens,
+      outputTokens: structuredResponse.usage.outputTokens + toolResponse.usage.outputTokens,
       failureCode: null
     });
   }
@@ -213,11 +259,27 @@ export class ProviderConnectionService {
   }
 
   public async reProbe(id: string, now = Date.now()): Promise<ProviderConnectionMutationResponse> {
-    const result = await this.lifecycle.reProbe({
-      id,
-      now,
-      capabilities: REQUIRED_CAPABILITIES
-    });
+    const current = await this.repository.read(id);
+    const retryableProvider = current && ["aion", "openrouter"].includes(current.providerId);
+    let result;
+    try {
+      result = await this.lifecycle.reProbe({
+        id,
+        now,
+        capabilities: REQUIRED_CAPABILITIES
+      });
+    } catch (error) {
+      if (
+        !retryableProvider ||
+        !(error instanceof ProviderConnectionLifecycleError) ||
+        !["probe-failed", "structured-output-failed", "tool-calling-failed"].includes(error.code)
+      ) throw error;
+      result = await this.lifecycle.reProbe({
+        id,
+        now: Date.now(),
+        capabilities: REQUIRED_CAPABILITIES
+      });
+    }
     return mutation("reprobed", publicView(result.connection, now));
   }
 

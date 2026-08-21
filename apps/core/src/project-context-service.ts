@@ -494,15 +494,10 @@ function contextClarificationFindings(
   const material = canonical.conflicts
     .filter((conflict) => conflict.resolution === "unresolved_tie")
     .map((conflict) => {
-      const candidates = [conflict.selected, ...conflict.alternatives]
-        .filter(
-          (claim, index, all) =>
-            all.findIndex(
-              (item) =>
-                item.value.toLocaleLowerCase() ===
-                claim.value.toLocaleLowerCase(),
-            ) === index,
-        )
+      const candidates = deduplicateClarificationClaims([
+        conflict.selected,
+        ...conflict.alternatives,
+      ])
         .slice(0, 4);
       return {
         id: `conflict.${conflict.key}`.slice(0, 160),
@@ -542,6 +537,22 @@ function contextClarificationFindings(
     })),
   );
   return [...material, ...assumptions];
+}
+
+export function deduplicateClarificationClaims<
+  T extends { readonly value: string },
+>(claims: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return claims.filter((claim) => {
+    const canonical = claim.value
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+    if (seen.has(canonical)) return false;
+    seen.add(canonical);
+    return true;
+  });
 }
 
 async function readInputEvidence(root: string) {

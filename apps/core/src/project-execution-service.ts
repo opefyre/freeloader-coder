@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { planHealing, type HealingFailureClass, type HealingPolicy } from "../../../packages/orchestration/src/healing.js";
 import { evaluateQualityQuorum, type QualityReview } from "../../../packages/orchestration/src/quality-review.js";
-import { eligibleExecutionTasks, projectExecutionRecordSchema, selectExecutionAssignment, type ExecutionCandidate, type ExecutionTask, type ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
+import { completionEvidence, eligibleExecutionTasks, projectExecutionRecordSchema, selectExecutionAssignment, type ExecutionCandidate, type ExecutionTask, type ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
 import type { DeliveryPlanDraft } from "../../../packages/orchestration/src/delivery-plan.js";
 import type { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
 import { assertDeliveryPlanningEligible, type EligibilityDecision } from "../../../packages/orchestration/src/eligibility-gate.js";
@@ -21,6 +21,13 @@ const environmentRetrySchema = z.strictObject({
   expectedRevision: z.number().int().nonnegative(),
   rationale: z.string().trim().min(10).max(500),
 });
+const quarantineRecoverySchema = z.strictObject({
+  taskId: z.string().regex(/^plan_[a-f0-9]{16}$/),
+  expectedRevision: z.number().int().nonnegative(),
+  approvalId: z.string().regex(/^approval_[a-f0-9]{20}$/),
+  rationale: z.string().trim().min(10).max(500),
+});
+type QuarantineRepairEvidence = readonly { profile: ExecutionTask["validationProfiles"][number]; passed: boolean; exitCode: number; evidenceDigest: string }[];
 type JiraReceipt = { completed: boolean; planDigest: string; issues: Record<string, { issueKey: string }> };
 
 export class ProjectExecutionService {
@@ -84,7 +91,7 @@ export class ProjectExecutionService {
   async recordImplementation(projectId: string, taskId: string, leaseId: string, ownerId: string, evidenceDigest: string) {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
       if (task.status !== "running" && task.status !== "healing") throw new ProjectExecutionError("invalid_stage", "Implementation evidence is not accepted in this stage.");
-      const updated = { ...task, status: "validating" as const, implementationEvidence: [...task.implementationEvidence, digestSchema.parse(evidenceDigest)], revision: task.revision + 1, safeMessage: "Deterministic validation is running.", updatedAt: now };
+      const updated = { ...task, status: "validating" as const, implementationEvidence: [...task.implementationEvidence, digestSchema.parse(evidenceDigest)], failureClass: null, revision: task.revision + 1, safeMessage: "Deterministic validation is running.", updatedAt: now };
       return { record: replaceTask(record, updated), result: updated };
     });
   }
@@ -155,8 +162,14 @@ export class ProjectExecutionService {
       if (!task) throw new ProjectExecutionError("not_found", "Execution task was not found.");
       if (task.reviewAttempts?.some((attempt) => attempt.approvalId === approval.approvalId)) return { record, result: task };
       if (task.revision !== approval.expectedRevision) throw new ProjectExecutionError("stale_revision", "Review evidence changed. Review the latest findings before authorizing repair.");
-      if (!["needs_user", "quarantined"].includes(task.status) || task.reviews.length === 0 || task.reviews.every((review) => review.verdict === "pass")) {
-        throw new ProjectExecutionError("repair_denied", "Owner-authorized review repair requires current dissent or unresolved review evidence.");
+      const cleanCheckoutFailure = task.status === "needs_user" && task.reviews.length > 0 && task.reviews.every((review) => review.verdict === "pass") && (task.failureClass === "implementation" || task.safeMessage.includes("Post-integration validation") || task.safeMessage === "Execution needs attention: Commit changes do not match exact file authority.");
+      const validationDissent = ["needs_user", "quarantined"].includes(task.status)
+        && task.reviews.length === 0
+        && task.validations.some((validation) => !validation.passed)
+        && (task.failureClass === "implementation" || task.safeMessage === "Execution needs attention: Healing budget is invalid.");
+      const proposalContractDissent = task.status === "needs_user" && task.reviews.length === 0 && task.implementationEvidence.length === 0 && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state)/.test(task.safeMessage);
+      if (!["needs_user", "quarantined"].includes(task.status) || (!validationDissent && !proposalContractDissent && task.reviews.length === 0) || (task.reviews.length > 0 && task.reviews.every((review) => review.verdict === "pass") && !cleanCheckoutFailure)) {
+        throw new ProjectExecutionError("repair_denied", "Owner-authorized repair requires current validation, review, or clean-checkout dissent evidence.");
       }
       if (task.attempt >= 20) throw new ProjectExecutionError("repair_budget_exhausted", "The bounded repair history is full; create a revised delivery task instead.");
       const now = this.now();
@@ -174,7 +187,7 @@ export class ProjectExecutionService {
         ...task,
         status: "queued",
         revision: task.revision + 1,
-        attempt: task.attempt + 1,
+        attempt: validationDissent ? task.attempt : task.attempt + 1,
         assignment: null,
         lease: null,
         implementationEvidence: [],
@@ -191,6 +204,69 @@ export class ProjectExecutionService {
     });
   }
 
+  async authorizeCompletedRepair(projectId: string, taskId: string, input: unknown) {
+    const approval = reviewRepairSchema.parse(input);
+    return this.#mutateProject(projectId, (record) => {
+      const task = record.tasks.find((candidate) => candidate.id === taskId);
+      if (!task) throw new ProjectExecutionError("not_found", "Execution task was not found.");
+      if (task.reviewAttempts?.some((attempt) => attempt.approvalId === approval.approvalId)) return { record, result: task };
+      if (task.revision !== approval.expectedRevision) throw new ProjectExecutionError("stale_revision", "Completion evidence changed. Review the latest proof before authorizing prerequisite repair.");
+      if (task.status !== "completed" || task.lease || !completionEvidence(task)) {
+        throw new ProjectExecutionError("repair_denied", "Completed prerequisite repair requires a previously verified, integrated task and explicit owner approval.");
+      }
+      if (task.attempt >= 20) throw new ProjectExecutionError("repair_budget_exhausted", "The bounded repair history is full; create a revised delivery plan instead.");
+      const now = this.now();
+      const archived = {
+        approvalId: approval.approvalId,
+        priorRevision: task.revision,
+        implementerProviderId: task.assignment?.providerId ?? null,
+        implementationEvidence: task.implementationEvidence,
+        validations: task.validations,
+        reviews: task.reviews,
+        rationale: approval.rationale,
+        decidedAt: now,
+      };
+      const invalidated = new Set<string>([task.id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const candidate of record.tasks) {
+          if (!invalidated.has(candidate.id) && candidate.dependsOn.some((dependency) => invalidated.has(dependency))) {
+            invalidated.add(candidate.id);
+            changed = true;
+          }
+        }
+      }
+      const tasks = record.tasks.map((candidate): ExecutionTask => {
+        if (candidate.id === task.id) return {
+          ...candidate, status: "queued", revision: candidate.revision + 1, attempt: candidate.attempt + 1, assignment: null, lease: null,
+          implementationEvidence: [], validations: [], reviews: [], reviewAttempts: [...(candidate.reviewAttempts ?? []), archived],
+          commitDigest: null, integrationDigest: null, failureClass: "implementation",
+          safeMessage: "The owner reopened this completed prerequisite after downstream deterministic evidence invalidated its toolchain contract.", updatedAt: now,
+        };
+        if (!invalidated.has(candidate.id)) return candidate;
+        const downstreamAttempt = candidate.implementationEvidence.length > 0 || candidate.validations.length > 0 || candidate.reviews.length > 0 || candidate.commitDigest || candidate.integrationDigest ? {
+          approvalId: approval.approvalId,
+          priorRevision: candidate.revision,
+          implementerProviderId: candidate.assignment?.providerId ?? null,
+          implementationEvidence: candidate.implementationEvidence,
+          validations: candidate.validations,
+          reviews: candidate.reviews,
+          rationale: `Prerequisite proof was reopened and invalidated this downstream evidence. ${approval.rationale}`,
+          decidedAt: now,
+        } : null;
+        return {
+          ...candidate, status: "queued", revision: candidate.revision + 1, attempt: 0, assignment: null, lease: null,
+          implementationEvidence: [], validations: [], reviews: [], reviewAttempts: downstreamAttempt ? [...(candidate.reviewAttempts ?? []), downstreamAttempt] : candidate.reviewAttempts,
+          commitDigest: null, integrationDigest: null, failureClass: null,
+          safeMessage: "Queued behind a reopened prerequisite whose proof is being repaired.", updatedAt: now,
+        };
+      });
+      const updatedTask = tasks.find((candidate) => candidate.id === task.id)!;
+      return { record: projectState({ ...record, state: "running", tasks, revision: record.revision + 1, updatedAt: now }, now), result: updatedTask };
+    });
+  }
+
   async releaseForRetry(projectId: string, taskId: string, leaseId: string, ownerId: string, safeMessage: string) {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
       const updated: ExecutionTask = { ...task, status: "queued", assignment: null, lease: null, revision: task.revision + 1, safeMessage, updatedAt: now };
@@ -204,8 +280,8 @@ export class ProjectExecutionService {
       const task = record.tasks.find((candidate) => candidate.id === retry.taskId);
       if (!task) throw new ProjectExecutionError("not_found", "Execution task was not found.");
       if (task.revision !== retry.expectedRevision) throw new ProjectExecutionError("stale_revision", "Execution evidence changed. Review the latest state before retrying.");
-      if (task.status !== "needs_user" || task.lease || task.implementationEvidence.length > 0 || task.validations.length > 0 || task.reviews.length > 0 || task.commitDigest || task.integrationDigest || task.failureClass) {
-        throw new ProjectExecutionError("retry_denied", "Only a pre-implementation environment failure can be resumed with this action.");
+      if (task.status !== "needs_user" || task.lease || task.reviews.length > 0 || task.commitDigest || task.integrationDigest || (task.failureClass && !["implementation", "environment"].includes(task.failureClass))) {
+        throw new ProjectExecutionError("retry_denied", "Only a pre-review, pre-commit environment failure can be resumed with this action.");
       }
       const now = this.now();
       const updated: ExecutionTask = {
@@ -220,9 +296,36 @@ export class ProjectExecutionService {
     });
   }
 
-  async interrupt(projectId: string, taskId: string, leaseId: string, ownerId: string, safeMessage: string) {
+  async authorizeQuarantineRecovery(projectId: string, input: unknown, verification: QuarantineRepairEvidence) {
+    const recovery = quarantineRecoverySchema.parse(input);
+    return this.#mutateProject(projectId, (record) => {
+      const task = record.tasks.find((candidate) => candidate.id === recovery.taskId);
+      if (!task) throw new ProjectExecutionError("not_found", "Execution task was not found.");
+      if (task.revision !== recovery.expectedRevision) throw new ProjectExecutionError("stale_revision", "Execution evidence changed. Review the latest state before recovering quarantined work.");
+      const passedProfiles = new Set(verification.filter((item) => item.passed && item.exitCode === 0 && /^[a-f0-9]{64}$/.test(item.evidenceDigest)).map((item) => item.profile));
+      if (task.validationProfiles.some((profile) => !passedProfiles.has(profile))) throw new ProjectExecutionError("retry_denied", "Quarantine recovery requires fresh passing evidence for every reviewed validation profile.");
+      const legacyDependencyInterruption = task.status === "needs_user" && (task.safeMessage.includes("npm ci") || task.safeMessage.includes("Bounded source evidence"));
+      const boundedQuarantine = task.status === "quarantined" && Boolean(task.failureClass && ["implementation", "environment"].includes(task.failureClass));
+      if ((!boundedQuarantine && !legacyDependencyInterruption) || task.lease || task.reviews.length > 0 || task.commitDigest || task.integrationDigest) {
+        throw new ProjectExecutionError("retry_denied", "Only an owner-approved, freshly verified repair of a pre-review quarantine or dependency interruption can be recovered with this action.");
+      }
+      const now = this.now();
+      const evidenceDigest = createHash("sha256").update(JSON.stringify(verification)).digest("hex");
+      const updated: ExecutionTask = {
+        ...task,
+        status: "queued",
+        assignment: null,
+        revision: task.revision + 1,
+        safeMessage: `Owner approved one freshly verified pre-review recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`,
+        updatedAt: now,
+      };
+      return { record: projectState(replaceTask(record, updated), now), result: updated };
+    });
+  }
+
+  async interrupt(projectId: string, taskId: string, leaseId: string, ownerId: string, safeMessage: string, failureClass?: HealingFailureClass) {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
-      const updated: ExecutionTask = { ...task, status: "needs_user", lease: null, revision: task.revision + 1, safeMessage, updatedAt: now };
+      const updated: ExecutionTask = { ...task, status: "needs_user", lease: null, failureClass: failureClass ?? task.failureClass, revision: task.revision + 1, safeMessage, updatedAt: now };
       return { record: projectState(replaceTask(record, updated), now), result: updated };
     });
   }
@@ -255,7 +358,7 @@ export class ProjectExecutionError extends Error { constructor(readonly code: st
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const gitDigestSchema = z.string().regex(/^[a-f0-9]{40,64}$/);
 const validationSchema = z.strictObject({ tier: z.enum(["fast", "full", "integration"]), commandLabel: z.string().trim().min(1).max(200), passed: z.boolean(), exitCode: z.number().int(), evidenceDigest: digestSchema });
-function executableTasks(plan: DeliveryPlanDraft, jira: JiraReceipt, now: number): ExecutionTask[] { const subtasks = plan.items.filter((item) => item.type === "subtask"); const byParent = new Map<string, typeof subtasks>(); for (const item of subtasks) byParent.set(item.parentId!, [...(byParent.get(item.parentId!) ?? []), item]); return subtasks.map((item) => { const parent = plan.items.find((candidate) => candidate.id === item.parentId); const inherited = parent?.dependencies.flatMap((dependency) => byParent.get(dependency)?.map((child) => child.id) ?? []) ?? []; const issue = jira.issues[item.id]; if (!issue) throw new ProjectExecutionError("jira_receipt_incomplete", `Jira receipt is missing ${item.id}.`); if (item.allowedFiles.length === 0 || item.validationProfiles.length === 0) throw new ProjectExecutionError("authority_missing", `${item.id} does not define bounded file and validation authority.`); if (item.allowedFiles.some(isProtectedExecutionPath)) throw new ProjectExecutionError("protected_path", `${item.id} requests a protected credential, environment, or Git path.`); const text = `${item.title} ${item.description} ${item.implementationNotes.join(" ")}`.toLowerCase(); const uiChanged = /\b(ui|ux|frontend|visual|responsive|component|page|screen)\b/.test(text); return { id: item.id, jiraIssueKey: issue.issueKey, title: item.title, dependsOn: [...new Set([...item.dependencies.filter((id) => subtasks.some((candidate) => candidate.id === id)), ...inherited])], allowedFiles: item.allowedFiles, validationProfiles: item.validationProfiles, uiChanged, requiredCapabilities: uiChanged ? ["chat", "structured_output", "tool_calling"] : ["chat", "structured_output"], privacyClass: "source_code", status: "queued", revision: 0, attempt: 0, assignment: null, lease: null, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Queued behind verified dependencies.", updatedAt: now }; }); }
+function executableTasks(plan: DeliveryPlanDraft, jira: JiraReceipt, now: number): ExecutionTask[] { const subtasks = plan.items.filter((item) => item.type === "subtask"); const byParent = new Map<string, typeof subtasks>(); for (const item of subtasks) byParent.set(item.parentId!, [...(byParent.get(item.parentId!) ?? []), item]); return subtasks.map((item) => { const parent = plan.items.find((candidate) => candidate.id === item.parentId); const inherited = parent?.dependencies.flatMap((dependency) => byParent.get(dependency)?.map((child) => child.id) ?? []) ?? []; const issue = jira.issues[item.id]; if (!issue) throw new ProjectExecutionError("jira_receipt_incomplete", `Jira receipt is missing ${item.id}.`); if (item.allowedFiles.length === 0 || item.validationProfiles.length === 0) throw new ProjectExecutionError("authority_missing", `${item.id} does not define bounded file and validation authority.`); if (item.allowedFiles.some(isProtectedExecutionPath)) throw new ProjectExecutionError("protected_path", `${item.id} requests a protected credential, environment, or Git path.`); const text = `${item.title} ${item.description} ${item.implementationNotes.join(" ")}`.toLowerCase(); const uiChanged = /\b(ui|ux|frontend|visual|responsive|component|page|screen)\b/.test(text); if (uiChanged && (!item.validationProfiles.includes("build") || !item.validationProfiles.includes("visual"))) throw new ProjectExecutionError("ui_acceptance_missing", `${item.id} changes the owner-facing experience but lacks build and visual journey validation.`); return { id: item.id, jiraIssueKey: issue.issueKey, title: item.title, dependsOn: [...new Set([...item.dependencies.filter((id) => subtasks.some((candidate) => candidate.id === id)), ...inherited])], allowedFiles: item.allowedFiles, validationProfiles: item.validationProfiles, uiChanged, requiredCapabilities: uiChanged ? ["chat", "structured_output", "tool_calling"] : ["chat", "structured_output"], privacyClass: "source_code", status: "queued", revision: 0, attempt: 0, assignment: null, lease: null, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Queued behind verified dependencies.", updatedAt: now }; }); }
 function isProtectedExecutionPath(path: string) { const parts = path.replaceAll("\\", "/").toLowerCase().split("/").filter(Boolean); return parts.some((part) => part === ".git" || part === "secrets" || part === "credentials" || part === ".ssh" || part === ".aws" || part === ".config" || part === ".env" || part.startsWith(".env.")); }
 function replaceTask(record: ProjectExecutionRecord, task: ExecutionTask): ProjectExecutionRecord { return { ...record, revision: record.revision + 1, tasks: record.tasks.map((candidate) => candidate.id === task.id ? task : candidate), updatedAt: task.updatedAt }; }
 function projectState(record: ProjectExecutionRecord, now: number): ProjectExecutionRecord { const state = record.tasks.every((task) => task.status === "completed") ? "completed" : record.tasks.some((task) => task.status === "quarantined") ? "quarantined" : record.tasks.some((task) => task.status === "needs_user") ? "needs_user" : "running"; return { ...record, state, updatedAt: now }; }

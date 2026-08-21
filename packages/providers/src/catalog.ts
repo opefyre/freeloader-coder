@@ -80,8 +80,8 @@ export const verifiedProviderCatalog: readonly ProviderCatalogEntry[] = [
     ],
     models: [
       {
-        id: "gemini-2.5-flash-lite",
-        label: "Gemini 2.5 Flash-Lite",
+        id: "gemini-3.5-flash-lite",
+        label: "Gemini 3.5 Flash-Lite",
         contextWindowTokens: 1_048_576,
         maxOutputTokens: 65_536,
         preview: false
@@ -144,43 +144,143 @@ export const verifiedProviderCatalog: readonly ProviderCatalogEntry[] = [
     documentedCapacity: {}
   },
   {
-    id: "cerebras",
-    label: "Cerebras",
-    apiBaseUrl: "https://api.cerebras.ai/v1",
-    dashboardUrl: "https://cloud.cerebras.ai",
-    apiKeyEnvironmentVariable: "CEREBRAS_API_KEY",
+    id: "nvidia-nim",
+    label: "NVIDIA NIM",
+    apiBaseUrl: "https://integrate.api.nvidia.com/v1",
+    dashboardUrl: "https://build.nvidia.com/explore/discover",
+    apiKeyEnvironmentVariable: "NVIDIA_API_KEY",
     protocol: "openai_compatible",
     freeAccess: "account_limited",
     zeroCostEligible: true,
     requiresAccountLimitProbe: true,
-    summary: "Permanent $0 inference with organization-specific limits and very fast coding models.",
+    summary: "Free NVIDIA Developer Program inference; commercial and paid enterprise routes are excluded.",
     sourceUrls: [
-      "https://inference-docs.cerebras.ai/support/pricing",
-      "https://inference-docs.cerebras.ai/support/rate-limits",
-      "https://inference-docs.cerebras.ai/resources/openai"
+      "https://docs.api.nvidia.com/nim/docs/product",
+      "https://docs.api.nvidia.com/nim/docs/api-quickstart",
+      "https://docs.api.nvidia.com/nim/reference/llm-apis"
     ],
     models: [
       {
-        id: "gpt-oss-120b",
-        label: "GPT OSS 120B",
-        contextWindowTokens: 131_000,
-        maxOutputTokens: 40_000,
-        preview: false
-      },
-      {
-        id: "zai-glm-4.7",
-        label: "Z.ai GLM 4.7",
+        id: "meta/llama-3.1-8b-instruct",
+        label: "Llama 3.1 8B Instruct",
         contextWindowTokens: 131_072,
-        maxOutputTokens: 65_000,
-        preview: true
+        maxOutputTokens: 16_384,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    apiBaseUrl: "https://router.huggingface.co/v1",
+    dashboardUrl: "https://huggingface.co/settings/tokens",
+    apiKeyEnvironmentVariable: "HF_TOKEN",
+    protocol: "openai_compatible",
+    freeAccess: "account_limited",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "Recurring free-user inference credit only; requests fail closed when the monthly allowance is exhausted.",
+    sourceUrls: [
+      "https://huggingface.co/docs/inference-providers/en/pricing",
+      "https://huggingface.co/docs/inference-providers/en/index",
+      "https://huggingface.co/docs/inference-providers/en/hub-api"
+    ],
+    models: [
+      {
+        id: "openai/gpt-oss-120b",
+        label: "GPT OSS 120B",
+        contextWindowTokens: 131_072,
+        maxOutputTokens: 16_384,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
+  },
+  {
+    id: "aion",
+    label: "Aion Labs",
+    apiBaseUrl: "https://api.aionlabs.ai/v1",
+    dashboardUrl: "https://www.aionlabs.ai/app/api-keys/",
+    apiKeyEnvironmentVariable: "AION_API_KEY",
+    protocol: "openai_compatible",
+    freeAccess: "permanent",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "No-card daily free credit with explicit request and token ceilings.",
+    sourceUrls: [
+      "https://www.aionlabs.ai/pricing/",
+      "https://www.aionlabs.ai/docs/rate-limits/",
+      "https://www.aionlabs.ai/docs/api-reference/"
+    ],
+    models: [
+      {
+        id: "aion-labs/aion-2.0",
+        label: "Aion 2.0",
+        contextWindowTokens: 131_072,
+        maxOutputTokens: 32_768,
+        preview: false
       }
     ],
     documentedCapacity: {
-      requestsPerMinute: 5,
-      requestsPerDay: 2_400,
-      tokensPerMinute: 30_000,
-      tokensPerDay: 1_000_000
+      requestsPerMinute: 15,
+      tokensPerMinute: 20_000,
+      tokensPerDay: 20_000
     }
+  },
+  {
+    id: "kilo",
+    label: "Kilo Gateway",
+    apiBaseUrl: "https://api.kilo.ai/api/gateway",
+    dashboardUrl: "https://app.kilo.ai/",
+    apiKeyEnvironmentVariable: "KILO_API_KEY",
+    protocol: "openai_compatible",
+    freeAccess: "permanent",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "Auto Free rotates among current zero-cost models and returns 402 rather than consuming paid credit.",
+    sourceUrls: [
+      "https://kilo.ai/docs/getting-started/using-kilo-for-free",
+      "https://kilo.ai/docs/gateway/api-reference",
+      "https://kilo.ai/docs/gateway/usage-and-billing"
+    ],
+    models: [
+      {
+        id: "kilo-auto/free",
+        label: "Kilo Auto Free",
+        contextWindowTokens: 131_072,
+        maxOutputTokens: 16_384,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
+  },
+  {
+    id: "cohere",
+    label: "Cohere Trial",
+    apiBaseUrl: "https://api.cohere.ai/compatibility/v1",
+    dashboardUrl: "https://dashboard.cohere.com/api-keys",
+    apiKeyEnvironmentVariable: "COHERE_API_KEY",
+    protocol: "openai_compatible",
+    freeAccess: "account_limited",
+    zeroCostEligible: true,
+    requiresAccountLimitProbe: true,
+    summary: "No-card trial key capped at 1,000 API calls monthly; non-production use only.",
+    sourceUrls: [
+      "https://docs.cohere.com/v1/docs/cohere-faqs",
+      "https://docs.cohere.com/v1/docs/going-live",
+      "https://docs.cohere.com/reference/list-models"
+    ],
+    models: [
+      {
+        id: "command-a-03-2025",
+        label: "Command A",
+        contextWindowTokens: 256_000,
+        maxOutputTokens: 8_192,
+        preview: false
+      }
+    ],
+    documentedCapacity: {}
   },
   {
     id: "mistral",
@@ -264,32 +364,6 @@ export const verifiedProviderCatalog: readonly ProviderCatalogEntry[] = [
       requestsPerDay: 20,
       tokensPerDay: 200_000
     }
-  },
-  {
-    id: "deepseek",
-    label: "DeepSeek Platform",
-    apiBaseUrl: "https://api.deepseek.com",
-    dashboardUrl: "https://platform.deepseek.com",
-    apiKeyEnvironmentVariable: "DEEPSEEK_API_KEY",
-    protocol: "openai_compatible",
-    freeAccess: "promotional_credit",
-    zeroCostEligible: false,
-    requiresAccountLimitProbe: true,
-    summary: "Token-priced API; granted trial balance is temporary and is not a permanent free tier.",
-    sourceUrls: [
-      "https://api-docs.deepseek.com/quick_start/pricing",
-      "https://api-docs.deepseek.com/api/get-user-balance/"
-    ],
-    models: [
-      {
-        id: "deepseek-v4-flash",
-        label: "DeepSeek V4 Flash",
-        contextWindowTokens: 1_000_000,
-        maxOutputTokens: 384_000,
-        preview: false
-      }
-    ],
-    documentedCapacity: {}
   }
 ] as const;
 

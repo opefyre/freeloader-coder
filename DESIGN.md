@@ -1,0 +1,74 @@
+<!-- codkesh-artifact:{"schemaVersion":1,"kind":"design","revision":2,"updatedAt":"2026-08-15T14:26:45.467Z","producer":"codkesh:solution-design","bodyDigest":"42f9c3c895285607cf4fee7647ffe706d597a0d5609385f019626c2c4c254796","approvedDigest":null,"supersedesDigest":"0da8e3c547ffe08d49e7317d8e1c03f4970544f0b89b6a50a8b248a4328a874f","confidence":"unknown","approvalState":"pending","citations":[]} -->
+# Pipeline Studio Product Design Specification
+
+Design specification for Pipeline Studio based strictly on available repository context and identified evidence gaps.
+
+## Evidence baseline
+
+- CONTEXT.md: `88c0f0c915c50ba59db9a6b366541f110ce4453bef5441547aa93cbba77c7785`
+- RESEARCH.md: `348f4faffd310f4f1c257351335ee8f961b6b120fd9bec046f5de8ec1bc70f29`
+
+## Product behavior
+
+- Execute available validation scripts including build, control-plane, format:check, lint, repair, setup, setup:check, start, studio:budget, studio:build, studio:dev, studio:release-check, test, typecheck, and verify as specified in local://CONTEXT.md package manifests.
+
+## Architecture
+
+- Maintain a TypeScript-based project structure spanning applications, packages, engine, fixtures, scripts, and tests as documented in local://CONTEXT.md bounded topology.
+
+## User experience
+
+- Provide a Pipeline Studio interface and workflow as referenced in repository documentation within local://CONTEXT.md.
+
+## Data
+
+- Manage project data within the constraints of the repository structure, noting that persistent data modeling and storage specifics remain an unverified evidence gap per local://RESEARCH.md.
+
+## Integrations
+
+- Maintain connectivity with GitHub repository opefyre/freeloader-coder and Jira project PIPE as recorded in local://CONTEXT.md metadata.
+
+## Security
+
+- Enforce repository-defined verification scripts including lint, format:check, and typecheck as documented in local://CONTEXT.md.
+
+## Privacy
+
+- Handle user and workspace data in accordance with repository guidelines, noting that specific compliance, PII handling, and residency mechanics remain unverified evidence gaps per local://RESEARCH.md.
+
+## Reliability
+
+- Utilize repository-defined test workflows and validation scripts to maintain system reliability, while acknowledging that automated monitoring and failover strategies are currently undocumented per local://RESEARCH.md.
+
+## Rollout
+
+- Execute repository setup and validation scripts as outlined in local://CONTEXT.md prior to release checks.
+
+## Success metrics
+
+- Track code quality and build verification using validation scripts such as studio:budget and test declared in local://CONTEXT.md.
+
+## Alternatives and decisions
+
+- **selected** — Design system architecture strictly around verified repository structure and declared scripts — Ensures all specified requirements adhere strictly to bounded evidence in local://CONTEXT.md and local://RESEARCH.md without inventing unsupported product claims.
+- **rejected** — Incorporate unverified external workspace features and speculative persistent data models — Violates review findings by relying on unsupported assumptions and explicitly documented evidence gaps from local://RESEARCH.md.
+
+## Unresolved blockers
+
+- **Unverified market analysis, audience personas, and problem definition** — Impact: Cannot assess market positioning, total addressable market, or user workflow friction without external market data. Owner: Product Team. Resolution: Conduct user research and market analysis to gather verified evidence.
+- **Insufficient evidence for persistent data modeling and storage** — Impact: Database schemas, persistence mechanisms, and migration strategies remain unknown. Owner: Engineering Team. Resolution: Define concrete data storage and migration specifications based on application requirements.
+- **Unknown third-party connector APIs and integration contracts** — Impact: Integration points and contract requirements for the connectors package are unspecified. Owner: Integration Team. Resolution: Document external API dependencies and integration contracts.
+- **Undeclared authentication, authorization, and compliance mechanisms** — Impact: Potential security vulnerabilities or missing auth controls and privacy compliance gaps. Owner: Security Team. Resolution: Perform a comprehensive security and privacy audit and define compliance standards.
+
+## Sources
+
+1. local://CONTEXT.md
+2. local://RESEARCH.md
+
+## Independent review
+
+- Product — gemini/gemini-3.5-flash-lite/independent-product-auditor: passed; The candidate solution correctly adheres strictly to the bounded context and documented evidence gaps without introducing invented facts or unsafe assumptions.; The specifications appropriately reflect the scripts, project structure, and integrations recorded in CONTEXT.md and RESEARCH.md.; Unresolved blockers are accurately identified and categorized based on the recognized research gaps.
+- Technical — gemini/gemini-3.5-flash-lite/technical-auditor-01: passed; The candidate solution strictly adheres to the bounded evidence and explicitly acknowledges the documented gaps in RESEARCH.md without introducing unsupported claims or speculative features.; The candidate solution correctly references the validation scripts and repository structure declared in CONTEXT.md.; Unresolved blockers are appropriately categorized and assigned to responsible owners with clear resolution paths.
+
+<!-- solution-content:eyJzY2hlbWFWZXJzaW9uIjoxLCJ0aXRsZSI6IlBpcGVsaW5lIFN0dWRpbyBQcm9kdWN0IERlc2lnbiBTcGVjaWZpY2F0aW9uIiwic3VtbWFyeSI6IkRlc2lnbiBzcGVjaWZpY2F0aW9uIGZvciBQaXBlbGluZSBTdHVkaW8gYmFzZWQgc3RyaWN0bHkgb24gYXZhaWxhYmxlIHJlcG9zaXRvcnkgY29udGV4dCBhbmQgaWRlbnRpZmllZCBldmlkZW5jZSBnYXBzLiIsImJlaGF2aW9yIjpbIkV4ZWN1dGUgYXZhaWxhYmxlIHZhbGlkYXRpb24gc2NyaXB0cyBpbmNsdWRpbmcgYnVpbGQsIGNvbnRyb2wtcGxhbmUsIGZvcm1hdDpjaGVjaywgbGludCwgcmVwYWlyLCBzZXR1cCwgc2V0dXA6Y2hlY2ssIHN0YXJ0LCBzdHVkaW86YnVkZ2V0LCBzdHVkaW86YnVpbGQsIHN0dWRpbzpkZXYsIHN0dWRpbzpyZWxlYXNlLWNoZWNrLCB0ZXN0LCB0eXBlY2hlY2ssIGFuZCB2ZXJpZnkgYXMgc3BlY2lmaWVkIGluIGxvY2FsOi8vQ09OVEVYVC5tZCBwYWNrYWdlIG1hbmlmZXN0cy4iXSwiYXJjaGl0ZWN0dXJlIjpbIk1haW50YWluIGEgVHlwZVNjcmlwdC1iYXNlZCBwcm9qZWN0IHN0cnVjdHVyZSBzcGFubmluZyBhcHBsaWNhdGlvbnMsIHBhY2thZ2VzLCBlbmdpbmUsIGZpeHR1cmVzLCBzY3JpcHRzLCBhbmQgdGVzdHMgYXMgZG9jdW1lbnRlZCBpbiBsb2NhbDovL0NPTlRFWFQubWQgYm91bmRlZCB0b3BvbG9neS4iXSwidXNlckV4cGVyaWVuY2UiOlsiUHJvdmlkZSBhIFBpcGVsaW5lIFN0dWRpbyBpbnRlcmZhY2UgYW5kIHdvcmtmbG93IGFzIHJlZmVyZW5jZWQgaW4gcmVwb3NpdG9yeSBkb2N1bWVudGF0aW9uIHdpdGhpbiBsb2NhbDovL0NPTlRFWFQubWQuIl0sImRhdGEiOlsiTWFuYWdlIHByb2plY3QgZGF0YSB3aXRoaW4gdGhlIGNvbnN0cmFpbnRzIG9mIHRoZSByZXBvc2l0b3J5IHN0cnVjdHVyZSwgbm90aW5nIHRoYXQgcGVyc2lzdGVudCBkYXRhIG1vZGVsaW5nIGFuZCBzdG9yYWdlIHNwZWNpZmljcyByZW1haW4gYW4gdW52ZXJpZmllZCBldmlkZW5jZSBnYXAgcGVyIGxvY2FsOi8vUkVTRUFSQ0gubWQuIl0sImludGVncmF0aW9ucyI6WyJNYWludGFpbiBjb25uZWN0aXZpdHkgd2l0aCBHaXRIdWIgcmVwb3NpdG9yeSBvcGVmeXJlL2ZyZWVsb2FkZXItY29kZXIgYW5kIEppcmEgcHJvamVjdCBQSVBFIGFzIHJlY29yZGVkIGluIGxvY2FsOi8vQ09OVEVYVC5tZCBtZXRhZGF0YS4iXSwic2VjdXJpdHkiOlsiRW5mb3JjZSByZXBvc2l0b3J5LWRlZmluZWQgdmVyaWZpY2F0aW9uIHNjcmlwdHMgaW5jbHVkaW5nIGxpbnQsIGZvcm1hdDpjaGVjaywgYW5kIHR5cGVjaGVjayBhcyBkb2N1bWVudGVkIGluIGxvY2FsOi8vQ09OVEVYVC5tZC4iXSwicHJpdmFjeSI6WyJIYW5kbGUgdXNlciBhbmQgd29ya3NwYWNlIGRhdGEgaW4gYWNjb3JkYW5jZSB3aXRoIHJlcG9zaXRvcnkgZ3VpZGVsaW5lcywgbm90aW5nIHRoYXQgc3BlY2lmaWMgY29tcGxpYW5jZSwgUElJIGhhbmRsaW5nLCBhbmQgcmVzaWRlbmN5IG1lY2hhbmljcyByZW1haW4gdW52ZXJpZmllZCBldmlkZW5jZSBnYXBzIHBlciBsb2NhbDovL1JFU0VBUkNILm1kLiJdLCJyZWxpYWJpbGl0eSI6WyJVdGlsaXplIHJlcG9zaXRvcnktZGVmaW5lZCB0ZXN0IHdvcmtmbG93cyBhbmQgdmFsaWRhdGlvbiBzY3JpcHRzIHRvIG1haW50YWluIHN5c3RlbSByZWxpYWJpbGl0eSwgd2hpbGUgYWNrbm93bGVkZ2luZyB0aGF0IGF1dG9tYXRlZCBtb25pdG9yaW5nIGFuZCBmYWlsb3ZlciBzdHJhdGVnaWVzIGFyZSBjdXJyZW50bHkgdW5kb2N1bWVudGVkIHBlciBsb2NhbDovL1JFU0VBUkNILm1kLiJdLCJyb2xsb3V0IjpbIkV4ZWN1dGUgcmVwb3NpdG9yeSBzZXR1cCBhbmQgdmFsaWRhdGlvbiBzY3JpcHRzIGFzIG91dGxpbmVkIGluIGxvY2FsOi8vQ09OVEVYVC5tZCBwcmlvciB0byByZWxlYXNlIGNoZWNrcy4iXSwibWV0cmljcyI6WyJUcmFjayBjb2RlIHF1YWxpdHkgYW5kIGJ1aWxkIHZlcmlmaWNhdGlvbiB1c2luZyB2YWxpZGF0aW9uIHNjcmlwdHMgc3VjaCBhcyBzdHVkaW86YnVkZ2V0IGFuZCB0ZXN0IGRlY2xhcmVkIGluIGxvY2FsOi8vQ09OVEVYVC5tZC4iXSwiYWx0ZXJuYXRpdmVzIjpbeyJvcHRpb24iOiJEZXNpZ24gc3lzdGVtIGFyY2hpdGVjdHVyZSBzdHJpY3RseSBhcm91bmQgdmVyaWZpZWQgcmVwb3NpdG9yeSBzdHJ1Y3R1cmUgYW5kIGRlY2xhcmVkIHNjcmlwdHMiLCJkaXNwb3NpdGlvbiI6InNlbGVjdGVkIiwicmF0aW9uYWxlIjoiRW5zdXJlcyBhbGwgc3BlY2lmaWVkIHJlcXVpcmVtZW50cyBhZGhlcmUgc3RyaWN0bHkgdG8gYm91bmRlZCBldmlkZW5jZSBpbiBsb2NhbDovL0NPTlRFWFQubWQgYW5kIGxvY2FsOi8vUkVTRUFSQ0gubWQgd2l0aG91dCBpbnZlbnRpbmcgdW5zdXBwb3J0ZWQgcHJvZHVjdCBjbGFpbXMuIn0seyJvcHRpb24iOiJJbmNvcnBvcmF0ZSB1bnZlcmlmaWVkIGV4dGVybmFsIHdvcmtzcGFjZSBmZWF0dXJlcyBhbmQgc3BlY3VsYXRpdmUgcGVyc2lzdGVudCBkYXRhIG1vZGVscyIsImRpc3Bvc2l0aW9uIjoicmVqZWN0ZWQiLCJyYXRpb25hbGUiOiJWaW9sYXRlcyByZXZpZXcgZmluZGluZ3MgYnkgcmVseWluZyBvbiB1bnN1cHBvcnRlZCBhc3N1bXB0aW9ucyBhbmQgZXhwbGljaXRseSBkb2N1bWVudGVkIGV2aWRlbmNlIGdhcHMgZnJvbSBsb2NhbDovL1JFU0VBUkNILm1kLiJ9XSwidW5yZXNvbHZlZEJsb2NrZXJzIjpbeyJibG9ja2VyIjoiVW52ZXJpZmllZCBtYXJrZXQgYW5hbHlzaXMsIGF1ZGllbmNlIHBlcnNvbmFzLCBhbmQgcHJvYmxlbSBkZWZpbml0aW9uIiwiaW1wYWN0IjoiQ2Fubm90IGFzc2VzcyBtYXJrZXQgcG9zaXRpb25pbmcsIHRvdGFsIGFkZHJlc3NhYmxlIG1hcmtldCwgb3IgdXNlciB3b3JrZmxvdyBmcmljdGlvbiB3aXRob3V0IGV4dGVybmFsIG1hcmtldCBkYXRhLiIsIm93bmVyIjoiUHJvZHVjdCBUZWFtIiwicmVzb2x1dGlvbiI6IkNvbmR1Y3QgdXNlciByZXNlYXJjaCBhbmQgbWFya2V0IGFuYWx5c2lzIHRvIGdhdGhlciB2ZXJpZmllZCBldmlkZW5jZS4ifSx7ImJsb2NrZXIiOiJJbnN1ZmZpY2llbnQgZXZpZGVuY2UgZm9yIHBlcnNpc3RlbnQgZGF0YSBtb2RlbGluZyBhbmQgc3RvcmFnZSIsImltcGFjdCI6IkRhdGFiYXNlIHNjaGVtYXMsIHBlcnNpc3RlbmNlIG1lY2hhbmlzbXMsIGFuZCBtaWdyYXRpb24gc3RyYXRlZ2llcyByZW1haW4gdW5rbm93bi4iLCJvd25lciI6IkVuZ2luZWVyaW5nIFRlYW0iLCJyZXNvbHV0aW9uIjoiRGVmaW5lIGNvbmNyZXRlIGRhdGEgc3RvcmFnZSBhbmQgbWlncmF0aW9uIHNwZWNpZmljYXRpb25zIGJhc2VkIG9uIGFwcGxpY2F0aW9uIHJlcXVpcmVtZW50cy4ifSx7ImJsb2NrZXIiOiJVbmtub3duIHRoaXJkLXBhcnR5IGNvbm5lY3RvciBBUElzIGFuZCBpbnRlZ3JhdGlvbiBjb250cmFjdHMiLCJpbXBhY3QiOiJJbnRlZ3JhdGlvbiBwb2ludHMgYW5kIGNvbnRyYWN0IHJlcXVpcmVtZW50cyBmb3IgdGhlIGNvbm5lY3RvcnMgcGFja2FnZSBhcmUgdW5zcGVjaWZpZWQuIiwib3duZXIiOiJJbnRlZ3JhdGlvbiBUZWFtIiwicmVzb2x1dGlvbiI6IkRvY3VtZW50IGV4dGVybmFsIEFQSSBkZXBlbmRlbmNpZXMgYW5kIGludGVncmF0aW9uIGNvbnRyYWN0cy4ifSx7ImJsb2NrZXIiOiJVbmRlY2xhcmVkIGF1dGhlbnRpY2F0aW9uLCBhdXRob3JpemF0aW9uLCBhbmQgY29tcGxpYW5jZSBtZWNoYW5pc21zIiwiaW1wYWN0IjoiUG90ZW50aWFsIHNlY3VyaXR5IHZ1bG5lcmFiaWxpdGllcyBvciBtaXNzaW5nIGF1dGggY29udHJvbHMgYW5kIHByaXZhY3kgY29tcGxpYW5jZSBnYXBzLiIsIm93bmVyIjoiU2VjdXJpdHkgVGVhbSIsInJlc29sdXRpb24iOiJQZXJmb3JtIGEgY29tcHJlaGVuc2l2ZSBzZWN1cml0eSBhbmQgcHJpdmFjeSBhdWRpdCBhbmQgZGVmaW5lIGNvbXBsaWFuY2Ugc3RhbmRhcmRzLiJ9XSwiY2l0YXRpb25zIjpbImxvY2FsOi8vQ09OVEVYVC5tZCIsImxvY2FsOi8vUkVTRUFSQ0gubWQiXX0= -->
+<!-- solution-revision:1 -->

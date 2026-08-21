@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 const source = readFileSync("apps/studio/src/components/resilience/resilience-center.tsx", "utf8");
 const app = readFileSync("apps/studio/src/App.tsx", "utf8");
-test("Settings mounts the complete Resilience Center", () => {
-  assert.match(app, /<ResilienceCenter \/>/);
+test("Settings keeps technical resilience detail out of the owner settings path", () => {
+  assert.doesNotMatch(app, /<ResilienceCenter \/>/);
   for (const text of ["Storage ownership", "Atomic migration", "Outcome health", "Interruption recovery", "Reliability release gate"]) assert.match(source, new RegExp(text));
 });
 test("backup, restore, deletion, interruption, and chaos paths are interactive and explicit", () => {

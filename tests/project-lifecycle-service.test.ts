@@ -161,7 +161,11 @@ test("delivery completion is durable and idempotent", async () => {
   await service.decideSolution(projectId, { schemaVersion: 1, expectedRevision: awaiting.revision, artifactDigest: solution.digest, decision: "approved", feedback: null }, "delivery-approve-001");
   const backlog = { kind: "backlog" as const, projectRelativePath: ".pipeline/BACKLOG.md" as const, digest: "c".repeat(64), revision: 1, createdAt: 4, citations: ["local://SOLUTION.md"], reviewerIds: ["delivery-reviewer", "technical-reviewer"], qaPassed: true as const };
   await service.publishBacklog(projectId, backlog);
-  await service.activateDelivery(projectId, backlog.digest, "PIPE-1");
+  const activated = await service.activateDelivery(projectId, backlog.digest, "PIPE-1");
+  const activationReplay = await new ProjectLifecycleService(root).activateDelivery(projectId, backlog.digest, "PIPE-1");
+  assert.deepEqual(activationReplay, activated);
+  await assert.rejects(() => service.activateDelivery(projectId, "d".repeat(64), "PIPE-1"), /evidence changed/i);
+  await assert.rejects(() => service.activateDelivery(projectId, backlog.digest, "PIPE-2"), /evidence changed/i);
   const completed = await service.completeDelivery(projectId);
   const replay = await service.completeDelivery(projectId);
   assert.equal(completed.stage, "complete");

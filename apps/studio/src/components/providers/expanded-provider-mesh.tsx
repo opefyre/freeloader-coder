@@ -14,7 +14,7 @@ import { Badge } from "../ui/badge.js";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card.js";
 import { cn } from "../../lib/utils.js";
 
-type ExpandedProviderId = "cerebras" | "mistral" | "zhipu" | "sambanova" | "deepseek";
+type ExpandedProviderId = "nvidia-nim" | "huggingface" | "mistral" | "zhipu" | "sambanova";
 type Simulation = "ready" | "quota" | "restricted" | "unverified";
 
 interface MeshProvider {
@@ -22,7 +22,7 @@ interface MeshProvider {
   readonly name: string;
   readonly model: string;
   readonly access: string;
-  readonly status: "free" | "experiment" | "credit";
+  readonly status: "free" | "experiment";
   readonly requests: number;
   readonly requestLimit: number | null;
   readonly tokens: number;
@@ -37,10 +37,10 @@ interface MeshProvider {
 
 const providers: readonly MeshProvider[] = [
   {
-    id: "cerebras",
-    name: "Cerebras",
-    model: "gpt-oss-120b",
-    access: "Account-observed free tier",
+    id: "nvidia-nim",
+    name: "NVIDIA NIM",
+    model: "Llama 3.1 8B Instruct",
+    access: "Developer Program",
     status: "free",
     requests: 14,
     requestLimit: 30,
@@ -48,10 +48,10 @@ const providers: readonly MeshProvider[] = [
     tokenLimit: 1_000_000,
     reserve: 4,
     capabilities: ["Chat", "JSON", "Review"],
-    dashboardUrl: "https://cloud.cerebras.ai/",
-    evidenceUrl: "https://inference-docs.cerebras.ai/support/rate-limits",
-    workItem: "PIPE-179",
-    note: "Limits come from the connected account, never a hard-coded marketing claim."
+    dashboardUrl: "https://build.nvidia.com/explore/discover",
+    evidenceUrl: "https://docs.api.nvidia.com/nim/docs/product",
+    workItem: "FREE-NVIDIA",
+    note: "Only free Developer Program endpoints are admitted; enterprise and paid routes are rejected."
   },
   {
     id: "mistral",
@@ -105,21 +105,21 @@ const providers: readonly MeshProvider[] = [
     note: "Four daily requests are protected for review and recovery work."
   },
   {
-    id: "deepseek",
-    name: "DeepSeek",
-    model: "deepseek-v4-flash",
-    access: "Promotional credit only",
-    status: "credit",
+    id: "huggingface",
+    name: "Hugging Face",
+    model: "GPT OSS 120B",
+    access: "Recurring free-user credit",
+    status: "free",
     requests: 0,
     requestLimit: null,
     tokens: 0,
     tokenLimit: null,
     reserve: 10,
     capabilities: ["Chat", "JSON"],
-    dashboardUrl: "https://platform.deepseek.com/",
-    evidenceUrl: "https://api-docs.deepseek.com/quick_start/pricing",
-    workItem: "PIPE-183",
-    note: "Never enters the permanent-free pool. Granted credit needs explicit opt-in."
+    dashboardUrl: "https://huggingface.co/settings/tokens",
+    evidenceUrl: "https://huggingface.co/docs/inference-providers/en/pricing",
+    workItem: "FREE-HF",
+    note: "Routing stops when the monthly free-user credit is exhausted; paid overage is never enabled."
   }
 ] as const;
 
@@ -163,7 +163,7 @@ export function ExpandedProviderMesh() {
     [selectedId]
   );
   const scenario = simulationCopy[simulation];
-  const eligibleCount = providers.filter((provider) => provider.status !== "credit").length;
+  const eligibleCount = providers.length;
 
   return (
     <Card className="relative min-w-0 overflow-hidden xl:col-span-2" aria-label="Expanded provider mesh">
@@ -183,7 +183,7 @@ export function ExpandedProviderMesh() {
         </div>
         <div className="grid grid-cols-3 gap-2">
           <MeshMetric value={String(eligibleCount)} label="free routes" />
-          <MeshMetric value="1" label="credit-isolated" />
+          <MeshMetric value="0" label="card required" />
           <MeshMetric value="0" label="paid calls" />
         </div>
       </CardHeader>
@@ -206,10 +206,7 @@ export function ExpandedProviderMesh() {
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
                       <strong className="truncate text-sm">{provider.name}</strong>
-                      <span className={cn(
-                        "size-2 rounded-full",
-                        provider.status === "credit" ? "bg-amber-400" : "bg-emerald-400"
-                      )} />
+                      <span className="size-2 rounded-full bg-emerald-400" />
                     </span>
                     <span className="mt-1 block truncate text-[11px] text-muted-foreground">
                       {provider.access}
@@ -232,7 +229,7 @@ export function ExpandedProviderMesh() {
                   <p className="text-xs text-muted-foreground">{selected.model}</p>
                 </div>
               </div>
-              <Badge tone={selected.status === "credit" ? "caution" : "positive"}>
+              <Badge tone="positive">
                 {selected.access}
               </Badge>
             </div>
@@ -351,11 +348,11 @@ function MeshMetric({ value, label }: { value: string; label: string }) {
 
 function ProviderGlyph({ id, large = false }: { id: ExpandedProviderId; large?: boolean }) {
   const glyph = {
-    cerebras: "C",
+    "nvidia-nim": "N",
     mistral: "M",
     zhipu: "智",
     sambanova: "S",
-    deepseek: "D"
+    huggingface: "H"
   }[id];
   return (
     <span className={cn(

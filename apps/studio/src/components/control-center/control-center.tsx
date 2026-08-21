@@ -84,7 +84,7 @@ export function ControlCenter({
     return <ControlState title="Connecting to local operations…" detail="Reading projects, requests, and free-provider readiness from the loopback control plane." />;
   }
   if (!snapshot) {
-    return <ControlState title="Local control plane is offline" detail="Start Pipeline Studio with npm start. No demo values are substituted when live data is unavailable." action={<Button onClick={() => void refresh(true)} disabled={refreshing}><ArrowClockwise className={refreshing ? "animate-spin" : ""} />Retry</Button>} />;
+    return <ControlState title="Local control plane is offline" detail="Start Codkesh with npm start. No demo values are substituted when live data is unavailable." action={<Button onClick={() => void refresh(true)} disabled={refreshing}><ArrowClockwise className={refreshing ? "animate-spin" : ""} />Retry</Button>} />;
   }
 
   return (

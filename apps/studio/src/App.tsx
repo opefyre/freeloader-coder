@@ -69,6 +69,7 @@ import {
 } from "./runtime-fixture.js";
 import { useTheme, type ThemeMode } from "./theme.js";
 import { useControlPlane } from "./use-control-plane.js";
+import { listLocalProjects as loadLocalProjects } from "./local-project-client.js";
 import {
   applyPermissionAction,
   recommendedPermissionProfiles,
@@ -87,6 +88,7 @@ import {
 } from "./onboarding-fixture.js";
 import {
   canonicalStudioUrl,
+  primaryView,
   projectIdFromLocation,
   projectRoute,
   studioViews,
@@ -182,7 +184,7 @@ const ResilienceCenter = lazy(() =>
   }))
 );
 const ProviderConnectionWizard = lazy(() =>
-  import("./components/providers/provider-connection-wizard.js").then((module) => ({
+  import("./components/providers/provider-connection-wizard-v2.js").then((module) => ({
     default: module.ProviderConnectionWizard,
   }))
 );
@@ -220,7 +222,7 @@ const ProjectArtifactWorkspace = lazy(() =>
   import("./components/projects/project-artifact-workspace.js").then((module) => ({ default: module.ProjectArtifactWorkspace }))
 );
 const ProjectSettingsPanel = lazy(() =>
-  import("./components/projects/project-resource-settings.js").then((module) => ({ default: module.ProjectResourceSettings }))
+  import("./components/projects/project-resource-settings-v2.js").then((module) => ({ default: module.ProjectResourceSettings }))
 );
 
 const workspaceIcons: Record<StudioView, typeof Gauge> = {
@@ -337,9 +339,10 @@ function App() {
   const activeCopy = workspaceDefinition(activeView);
   const activePrimarySurface = primarySurface(activeView);
   function navigate(view: StudioView, replace = false) {
-    setActiveView(view);
+    const destination = primaryView(view);
+    setActiveView(destination);
     setCommandOpen(false);
-    const url = canonicalStudioUrl(new URL(window.location.href), view);
+    const url = canonicalStudioUrl(new URL(window.location.href), destination);
     url.hash = "";
     window.history[replace ? "replaceState" : "pushState"]({}, "", url);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -349,10 +352,10 @@ function App() {
     const url = new URL(path, window.location.origin);
     if (url.origin !== window.location.origin) return;
     const view = viewFromLocation(url);
-    if (workspaceDefinitions[view].path !== url.pathname && !projectIdFromLocation(url)) return;
+    const canonical = canonicalStudioUrl(url, view);
     setActiveView(view);
     setCommandOpen(false);
-    window.history.pushState({}, "", `${url.pathname}${url.search}`);
+    window.history.pushState({}, "", `${canonical.pathname}${canonical.search}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -455,7 +458,7 @@ function App() {
         </header>
 
         <div className="mx-auto max-w-5xl px-4 pb-28 sm:px-7 lg:px-9 lg:pb-12">
-          {activeView !== "overview" && <div className="flex flex-col gap-4 pb-6 pt-4 sm:pt-7 md:flex-row md:items-end md:justify-between">
+          {activeView !== "overview" && !(activeView === "projects" && projectIdFromLocation(window.location)) && <div className="flex flex-col gap-4 pb-6 pt-4 sm:pt-7 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                 <FolderOpen size={15} />
@@ -1238,11 +1241,16 @@ function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) =
 function ProjectsWorkspace({ endpoint, navigate }: { endpoint: string; navigate: (view: StudioView) => void }) {
   const [selectedProjectId, setSelectedProjectId] = useState(() => projectIdFromLocation(window.location) ?? "");
   const [section, setSection] = useState<"overview" | "resources" | "progress">("overview");
+  const [projectName, setProjectName] = useState("");
   useEffect(() => {
     const sync = () => setSelectedProjectId(projectIdFromLocation(window.location) ?? "");
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, []);
+  useEffect(() => {
+    if (!selectedProjectId) { setProjectName(""); return; }
+    void loadLocalProjects({ endpoint }).then((collection) => setProjectName(collection.projects.find((project) => project.id === selectedProjectId)?.displayName ?? "Project")).catch(() => setProjectName("Project"));
+  }, [endpoint, selectedProjectId]);
   const openProject = (projectId: string) => {
     window.history.pushState({}, "", projectRoute(projectId));
     setSelectedProjectId(projectId);
@@ -1254,8 +1262,8 @@ function ProjectsWorkspace({ endpoint, navigate }: { endpoint: string; navigate:
     setSelectedProjectId("");
   };
   if (!selectedProjectId) return <div className="mx-auto max-w-3xl py-3"><ProjectPortfolio openProject={openProject} startProject={() => navigate("overview")} /></div>;
-  return <div className="space-y-5">
-    <Button variant="ghost" size="sm" onClick={closeProject}><ArrowRight className="rotate-180" />All projects</Button>
+  return <div className="space-y-5 pt-4 sm:pt-7">
+    <div className="flex items-start gap-3"><Button variant="ghost" size="icon" onClick={closeProject} aria-label="All projects"><ArrowRight className="rotate-180" /></Button><div className="min-w-0"><span className="text-xs font-medium text-muted-foreground">Project</span><h1 className="mt-1 truncate text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">{projectName || "Project"}</h1></div></div>
     <Tabs value={section} onValueChange={(value) => setSection(value as typeof section)}>
       <TabsList aria-label="Project sections">
         <TabsTrigger value="overview">Overview</TabsTrigger>

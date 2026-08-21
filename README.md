@@ -1,9 +1,11 @@
 # Pipeline Studio
 
-Pipeline Studio is a local-first autonomous development workspace for
-GitHub-capable builders. It turns a request into a grounded, reviewable task
-graph; executes work in isolation; validates observable outcomes; and explains
-what needs attention when it cannot recover safely.
+Pipeline Studio is one local-first autonomous product-development app for
+GitHub-capable builders. Its single interface combines project intake,
+integrations, action and progress views, and a complete coding canvas. It turns
+a request into grounded, reviewable work; executes in isolation; validates
+observable outcomes; and explains what needs attention when it cannot recover
+safely.
 
 This repository is independent from the Household application and its private
 automation controller. Proven controller code is retained under `_reference/`
@@ -12,12 +14,10 @@ can ship.
 
 ## Current phase
 
-Local beta integration: the product contract, architecture, trust boundaries,
-durable state, security, governance, and design system are implemented. Project
-registration, request planning, isolated changes, free-provider connections,
-proposal generation, and the main operations dashboard now use the local
-control plane. Remaining feature screens that are simulations identify
-themselves explicitly.
+Unified local beta: Pipeline Studio owns the public UI, settings, integrations,
+project activity, model routing, and launch lifecycle. The embedded coding
+engine is an internal component and is not a second product or a second user
+entry point. Generated runtime state remains private and ignored.
 
 ## Clone and run
 
@@ -32,16 +32,16 @@ npm run setup
 npm start
 ```
 
-Setup checks the computer, chooses a loopback-only port, and creates private
-ignored runtime state. It does not store credentials in the repository. Repeat
-`npm run setup` safely after fixing a requirement, or run `npm run repair` to
-reconcile routine local-runtime issues without deleting projects or secrets.
+Setup checks the computer, installs the embedded coding canvas when needed,
+chooses a loopback-only port, and creates private ignored runtime state. It does
+not store credentials in the repository. Repeat `npm run setup` safely after
+fixing a requirement, or run `npm run repair` to reconcile routine local-runtime
+issues without deleting projects or secrets.
 
-`npm start` builds the workspace, starts the read-only local control plane on
-`127.0.0.1:4312`, and starts Studio on `127.0.0.1:4310`. Open the Studio URL
-printed by the command. Stopping the command stops both processes. If either
-process cannot start, its peer is stopped too so a partial runtime is not left
-behind.
+`npm start` launches the complete app at `127.0.0.1:4310`. Internal loopback
+services are implementation details and should not be opened directly. Stopping
+the command stops the whole local stack. If any required service cannot start,
+the launcher stops its peers so a partial runtime is not left behind.
 
 Use `PIPELINE_STUDIO_STUDIO_PORT` and `PIPELINE_STUDIO_CONTROL_PORT` to choose
 different loopback ports:

@@ -40,6 +40,52 @@ test("isolated workspace enforces authority, validates, commits, and fast-forwar
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("reopened delivered work may revalidate unchanged authorized files without fabricating a commit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-workspace-revalidation-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(join(repository, "src"), { recursive: true });
+    await mkdir(join(repository, "tests"), { recursive: true });
+    await writeFile(join(repository, "src", "feature.js"), "export const value = 1;\n");
+    await writeFile(join(repository, "tests", "feature.test.js"), "import test from 'node:test'; test('existing delivery', () => {});\n");
+    await writeFile(join(repository, "package.json"), JSON.stringify({ type: "module", scripts: { typecheck: "node --check src/feature.js", test: "node --test tests/feature.test.js" } }));
+    await git(repository, ["init", "-b", "main"]); await git(repository, ["add", "."]); await git(repository, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "existing delivery"]);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const reopened = {
+      ...task(),
+      reviewAttempts: [{ approvalId: "approval_11111111111111111111", priorRevision: 1, implementerProviderId: "gemini", implementationEvidence: ["a".repeat(64)], validations: [], reviews: [], rationale: "Revalidate previously integrated delivery proof.", decidedAt: 2 }],
+    };
+    const workspace = await service.prepare("project_abcdef0123456789", repository, reopened);
+    const committed = await service.commit(workspace, reopened);
+    assert.equal(committed.commitDigest, workspace.baseline);
+    const integrated = await service.integrate(repository, workspace, committed.commitDigest);
+    assert.match(integrated.integrationDigest, /^[a-f0-9]{64}$/);
+    assert.equal((await run("git", ["log", "--oneline"], { cwd: repository })).stdout.trim().split("\n").length, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("bounded repair discards rejected authorized changes and restarts from the canonical baseline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-workspace-repair-reset-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(join(repository, "src"), { recursive: true });
+    await mkdir(join(repository, "tests"), { recursive: true });
+    await writeFile(join(repository, "src", "feature.js"), "export const value = 1;\n");
+    await writeFile(join(repository, "package.json"), JSON.stringify({ type: "module", scripts: { typecheck: "node --check src/feature.js", test: "node --test tests/feature.test.js" } }));
+    await git(repository, ["init", "-b", "main"]); await git(repository, ["add", "."]); await git(repository, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const workspace = await service.prepare("project_abcdef0123456789", repository, task());
+    const source = (await service.sources(workspace, task())).find((item) => item.path === "src/feature.js")!;
+    await service.apply(workspace, task(), [
+      { type: "replace", path: "src/feature.js", expectedBeforeDigest: source.digest, content: "export const value = 99;\n" },
+      { type: "create", path: "tests/feature.test.js", expectedBeforeDigest: null, content: "rejected\n" },
+    ]);
+    await service.resetAuthorizedFiles(workspace, task());
+    assert.equal(await readFile(join(workspace.root, "src", "feature.js"), "utf8"), "export const value = 1;\n");
+    await assert.rejects(() => readFile(join(workspace.root, "tests", "feature.test.js"), "utf8"), /ENOENT/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("validation rejects unconditional-success scripts", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-task-noop-"));
   try {
@@ -49,6 +95,38 @@ test("validation rejects unconditional-success scripts", async () => {
       () => service.validate(root, task()),
       (error: unknown) => error instanceof ProjectTaskWorkspaceError && error.code === "validation_unavailable" && /no-op/.test(error.message),
     );
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("unit validation requires and executes every task-owned test beyond the project test script", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-workspace-focused-tests-"));
+  try {
+    await mkdir(join(root, "tests"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test tests/scaffold.test.js" } }));
+    await writeFile(join(root, "tests", "scaffold.test.js"), "import test from 'node:test'; test('scaffold', () => {});\n");
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const focusedTask = { ...task(), allowedFiles: ["tests/behavior.test.js"], validationProfiles: ["unit" as const] };
+    const missing = await service.validate(root, focusedTask);
+    assert.equal(missing[0]?.passed, false);
+    assert.match(missing[0]?.output ?? "", /Task-owned unit tests are missing/);
+    await writeFile(join(root, "tests", "behavior.test.js"), "import test from 'node:test'; test('behavior', () => { throw new Error('focused test executed'); });\n");
+    const executed = await service.validate(root, focusedTask);
+    assert.equal(executed[0]?.passed, false);
+    assert.match(executed[0]?.output ?? "", /focused test executed/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("new-product scaffold rejects a test command that can never discover downstream tests", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-workspace-scaffold-suite-"));
+  try {
+    await mkdir(join(root, "tests"), { recursive: true });
+    await writeFile(join(root, "tests", "scaffold.test.js"), "import test from 'node:test'; test('scaffold', () => {});\n");
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const scaffold = { ...task(), allowedFiles: ["package.json", "tests/scaffold.test.js"], validationProfiles: ["unit" as const] };
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test tests/scaffold.test.js" } }));
+    await assert.rejects(() => service.validate(root, scaffold), /complete test suite/);
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test tests/*.test.js" } }));
+    assert.equal((await service.validate(root, scaffold))[0]?.passed, true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -96,6 +174,64 @@ test("commitless project refuses to checkpoint files outside Codkesh ownership",
       (error: unknown) => error instanceof ProjectTaskWorkspaceError && error.code === "canonical_dirty"
     );
     await assert.rejects(() => run("git", ["rev-parse", "--verify", "HEAD"], { cwd: repository }));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("existing project checkpoints only verified Codkesh planning artifacts before isolation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-planning-checkpoint-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(join(repository, ".codkesh", "artifacts", "CONTEXT.md"), { recursive: true });
+    await git(repository, ["init", "-b", "main"]);
+    await writeFile(join(repository, ".gitignore"), "node_modules/\n");
+    await git(repository, ["add", ".gitignore"]);
+    await git(repository, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
+    const content = "# Context\n\nApproved context.\n";
+    await writeFile(join(repository, "CONTEXT.md"), content);
+    await writeFile(join(repository, ".codkesh", "artifacts", "CONTEXT.md", "000001-evidence.md"), content);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const workspace = await service.prepare("project_abcdef0123456789", repository, task());
+    assert.equal((await run("git", ["status", "--porcelain"], { cwd: repository })).stdout, "");
+    assert.match((await run("git", ["log", "-1", "--pretty=%s"], { cwd: repository })).stdout, /checkpoint approved Codkesh plan/);
+    assert.equal(workspace.baseline, (await run("git", ["rev-parse", "HEAD"], { cwd: repository })).stdout.trim());
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("existing project refuses unrelated or tampered planning changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-planning-denial-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(join(repository, ".codkesh", "artifacts", "CONTEXT.md"), { recursive: true });
+    await git(repository, ["init", "-b", "main"]);
+    await writeFile(join(repository, ".gitignore"), "node_modules/\n");
+    await git(repository, ["add", ".gitignore"]);
+    await git(repository, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
+    await writeFile(join(repository, "CONTEXT.md"), "tampered\n");
+    await writeFile(join(repository, ".codkesh", "artifacts", "CONTEXT.md", "000001-evidence.md"), "approved\n");
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    await assert.rejects(() => service.prepare("project_abcdef0123456789", repository, task()), (error: unknown) => error instanceof ProjectTaskWorkspaceError && error.code === "canonical_dirty" && /immutable/.test(error.message));
+    await rm(join(repository, "CONTEXT.md"));
+    await rm(join(repository, ".codkesh"), { recursive: true, force: true });
+    await writeFile(join(repository, "customer-source.ts"), "export const customer = true;\n");
+    await assert.rejects(() => service.prepare("project_abcdef0123456789", repository, task()), (error: unknown) => error instanceof ProjectTaskWorkspaceError && error.code === "canonical_dirty");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("scaffold dependency preparation creates an authorized lockfile and installs without lifecycle scripts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-scaffold-dependencies-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(repository, { recursive: true });
+    await writeFile(join(repository, "CONTEXT.md"), "# Initial baseline\n");
+    await git(repository, ["init", "-b", "main"]); await git(repository, ["add", "CONTEXT.md"]); await git(repository, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
+    const scaffoldTask = { ...task(), allowedFiles: ["package.json", "package-lock.json"] };
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const workspace = await service.prepare("project_abcdef0123456789", repository, scaffoldTask);
+    await service.apply(workspace, scaffoldTask, [{ type: "create", path: "package.json", expectedBeforeDigest: null, content: JSON.stringify({ private: true, devDependencies: {} }) }]);
+    const prepared = await service.prepareDependencies(workspace, scaffoldTask);
+    assert.ok(prepared?.changedFiles.includes("package-lock.json"));
+    assert.equal(prepared?.changedFiles.some((path) => path.startsWith("node_modules/")), false);
+    assert.match(await readFile(join(workspace.root, "package-lock.json"), "utf8"), /lockfileVersion/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

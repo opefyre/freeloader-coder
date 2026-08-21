@@ -27,6 +27,7 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
     let failOnce = true;
     const links: unknown[] = [];
     const issueBodies: unknown[] = [];
+    const markerQueries: string[] = [];
     const activations: unknown[] = [];
     const fetcher: typeof fetch = async (url, init) => {
       const pathname = new URL(String(url)).pathname;
@@ -41,7 +42,7 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
         { fieldId: "customfield_10016", name: "Story point estimate" },
         { fieldId: "customfield_10011", name: "Epic Name" },
       ] });
-      if (pathname.endsWith("/search/jql")) return json({ issues: [] });
+      if (pathname.endsWith("/search/jql")) { markerQueries.push(new URL(String(url)).searchParams.get("jql") ?? ""); return json({ issues: [] }); }
       if (pathname.endsWith("/issue") && init?.method === "POST") {
         createAttempts += 1;
         if (createAttempts === 3 && failOnce) { failOnce = false; return json({ error: "temporary" }, 503); }
@@ -76,6 +77,7 @@ test("Jira delivery resumes a partial creation without duplicate issues and open
     assert.match(createdDescriptions, /Requirement coverage/);
     assert.match(createdDescriptions, /Approval and infrastructure gates/);
     assert.match(createdDescriptions, /Rollback requirements/);
+    assert.ok(markerQueries.every((query) => query.includes(`codkesh_${projectId.slice(8)}_`)));
     assert.deepEqual(activations, [[projectId, digest, "PIPE-1"]]);
     const replay = await service.synchronize(projectId);
     assert.equal(replay.completed, true);

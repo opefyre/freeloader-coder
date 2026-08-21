@@ -7,6 +7,8 @@ import { Kanban } from "@phosphor-icons/react/Kanban";
 import { PaperPlaneTilt } from "@phosphor-icons/react/PaperPlaneTilt";
 import { PlugsConnected } from "@phosphor-icons/react/PlugsConnected";
 import { Robot } from "@phosphor-icons/react/Robot";
+import { X } from "@phosphor-icons/react/X";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { Button } from "../ui/button.js";
@@ -106,13 +108,11 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
           );
         })}
       </div>
-      {jiraSetupOpen && <div role="dialog" aria-modal="false" aria-labelledby="jira-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
-        <div className="flex items-center justify-between gap-3"><h3 id="jira-connect-title" className="font-semibold">Jira</h3><Button size="sm" variant="ghost" onClick={() => setJiraSetupOpen(false)}>Close</Button></div>
+      <SettingsDialog open={jiraSetupOpen} onOpenChange={setJiraSetupOpen} title="Jira">
         <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed?.connections.find((item) => item.provider === "jira")?.resources.length ?? 0} projects available</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectJiraConnection({ endpoint, idempotencyKey: `jira-disconnect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setJiraSetupOpen(false); setNotice("Jira disconnected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Jira disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div>
-      </div>}
+      </SettingsDialog>
       {deviceCode && <div className="mx-auto max-w-xl rounded-3xl bg-primary/10 p-5 text-center"><span className="text-xs text-muted-foreground">GitHub code</span><strong className="mt-2 block font-mono text-2xl tracking-[.2em]">{deviceCode}</strong></div>}
-      {telegramSetupOpen && <div role="dialog" aria-modal="false" aria-labelledby="telegram-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
-        <div className="flex items-center justify-between gap-3"><h3 id="telegram-connect-title" className="font-semibold">Telegram</h3><Button size="sm" variant="ghost" onClick={() => setTelegramSetupOpen(false)}>Close</Button></div>
+      <SettingsDialog open={telegramSetupOpen} onOpenChange={setTelegramSetupOpen} title="Telegram">
         {observed?.connections.find((item) => item.provider === "telegram")?.state === "ready" ? <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed.connections.find((item) => item.provider === "telegram")?.resources[0]?.label ?? "Notification chat ready"}</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectTelegramConnection({ endpoint, idempotencyKey: `telegram-disconnect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramSetupOpen(false); setNotice("Telegram disconnected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div> : <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); setWorking(true); void connectTelegramConnection({ endpoint, botToken: telegramToken, chatId: telegramChat, ownerUserId: telegramOwner, idempotencyKey: `telegram-connect:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTelegramToken(""); setTelegramSetupOpen(false); setNotice(result.connections.find((item) => item.provider === "telegram")?.nextAction ?? "Telegram connected."); }).catch((error) => setNotice(error instanceof Error ? error.message : "Telegram connection failed.")).finally(() => setWorking(false)); }}>
           <input aria-label="Telegram bot token" type="password" required autoComplete="off" placeholder="Bot token" value={telegramToken} onChange={(event) => setTelegramToken(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
           <input aria-label="Telegram chat" required placeholder="Chat ID or @channel" value={telegramChat} onChange={(event) => setTelegramChat(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
@@ -120,20 +120,26 @@ export function ConnectionCatalog(props: { openProviders: () => void; endpoint?:
           <p className="text-xs text-muted-foreground">Only this Telegram account can approve project decisions.</p>
           <Button type="submit" disabled={working || telegramToken.length < 30 || telegramChat.length < 5 || telegramOwner.length < 5}>Connect</Button>
         </form>}
-      </div>}
-      {serviceOpen && <div role="dialog" aria-modal="false" aria-labelledby="service-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
-        <div className="flex items-center justify-between gap-3"><h3 id="service-connect-title" className="font-semibold">{serviceOpen[0]?.toUpperCase()}{serviceOpen.slice(1)}</h3><Button size="sm" variant="ghost" onClick={() => setServiceOpen(null)}>Close</Button></div>
+      </SettingsDialog>
+      <SettingsDialog open={serviceOpen !== null} onOpenChange={(open) => { if (!open) setServiceOpen(null); }} title={serviceOpen ? `${serviceOpen[0]?.toUpperCase()}${serviceOpen.slice(1)}` : "Connection"}>
+        {serviceOpen &&
         <div className="mt-4 flex items-center justify-between gap-3"><span className="text-sm text-muted-foreground">{observed?.connections.find((item) => item.provider === serviceOpen)?.resources.length ?? 0} options available</span><Button size="sm" variant="secondary" disabled={working} onClick={() => { setWorking(true); void disconnectServiceConnection({ endpoint, provider: serviceOpen, idempotencyKey: `service-disconnect:${serviceOpen}:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setServiceOpen(null); setNotice(`${serviceOpen} disconnected.`); }).catch((error) => setNotice(error instanceof Error ? error.message : "Disconnect failed.")).finally(() => setWorking(false)); }}>Disconnect</Button></div>
-      </div>}
-      {tokenOpen && <div role="dialog" aria-modal="false" aria-labelledby="token-connect-title" className="mx-auto max-w-xl rounded-3xl bg-muted/55 p-5">
-        <div className="flex items-center justify-between gap-3"><h3 id="token-connect-title" className="font-semibold">{tokenOpen[0]?.toUpperCase()}{tokenOpen.slice(1)}</h3><Button size="sm" variant="ghost" onClick={() => setTokenOpen(null)}>Close</Button></div>
+        }
+      </SettingsDialog>
+      <SettingsDialog open={tokenOpen !== null} onOpenChange={(open) => { if (!open) setTokenOpen(null); }} title={tokenOpen ? `${tokenOpen[0]?.toUpperCase()}${tokenOpen.slice(1)}` : "Connection"}>
+        {tokenOpen &&
         <form className="mt-4 grid gap-3" onSubmit={(event) => { event.preventDefault(); const provider = tokenOpen; setWorking(true); void connectTokenService({ endpoint, provider, ...(provider === "aws" ? { accessKeyId } : {}), secret: tokenSecret, idempotencyKey: `token-connect:${provider}:${crypto.randomUUID()}` }).then((result) => { setObserved(result); setTokenSecret(""); setAccessKeyId(""); setTokenOpen(null); setNotice(`${provider} connected.`); }).catch((error) => setNotice(error instanceof Error ? error.message : "Connection failed.")).finally(() => setWorking(false)); }}>
           {tokenOpen === "aws" && <input aria-label="AWS access key ID" required autoComplete="off" placeholder="Access key ID" value={accessKeyId} onChange={(event) => setAccessKeyId(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />}
           <input aria-label={`${tokenOpen} secret`} type="password" required autoComplete="off" placeholder={tokenOpen === "aws" ? "Secret access key" : "API token"} value={tokenSecret} onChange={(event) => setTokenSecret(event.target.value)} className="rounded-2xl bg-background px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30" />
           <Button type="submit" disabled={working || tokenSecret.length < 8 || (tokenOpen === "aws" && accessKeyId.length < 8)}>Connect</Button>
-        </form>
-      </div>}
+        </form>}
+      </SettingsDialog>
       <p className="min-h-5 text-xs text-muted-foreground" aria-live="polite">{notice}</p>
     </section>
   );
 }
+
+function SettingsDialog({ open, onOpenChange, title, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; children: ReactNode }) {
+  return <Dialog.Root open={open} onOpenChange={onOpenChange}><Dialog.Portal><Dialog.Backdrop className="fixed inset-0 z-50 bg-background/75 backdrop-blur-md transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" /><Dialog.Popup className="fixed inset-x-3 bottom-3 z-50 max-h-[88vh] overflow-y-auto rounded-[1.75rem] bg-card p-5 shadow-2xl outline-none transition duration-200 data-[ending-style]:translate-y-4 data-[ending-style]:opacity-0 data-[starting-style]:translate-y-4 data-[starting-style]:opacity-0 sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[min(34rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:p-6"><header className="flex items-start justify-between gap-4"><div><Dialog.Title className="text-xl font-semibold tracking-tight">{title}</Dialog.Title><Dialog.Description className="mt-1 text-sm text-muted-foreground">Manage this connection.</Dialog.Description></div><Dialog.Close className="grid size-9 shrink-0 place-items-center rounded-full bg-muted outline-none transition hover:bg-foreground hover:text-background" aria-label="Close"><X /></Dialog.Close></header>{children}</Dialog.Popup></Dialog.Portal></Dialog.Root>;
+}
+import { Dialog } from "@base-ui/react/dialog";

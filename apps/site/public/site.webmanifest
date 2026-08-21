@@ -1,6 +1,6 @@
 {
-  "name": "Pipeline Studio",
-  "short_name": "Pipeline Studio",
+  "name": "Codkesh",
+  "short_name": "Codkesh",
   "description": "Build with AI. Keep control.",
   "start_url": "/",
   "display": "standalone",

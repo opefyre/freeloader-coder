@@ -21,6 +21,8 @@ const stateDirectory = resolve(
   process.env.PIPELINE_STUDIO_STATE_DIR ?? ".pipeline-studio"
 );
 const statePath = resolve(stateDirectory, "setup-state.json");
+const embeddedCanvasRoot = resolve("engine");
+const embeddedCanvasEntry = resolve(embeddedCanvasRoot, "node_modules", ".bin", "react-router");
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 const npmVersion = await versionOf("npm", ["--version"]);
@@ -28,11 +30,18 @@ const gitVersion = await versionOf("git", ["--version"]);
 const npmMajor = Number(npmVersion?.split(".")[0] ?? 0);
 const selectedPort = await findLoopbackPort(4310);
 const memoryGb = totalmem() / 1024 ** 3;
+const embeddedCanvasReady =
+  (await pathExists(embeddedCanvasEntry)) || (await installEmbeddedCanvas());
 
 const checks = [
   check("Node.js 22+", nodeMajor >= 22, `Node ${process.versions.node}`),
   check("npm 10+", npmMajor >= 10, npmVersion ? `npm ${npmVersion}` : "npm not found"),
   check("Git", gitVersion !== null, gitVersion ?? "Git not found"),
+  check(
+    "Coding canvas",
+    embeddedCanvasReady,
+    embeddedCanvasReady ? "Embedded engine ready" : "Embedded engine dependencies could not be installed"
+  ),
   check("Supported platform", ["darwin", "linux", "win32"].includes(platform()), `${platform()}/${arch()}`),
   check("8 GB memory", memoryGb >= 7, `${memoryGb.toFixed(1)} GB detected`),
   check("Loopback port", selectedPort !== null, selectedPort ? `127.0.0.1:${selectedPort}` : "No bounded port available"),
@@ -113,6 +122,31 @@ async function versionOf(command, commandArgs) {
   }
 }
 
+async function pathExists(path) {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function installEmbeddedCanvas() {
+  if (!(await pathExists(resolve(embeddedCanvasRoot, "package-lock.json")))) return false;
+  try {
+    await execFileAsync(process.platform === "win32" ? "npm.cmd" : "npm", ["ci", "--prefix", embeddedCanvasRoot], {
+      encoding: "utf8",
+      timeout: 20 * 60_000,
+      maxBuffer: 2_000_000,
+      windowsHide: true,
+      env: process.env,
+    });
+    return await pathExists(embeddedCanvasEntry);
+  } catch {
+    return false;
+  }
+}
+
 async function findLoopbackPort(preferred) {
   for (let port = preferred; port <= preferred + 50; port += 1) {
     const available = await canBind(port);
@@ -151,4 +185,3 @@ async function atomicPrivateWrite(path, content) {
     await rm(temporary, { force: true });
   }
 }
-

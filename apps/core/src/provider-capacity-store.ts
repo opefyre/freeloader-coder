@@ -79,7 +79,27 @@ export class ProviderCapacityStore {
       const connectionId = candidateConnectionIds[attempt.candidateId];
       if (!connectionId) continue;
       const entry = document.connections[connectionId] ?? freshEntry(now);
-      if (entry.recordedAttempts.includes(attempt.idempotencyKey) || attempt.status === "started") {
+      if (attempt.status === "started") {
+        continue;
+      }
+      if (entry.recordedAttempts.includes(attempt.idempotencyKey)) {
+        const deterministicFailure = attempt.status === "failed" && ![
+          "capacity_deferred",
+          "gateway_interrupted",
+          "rate_limit",
+          "transient_provider",
+        ].includes(attempt.failureClass ?? "");
+        if (deterministicFailure && entry.circuit.openUntil <= now) {
+          entry.circuit = recordCircuitFailure({
+            state: entry.circuit,
+            now,
+            threshold: 1,
+            cooldownMs: 10 * 60_000,
+            transient: true,
+            ...(attempt.failureCode ? { code: attempt.failureCode } : {}),
+          });
+          document.connections[connectionId] = entry;
+        }
         continue;
       }
       const usage = recordCapacityUsage({
@@ -93,20 +113,24 @@ export class ProviderCapacityStore {
         requestTimestamps: [...usage.requestTimestamps],
         tokenSamples: usage.tokenSamples.map((sample) => ({ ...sample })),
       };
+      const transientFailure = [
+        "capacity_deferred",
+        "gateway_interrupted",
+        "rate_limit",
+        "transient_provider",
+      ].includes(attempt.failureClass ?? "");
       entry.circuit =
         attempt.status === "succeeded"
           ? recordCircuitSuccess()
           : recordCircuitFailure({
               state: entry.circuit,
               now: attempt.finishedAt ?? now,
-              threshold: 2,
-              cooldownMs: 5 * 60_000,
-              transient: [
-                "capacity_deferred",
-                "gateway_interrupted",
-                "rate_limit",
-                "transient_provider",
-              ].includes(attempt.failureClass ?? ""),
+              threshold: transientFailure ? 2 : 1,
+              cooldownMs: transientFailure ? 5 * 60_000 : 10 * 60_000,
+              // A deterministic rejection is not transient for this route, but it
+              // must still be cooled down so the scheduler can try another free
+              // provider instead of selecting the same incompatible route forever.
+              transient: true,
               ...(attempt.failureCode ? { code: attempt.failureCode } : {}),
             });
       entry.recordedAttempts.push(attempt.idempotencyKey);

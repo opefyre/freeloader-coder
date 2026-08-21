@@ -47,7 +47,9 @@ export const executionAttemptSchema = z.strictObject({
   implementerProviderId: z.string().trim().min(1).max(100).nullable(),
   implementationEvidence: z.array(digest).max(100),
   validations: z.array(executionValidationSchema).max(100),
-  reviews: z.array(executionReviewSchema).min(1).max(20),
+  // A bounded repair can be triggered by deterministic validation dissent
+  // before any independent reviewer runs, so the archived review set may be empty.
+  reviews: z.array(executionReviewSchema).max(20),
   rationale: z.string().trim().min(10).max(2_000),
   decidedAt: z.number().int().nonnegative(),
 });

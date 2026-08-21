@@ -56,7 +56,7 @@ test("workspace provides dedicated start, projects, action, and settings surface
 
 test("projects provide real overview, resources, and project-scoped progress", async () => {
   const source = await readFile("apps/studio/src/App.tsx", "utf8");
-  const settings = await readFile("apps/studio/src/components/projects/project-resource-settings.tsx", "utf8");
+  const settings = await readFile("apps/studio/src/components/projects/project-resource-settings-v2.tsx", "utf8");
   assert.match(source, /TabsTrigger value="overview">Overview/);
   assert.match(source, /TabsTrigger value="resources">Resources/);
   assert.match(source, /TabsTrigger value="progress">Progress/);
@@ -64,11 +64,14 @@ test("projects provide real overview, resources, and project-scoped progress", a
   assert.match(settings, /setLocalProjectResources/);
   assert.match(settings, /listIntegrationConnections/);
   assert.match(settings, /expectedRevision: project\.resourceRevision/);
-  assert.match(settings, /placeholder="Search…"/);
+  assert.match(settings, /Search \$\{slot\.label\.toLowerCase\(\)\}…/);
   assert.match(settings, /aria-multiselectable=\{slot\.multiple/);
-  assert.match(settings, /label: "Deployment"/);
+  assert.match(settings, /\["slack", "discord", "telegram"\]/);
+  assert.match(settings, /label: "Hosting"/);
   assert.match(settings, /label: "Database"/);
-  assert.match(settings, /label: "Object storage"/);
+  assert.match(settings, /label: "Storage"/);
+  assert.match(settings, /Dialog\.Popup/);
+  assert.doesNotMatch(settings, /position: absolute|className="absolute/);
 });
 
 test("workspace renders the shared approval pattern with all required decision facts", async () => {

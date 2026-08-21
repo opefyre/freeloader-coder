@@ -22,7 +22,7 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
   return (
     <TabsPrimitive.Tab
       className={cn(
-        "min-h-8 shrink-0 rounded-full px-4 text-sm font-medium outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 data-active:bg-background data-active:text-foreground data-active:shadow-sm",
+        "min-h-8 shrink-0 rounded-full px-4 text-sm font-medium outline-none transition-[color,background-color,transform,box-shadow] duration-200 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 data-active:bg-background data-active:text-foreground data-active:shadow-sm",
         className
       )}
       {...props}

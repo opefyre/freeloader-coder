@@ -93,6 +93,25 @@ test("Agent Canvas gateway attempts update durable usage and open the circuit on
   }
 });
 
+test("a deterministic request rejection immediately cools down the incompatible route", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-policy-cooldown-"));
+  try {
+    const path = join(root, "provider-capacity.json");
+    const now = 1_800_000_000_000;
+    const rejected = {
+      ...attempt("policy-1", "policy"),
+      failureCode: "request_rejected",
+      retryAt: null,
+    };
+    await new ProviderCapacityStore(path).record(projection([rejected]), { candidate: "cohere" }, now);
+
+    const snapshot = await new ProviderCapacityStore(path).snapshot(["cohere"], now);
+    assert.equal(snapshot.circuitOpenUntilByConnectionId.cohere, now + 10 * 60_000);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 function projection(
   attempts: ProviderJournalProjection["attempts"]
 ): ProviderJournalProjection {
@@ -113,7 +132,7 @@ function projection(
 
 function attempt(
   idempotencyKey: string,
-  failureClass: "transient_provider" | null
+  failureClass: ProviderJournalProjection["attempts"][number]["failureClass"]
 ): ProviderJournalProjection["attempts"][number] {
   return {
     idempotencyKey,

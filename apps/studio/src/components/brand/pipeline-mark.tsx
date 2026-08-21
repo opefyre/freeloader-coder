@@ -4,7 +4,7 @@ import { cn } from "../../lib/utils.js";
 
 function PipelineMark({
   className,
-  title = "Pipeline Studio",
+  title = "Codkesh",
   ...props
 }: ComponentProps<"svg"> & { title?: string }) {
   const titleId = useId();

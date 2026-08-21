@@ -37,3 +37,26 @@ test("consent rejects silent acknowledgments and unbounded duration", async () =
     await assert.rejects(() => service.grant(projectId, { schemaVersion: 1, contextDigest: digest, dataClass: "source_code", providerIds: ["groq"], expiresAt: now + 32 * 86_400_000, acknowledgment: "I authorize this exact project context for the selected free providers." }), /within 31 days/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("standing owner authorization refreshes a digest-bound permit from the current free-provider pool", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-egress-defaults-"));
+  let now = 1_800_000_000_000;
+  let providers: readonly string[] = ["mistral", "groq", "groq"];
+  try {
+    const service = new ProjectEgressPolicyService(root, () => now, async () => providers);
+    const first = await service.authorize(projectId, digest);
+    assert.deepEqual(first.providerIds, ["groq", "mistral"]);
+    assert.equal(first.dataClass, "source_code");
+    assert.equal(first.expiresAt, now + 31 * 86_400_000);
+
+    providers = ["gemini"];
+    assert.deepEqual((await service.authorize(projectId, digest)).providerIds, ["groq", "mistral"]);
+    const changed = await service.authorize(projectId, "b".repeat(64));
+    assert.deepEqual(changed.providerIds, ["gemini"]);
+    assert.equal(changed.contextDigest, "b".repeat(64));
+
+    now += 31 * 86_400_000 + 1;
+    providers = [];
+    await assert.rejects(() => service.authorize(projectId, "b".repeat(64)), /No eligible free provider/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

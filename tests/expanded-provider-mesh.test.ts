@@ -27,11 +27,11 @@ const usage: ProviderCapacityUsage = {
 };
 
 const modelIds: Record<ExpandedProviderId, string> = {
-  cerebras: "gpt-oss-120b",
+  "nvidia-nim": "meta/llama-3.1-8b-instruct",
+  huggingface: "openai/gpt-oss-120b",
   mistral: "mistral-small-latest",
   zhipu: "glm-4.7-flash",
-  sambanova: "DeepSeek-V3.1",
-  deepseek: "deepseek-v4-flash"
+  sambanova: "DeepSeek-V3.1"
 };
 
 function account(
@@ -40,9 +40,7 @@ function account(
 ): ProviderAccountEvidence {
   const planMode = providerId === "mistral"
     ? "experiment"
-    : providerId === "deepseek"
-      ? "promotional_credit"
-      : "free";
+    : "free";
   return providerAccountEvidenceSchema.parse({
     schemaVersion: 1,
     providerId,
@@ -50,14 +48,14 @@ function account(
     billingEnabled: false,
     paymentMethodPresent: providerId === "sambanova" ? false : null,
     regionStatus: "allowed",
-    explicitFreeModel: providerId !== "deepseek",
+    explicitFreeModel: true,
     resolvedModelId: modelIds[providerId],
-    grantedBalanceMicros: providerId === "deepseek" ? 2_000_000 : null,
-    toppedUpBalanceMicros: providerId === "deepseek" ? 5_000_000 : null,
-    balanceCompositionKnown: providerId === "deepseek",
-    fundSeparationProven: providerId === "deepseek",
-    promotionalModeEnabled: providerId === "deepseek",
-    promotionExpiresAt: providerId === "deepseek" ? now + 86_400_000 : null,
+    grantedBalanceMicros: null,
+    toppedUpBalanceMicros: null,
+    balanceCompositionKnown: false,
+    fundSeparationProven: false,
+    promotionalModeEnabled: false,
+    promotionExpiresAt: null,
     observedAt: now - 1_000,
     expiresAt: now + 3_600_000,
     source: "account_api",
@@ -97,27 +95,24 @@ function quota(overrides: Partial<ProviderQuotaEvidence> = {}): ProviderQuotaEvi
   };
 }
 
-test("catalogue classifies permanent capacity and promotional credit honestly", () => {
-  for (const providerId of ["cerebras", "mistral", "zhipu", "sambanova"] as const) {
+test("catalogue classifies expanded providers as zero-cost eligible", () => {
+  for (const providerId of ["nvidia-nim", "huggingface", "mistral", "zhipu", "sambanova"] as const) {
     assert.equal(catalogProvider(providerId).zeroCostEligible, true);
   }
-  const deepseek = catalogProvider("deepseek");
-  assert.equal(deepseek.zeroCostEligible, false);
-  assert.equal(deepseek.freeAccess, "promotional_credit");
 });
 
-test("Cerebras requires live account limits and complete canary evidence", () => {
+test("NVIDIA NIM requires live account limits and complete canary evidence", () => {
   const ready = evaluateExpandedAdmission({
-    evidence: account("cerebras"),
-    canary: canary("cerebras"),
+    evidence: account("nvidia-nim"),
+    canary: canary("nvidia-nim"),
     quota: quota(),
     requiredCapabilities: ["chat", "structured_output"],
     now
   });
   assert.equal(ready.admitted, true);
   const defaultsOnly = evaluateExpandedAdmission({
-    evidence: account("cerebras"),
-    canary: canary("cerebras"),
+    evidence: account("nvidia-nim"),
+    canary: canary("nvidia-nim"),
     quota: quota({ source: "conservative_default" }),
     requiredCapabilities: ["chat"],
     now
@@ -224,34 +219,15 @@ test("SambaNova preserves scarce review capacity and schedules daily exhaustion"
   assert.equal(review.state, "dispatchable");
 });
 
-test("DeepSeek promotional credit requires composition and fund separation", () => {
-  assert.equal(evaluateExpandedAdmission({
-    evidence: account("deepseek", { balanceCompositionKnown: false }),
-    canary: canary("deepseek"),
-    quota: quota(),
-    requiredCapabilities: ["chat"],
-    now
-  }).reason, "credit_composition_unknown");
-  assert.equal(evaluateExpandedAdmission({
-    evidence: account("deepseek", { fundSeparationProven: false }),
-    canary: canary("deepseek"),
-    quota: quota(),
-    requiredCapabilities: ["chat"],
-    now
-  }).reason, "credit_fund_separation_unproven");
-});
-
-test("DeepSeek never enters default free routing but explicit credit mode is bounded", () => {
+test("Hugging Face is admitted only with current free-account evidence", () => {
   const candidate = createExpandedProviderCandidate({
-    evidence: account("deepseek"),
-    canary: canary("deepseek"),
+    evidence: account("huggingface"),
+    canary: canary("huggingface"),
     quota: quota(),
     requiredCapabilities: ["chat"],
     usage,
     priority: 90,
     now,
-    estimatedCreditMicros: 200_000,
-    promotionalReserveMicros: 100_000
   });
   const request = {
     role: "reviewer",
@@ -263,19 +239,7 @@ test("DeepSeek never enters default free routing but explicit credit mode is bou
     allowPaid: false,
     now
   };
-  assert.equal(routeProviders([candidate], request).rejected[0]?.reason, "promotional-credit-disabled");
-  assert.equal(routeProviders([candidate], {
-    ...request,
-    allowPromotionalCredit: true
-  }).state, "dispatchable");
-  const exhausted = {
-    ...candidate,
-    estimatedCreditMicros: 1_950_000
-  };
-  assert.equal(routeProviders([exhausted], {
-    ...request,
-    allowPromotionalCredit: true
-  }).rejected[0]?.reason, "promotional-credit-exhausted");
+  assert.equal(routeProviders([candidate], request).state, "dispatchable");
 });
 
 test("quota exhaustion becomes a scheduled wait and localized errors stay classified", () => {
@@ -294,7 +258,7 @@ test("quota exhaustion becomes a scheduled wait and localized errors stay classi
     message: "当前地区不可用"
   }), "region");
   assert.equal(classifyLocalizedProviderError({
-    providerId: "deepseek",
+    providerId: "huggingface",
     status: 402,
     message: "Insufficient balance"
   }), "credit");
@@ -303,10 +267,10 @@ test("quota exhaustion becomes a scheduled wait and localized errors stay classi
 test("provider account evidence is strict and cannot carry credentials or payloads", () => {
   assert.throws(
     () => providerAccountEvidenceSchema.parse({
-      ...account("cerebras"),
+      ...account("nvidia-nim"),
       apiKey: "should-never-appear"
     }),
     /Unrecognized key/
   );
-  assert.equal(JSON.stringify(account("deepseek")).includes("prompt"), false);
+  assert.equal(JSON.stringify(account("huggingface")).includes("prompt"), false);
 });

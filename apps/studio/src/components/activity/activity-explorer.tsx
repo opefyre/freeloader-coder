@@ -80,7 +80,7 @@ export function ActivityExplorer({ endpoint }: { endpoint: string }) {
   }
 
   if (!snapshot && connection === "loading") return <State title="Connecting to activity…" detail="Reading bounded request, project, provider, autonomy, validation, and recovery evidence." />;
-  if (!snapshot) return <State title="Activity is offline" detail="Start Pipeline Studio locally. No sample history or inferred progress is shown." action={<Button onClick={() => void refresh()}><ArrowClockwise />Retry</Button>} />;
+  if (!snapshot) return <State title="Activity is offline" detail="Start Codkesh locally. No sample history or inferred progress is shown." action={<Button onClick={() => void refresh()}><ArrowClockwise />Retry</Button>} />;
 
   return (
     <section className="space-y-4" aria-labelledby="activity-explorer-title">

@@ -116,7 +116,7 @@ export function LaunchCenter() {
               Reliable autonomous development, without a surprise AI bill.
             </h2>
             <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground">
-              Pipeline Studio turns provider capacity, local workers, task graphs,
+              Codkesh turns provider capacity, local workers, task graphs,
               validation, review, recovery, and evidence into one inspectable
               operating system for people who build through prompts and GitHub.
             </p>
@@ -246,7 +246,7 @@ function Comparison() {
         <Badge className="w-fit">Honest category map</Badge>
         <CardTitle className="mt-4 text-xl">Different center of gravity</CardTitle>
         <CardDescription>
-          These are adjacent products, not inferior versions of Pipeline Studio.
+          These are adjacent products, not inferior versions of Codkesh.
           Claims link to current official product documentation.
         </CardDescription>
       </CardHeader>
@@ -267,7 +267,7 @@ function Comparison() {
           </div>
         ))}
         <div className="rounded-3xl bg-primary/[.08] p-5">
-          <strong>Pipeline Studio’s claim</strong>
+          <strong>Codkesh’s claim</strong>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             A free-first, multi-provider operations plane for durable coding work:
             orchestration, evidence, recovery, distributed workers, and operator
@@ -413,4 +413,3 @@ function DemoButton({
     </button>
   );
 }
-

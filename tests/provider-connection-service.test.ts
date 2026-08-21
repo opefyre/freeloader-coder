@@ -32,10 +32,10 @@ class MemoryRepository implements ProviderConnectionRepository {
 }
 
 function adapter(): ProviderAdapter {
-  return createRecordedProviderAdapter({
+  const recorded = createRecordedProviderAdapter({
     manifest: {
       schemaVersion: 1,
-      providerId: "cerebras",
+      providerId: "groq",
       adapterVersion: "1.0.0",
       protocol: "openai_compatible",
       capabilities: ["chat", "structured_output", "usage", "model_discovery", "quota_discovery"],
@@ -44,7 +44,7 @@ function adapter(): ProviderAdapter {
       extensions: []
     },
     models: [{
-      id: "gpt-oss-120b",
+      id: "openai/gpt-oss-120b",
       label: "GPT OSS 120B",
       contextWindowTokens: 131_000,
       maxOutputTokens: 40_000,
@@ -68,9 +68,9 @@ function adapter(): ProviderAdapter {
     },
     response: {
       schemaVersion: 1,
-      providerId: "cerebras",
-      modelId: "gpt-oss-120b",
-      requestId: `connection-canary-cerebras-${now}`,
+      providerId: "groq",
+      modelId: "openai/gpt-oss-120b",
+      requestId: `connection-canary-groq-${now}`,
       content: "{\"ok\":true}",
       finishReason: "stop",
       usage: { inputTokens: 10, outputTokens: 3, totalTokens: 13, estimated: false, extensions: [] },
@@ -80,14 +80,34 @@ function adapter(): ProviderAdapter {
     },
     stream: []
   });
+  return {
+    ...recorded,
+    async chat(credential, request) {
+      if (request.tools?.some((tool) => tool.name === "pipeline_capability_canary")) {
+        return {
+          schemaVersion: 1,
+          providerId: "groq",
+          modelId: "openai/gpt-oss-120b",
+          requestId: request.requestId,
+          content: "",
+          finishReason: "tool_call",
+          usage: { inputTokens: 11, outputTokens: 4, totalTokens: 15, estimated: false, extensions: [] },
+          toolCalls: [{ id: "call_canary", name: "pipeline_capability_canary", argumentsJson: "{\"ok\":true}" }],
+          extensions: [],
+          verified: false
+        };
+      }
+      return recorded.chat(credential, request);
+    }
+  };
 }
 
 function connectionInput(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 1,
-    id: "cerebras-primary",
-    providerId: "cerebras",
-    modelId: "gpt-oss-120b",
+    id: "groq-primary",
+    providerId: "groq",
+    modelId: "openai/gpt-oss-120b",
     secret,
     freeOnlyAttestation: true,
     billingEnabled: false,
@@ -101,7 +121,7 @@ test("live connection service admits only sanitized current free evidence", asyn
   const vault = new MemoryVault();
   const repository = new MemoryRepository();
   const service = new ProviderConnectionService(repository, vault, {
-    adapter: (providerId) => providerId === "cerebras" ? adapter() : null
+    adapter: (providerId) => providerId === "groq" ? adapter() : null
   });
   const result = await service.connect(connectionInput(), now);
   assert.equal(result.connection?.admission.admitted, true);
@@ -151,11 +171,11 @@ test("revoke and delete remove runtime eligibility and credential material", asy
   const repository = new MemoryRepository();
   const service = new ProviderConnectionService(repository, vault, { adapter: () => adapter() });
   await service.connect(connectionInput(), now);
-  const revoked = await service.revoke("cerebras-primary", now + 1);
+  const revoked = await service.revoke("groq-primary", now + 1);
   assert.equal(revoked.connection?.admission.admitted, false);
   assert.equal(revoked.connection?.credentialState, "revoked");
   assert.equal(vault.values.size, 0);
-  const deleted = await service.disconnect("cerebras-primary");
+  const deleted = await service.disconnect("groq-primary");
   assert.equal(deleted.connection, null);
   assert.equal(repository.values.size, 0);
 });

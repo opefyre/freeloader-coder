@@ -11,6 +11,7 @@ coverage/
 *.sqlite
 *.sqlite-*
 .pipeline-studio/
+.pipeline/
 .local/
 artifacts/
 worktrees/

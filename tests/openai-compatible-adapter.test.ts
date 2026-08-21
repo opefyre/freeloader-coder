@@ -9,16 +9,16 @@ import {
 test("OpenAI-compatible adapter fixes the verified endpoint and normalizes structured output", async () => {
   const requests: Array<{ url: string; init: RequestInit }> = [];
   const adapter = createOpenAiCompatibleAdapter({
-    providerId: "cerebras",
+    providerId: "nvidia-nim",
     fetch: async (url, init) => {
       requests.push({ url: String(url), init: init ?? {} });
       if (String(url).endsWith("/models")) {
-        return json({ data: [{ id: "gpt-oss-120b" }] });
+        return json({ data: [{ id: "meta/llama-3.1-8b-instruct" }] });
       }
       return json(
         {
           id: "provider-request-1",
-          model: "gpt-oss-120b",
+          model: "meta/llama-3.1-8b-instruct",
           choices: [
             {
               finish_reason: "stop",
@@ -35,10 +35,10 @@ test("OpenAI-compatible adapter fixes the verified endpoint and normalizes struc
   const validity = await adapter.validateCredential(credential);
   assert.equal(validity.valid, true);
   const models = await adapter.discoverModels(credential);
-  assert.deepEqual(models.map((model) => model.id), ["gpt-oss-120b"]);
+  assert.deepEqual(models.map((model) => model.id), ["meta/llama-3.1-8b-instruct"]);
   const response = await adapter.chat(credential, {
     requestId: "request-1",
-    modelId: "gpt-oss-120b",
+    modelId: "meta/llama-3.1-8b-instruct",
     messages: [{ role: "user", content: "Return JSON." }],
     maxOutputTokens: 100,
     temperature: 0,
@@ -46,10 +46,10 @@ test("OpenAI-compatible adapter fixes the verified endpoint and normalizes struc
     tools: [],
     timeoutMs: 2_000,
   });
-  assert.equal(response.providerId, "cerebras");
+  assert.equal(response.providerId, "nvidia-nim");
   assert.equal(response.usage.totalTokens, 30);
   assert.equal(response.verified, false);
-  assert.equal(requests.every((entry) => entry.url.startsWith("https://api.cerebras.ai/v1/")), true);
+  assert.equal(requests.every((entry) => entry.url.startsWith("https://integrate.api.nvidia.com/v1/")), true);
   assert.equal(
     requests.every(
       (entry) =>
@@ -64,9 +64,52 @@ test("OpenAI-compatible adapter fixes the verified endpoint and normalizes struc
   assert.deepEqual(body.tools, undefined);
 });
 
+test("model discovery accepts Gemini's models/ identifier prefix", async () => {
+  const adapter = createOpenAiCompatibleAdapter({
+    providerId: "gemini",
+    fetch: async () => json({ data: [{ id: "models/gemini-3.5-flash-lite" }] }),
+  });
+  const models = await adapter.discoverModels({ secret: "local-test-secret" });
+  assert.deepEqual(models.map((model) => model.id), ["gemini-3.5-flash-lite"]);
+});
+
+test("Zhipu admits its catalog-verified free model when discovery omits it", async () => {
+  const requests: Array<{ url: string; init: RequestInit }> = [];
+  const adapter = createOpenAiCompatibleAdapter({
+    providerId: "zhipu",
+    fetch: async (url, init) => {
+      requests.push({ url: String(url), init: init ?? {} });
+      if (String(url).endsWith("/models")) {
+        return json({ data: [{ id: "glm-4.7" }] });
+      }
+      return json({
+        id: "zhipu-request-1",
+        model: "glm-4.7-flash",
+        choices: [{ finish_reason: "stop", message: { content: "{\"ok\":true}" } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+    },
+  });
+  const credential = { secret: "local-test-secret" };
+  const models = await adapter.discoverModels(credential);
+  assert.deepEqual(models.map((model) => model.id), ["glm-4.7-flash"]);
+  await adapter.chat(credential, {
+    requestId: "zhipu-request-1",
+    modelId: "glm-4.7-flash",
+    messages: [{ role: "user", content: "Return JSON." }],
+    maxOutputTokens: 128,
+    temperature: 0,
+    responseSchema: { type: "object" },
+    tools: [],
+    timeoutMs: 2_000,
+  });
+  const body = JSON.parse(String(requests.at(-1)?.init.body));
+  assert.deepEqual(body.thinking, { type: "disabled" });
+});
+
 test("OpenAI-compatible adapter rejects redirects, oversized bodies, and safe-normalizes failures", async () => {
   const redirecting = createOpenAiCompatibleAdapter({
-    providerId: "cerebras",
+    providerId: "nvidia-nim",
     fetch: async () =>
       new Response("", {
         status: 302,
@@ -83,7 +126,7 @@ test("OpenAI-compatible adapter rejects redirects, oversized bodies, and safe-no
   );
 
   const oversized = createOpenAiCompatibleAdapter({
-    providerId: "cerebras",
+    providerId: "nvidia-nim",
     fetch: async () =>
       new Response("x", {
         status: 200,
@@ -101,7 +144,7 @@ test("OpenAI-compatible adapter rejects redirects, oversized bodies, and safe-no
   );
 
   const limited = createOpenAiCompatibleAdapter({
-    providerId: "cerebras",
+    providerId: "nvidia-nim",
     fetch: async () =>
       new Response("{}", {
         status: 429,
@@ -120,7 +163,7 @@ test("OpenAI-compatible adapter rejects redirects, oversized bodies, and safe-no
 function requestFixture() {
   return {
     requestId: "request-1",
-    modelId: "gpt-oss-120b",
+    modelId: "meta/llama-3.1-8b-instruct",
     messages: [{ role: "user" as const, content: "Return JSON." }],
     maxOutputTokens: 100,
     temperature: 0,
@@ -135,4 +178,3 @@ function json(value: unknown, headers: Record<string, string> = {}) {
     headers: { "content-type": "application/json", ...headers },
   });
 }
-

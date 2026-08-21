@@ -223,6 +223,13 @@ export class ProjectLifecycleService {
     return this.#mutate(async (state) => {
       const current = requireRecord(state.records, projectId);
       requireCurrentEligibility(state, current, Date.now());
+      if (current.stage === "delivery") {
+        const backlog = current.artifacts.find((artifact) => artifact.kind === "backlog");
+        if (backlog?.digest !== artifactDigest || current.jiraEpicId !== jiraEpicId) {
+          throw new ProjectLifecycleServiceError("stale_revision", "Delivery activation evidence changed after Jira synchronization began.");
+        }
+        return { state, result: current };
+      }
       const record = advanceProjectLifecycle(current, { type: "backlog_qa_passed", artifactDigest, jiraEpicId }, Date.now());
       return { state: replaceRecord(state, record), result: record };
     });

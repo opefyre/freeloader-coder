@@ -2,12 +2,13 @@ import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { FileText } from "@phosphor-icons/react/FileText";
 import { Warning } from "@phosphor-icons/react/Warning";
 import { X } from "@phosphor-icons/react/X";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { getProjectArtifact, listProjectArtifacts, type ProjectArtifactDocument, type ProjectArtifactInspection } from "../../local-project-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import { InfrastructureDeliveryPanel } from "./infrastructure-delivery-panel.js";
+import { MarkdownDocument } from "./markdown-document.js";
 import { ProjectResearchControl } from "./project-research-control.js";
 
 export function ProjectArtifactWorkspace(props: { endpoint: string; projectId: string }) {
@@ -58,24 +59,3 @@ export function ProjectArtifactWorkspace(props: { endpoint: string; projectId: s
 
 function label(kind: ProjectArtifactInspection["kind"]) { return ({ context: "Context", memory: "Memory", research: "Research", product: "Product", design: "Design", delivery_plan: "Delivery plan", ops_rules: "Operating rules", infra: "Infrastructure", security: "Security", decisions: "Decisions", status: "Status" })[kind]; }
 function formatTime(value: string) { const age = Date.now() - Date.parse(value); if (age < 60_000) return "just now"; if (age < 3_600_000) return `${Math.floor(age / 60_000)}m ago`; if (age < 86_400_000) return `${Math.floor(age / 3_600_000)}h ago`; return `${Math.floor(age / 86_400_000)}d ago`; }
-
-function MarkdownDocument({ body }: { body: string }) {
-  const lines = body.split("\n");
-  const blocks: ReactNode[] = [];
-  let paragraph: string[] = [];
-  let list: string[] = [];
-  const flush = () => {
-    if (paragraph.length) { blocks.push(<p key={`p-${blocks.length}`} className="text-[15px] leading-7 text-foreground/85">{paragraph.join(" ")}</p>); paragraph = []; }
-    if (list.length) { blocks.push(<ul key={`l-${blocks.length}`} className="list-disc space-y-1.5 pl-5 text-[15px] leading-7 text-foreground/85">{list.map((item, index) => <li key={index}>{item}</li>)}</ul>); list = []; }
-  };
-  for (const line of lines) {
-    const heading = line.match(/^(#{1,4})\s+(.+)$/);
-    const bullet = line.match(/^[-*]\s+(.+)$/);
-    if (heading) { flush(); const level = heading[1]?.length ?? 2; blocks.push(level === 1 ? <h1 key={`h-${blocks.length}`} className="pt-4 text-3xl font-semibold tracking-tight">{heading[2]}</h1> : level === 2 ? <h2 key={`h-${blocks.length}`} className="pt-5 text-xl font-semibold">{heading[2]}</h2> : <h3 key={`h-${blocks.length}`} className="pt-4 text-base font-semibold">{heading[2]}</h3>); }
-    else if (bullet) { if (paragraph.length) flush(); list.push(bullet[1] ?? ""); }
-    else if (!line.trim()) flush();
-    else { if (list.length) flush(); paragraph.push(line.trim()); }
-  }
-  flush();
-  return <div className="space-y-4 pb-4">{blocks}</div>;
-}

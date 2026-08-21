@@ -18,7 +18,7 @@ export const onboardingStages: readonly {
 ];
 
 export const detectedProject = {
-  name: "Pipeline Studio",
+  name: "Codkesh",
   state: "Ready",
   summary: "TypeScript workspace · React interface · local-first controller",
   languages: ["TypeScript", "CSS"],

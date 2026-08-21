@@ -57,8 +57,8 @@ test("solution orchestration uses parallel specialists and independent reviewers
         assert.ok(!input.sources.some((source) => source.name === "Product research" || source.name === "Technical research"));
       }
       if (input.role === "solution_reconciliation") return evidence("reconciler", content);
-      if (input.role === "product_review") return evidence("product-model", { schemaVersion: 1, reviewerId: "review-a", discipline: "product", verdict: "pass", findings: ["Product scope is coherent."] });
-      if (input.role === "technical_review") return evidence("technical-model", { schemaVersion: 1, reviewerId: "review-b", discipline: "technical", verdict: "pass", findings: ["Architecture is implementable."] });
+      if (input.role === "product_review") return evidence("product-model", { schemaVersion: 1, reviewerId: "review-a", discipline: "product", verdict: "pass", findings: [] });
+      if (input.role === "technical_review") return evidence("technical-model", { schemaVersion: 1, reviewerId: "review-b", discipline: "technical", verdict: "pass", findings: [] });
       return evidence(input.role, researchEvidence(input.role));
     },
   };
@@ -102,6 +102,47 @@ test("review dissent fails closed without publishing", async () => {
     { run: async ({ role }) => role === "solution_reconciliation" ? evidence("reconciler", content) : role === "product_review" ? evidence("review-a", { schemaVersion: 1, reviewerId: "a-reviewer", discipline: "product", verdict: "fail", findings: ["User workflow is incomplete."] }) : role === "technical_review" ? evidence("review-b", { schemaVersion: 1, reviewerId: "b-reviewer", discipline: "technical", verdict: "pass", findings: [] }) : evidence(role, researchEvidence(role)) },
   );
   await assert.rejects(() => service.run(lifecycle.projectId), SolutionReviewDissentError);
+  assert.equal(published, false);
+});
+
+test("a pass verdict with blocking prose is treated as dissent", async () => {
+  let reconciliations = 0;
+  let technicalReviews = 0;
+  let published = false;
+  const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };
+  const service = new ProjectSolutionOrchestrator(
+    { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async (_id, artifact) => ({ ...lifecycle, stage: "awaiting_design_approval", artifacts: [artifact] }) as any },
+    { publishResearch: async () => ({ body: "# Sanitized research\n" }), publish: async () => { published = true; return { kind: "solution", digest: "e".repeat(64), revision: 1 }; }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
+    { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
+    { authorize: async () => permit },
+    { run: async ({ role }) => {
+      if (role === "solution_reconciliation") { reconciliations += 1; return evidence(`reconciler-${reconciliations}`, content); }
+      if (role === "product_review") return evidence("product", { schemaVersion: 1, reviewerId: "product-reviewer", discipline: "product", verdict: "pass", findings: [] });
+      if (role === "technical_review") {
+        technicalReviews += 1;
+        return evidence(`technical-${technicalReviews}`, { schemaVersion: 1, reviewerId: "technical-reviewer", discipline: "technical", verdict: "pass", findings: technicalReviews === 1 ? ["However, transaction abort handling requires attention."] : [] });
+      }
+      return evidence(role, researchEvidence(role));
+    } },
+  );
+  await service.run(lifecycle.projectId);
+  assert.equal(reconciliations, 2);
+  assert.equal(technicalReviews, 2);
+  assert.equal(published, true);
+});
+
+test("review personas from the same provider and model are not independent", async () => {
+  let published = false;
+  const lifecycle = { projectId: "project_abcdef0123456789", stage: "solution_design", artifacts: [], designFeedback: [] };
+  const shared = (response: unknown) => ({ providerId: "nvidia-nim", modelId: "shared-model", response });
+  const service = new ProjectSolutionOrchestrator(
+    { get: async () => lifecycle as any, eligibility: async () => eligibility, publishSolution: async () => { throw new Error("must not publish"); } },
+    { publishResearch: async () => ({ body: "# Sanitized research\n" }), publish: async () => { published = true; throw new Error("must not publish"); }, read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); } } as any,
+    { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
+    { authorize: async () => permit },
+    { run: async ({ role }) => role === "solution_reconciliation" ? evidence("reconciler", content) : role === "product_review" ? shared({ schemaVersion: 1, reviewerId: "product-persona", discipline: "product", verdict: "pass", findings: [] }) : role === "technical_review" ? shared({ schemaVersion: 1, reviewerId: "technical-persona", discipline: "technical", verdict: "pass", findings: [] }) : evidence(role, researchEvidence(role)) },
+  );
+  await assert.rejects(() => service.run(lifecycle.projectId), /independent provider\/model routes/);
   assert.equal(published, false);
 });
 
@@ -170,11 +211,11 @@ test("owner revision feedback changes only explicitly scoped solution sections",
     } as any,
     { readVerified: async () => ({ digest: "a".repeat(64), markdown: "# Context\n\nGrounded evidence." }) },
     { authorize: async () => permit },
-    { run: async ({ role }) => {
+    { run: async ({ role, sources }) => {
       if (role === "solution_revision_scope") return evidence("scope", { schemaVersion: 1, sections: ["architecture"], rationale: "Only architecture was requested." });
       if (role === "solution_reconciliation") return evidence("reconciler", { ...content, behavior: ["Unrequested behavior change."], architecture: ["Use the revised architecture boundary."] });
-      if (role === "product_review") return evidence("product", { schemaVersion: 1, reviewerId: "product-reviewer", discipline: "product", verdict: "pass", findings: [] });
-      if (role === "technical_review") return evidence("technical", { schemaVersion: 1, reviewerId: "technical-reviewer", discipline: "technical", verdict: "pass", findings: [] });
+      if (role === "product_review") { assert.equal(sources.some((source) => source.name === "Current approved candidate" || source.name === "Owner feedback"), false); return evidence("product", { schemaVersion: 1, reviewerId: "product-reviewer", discipline: "product", verdict: "pass", findings: [] }); }
+      if (role === "technical_review") { assert.equal(sources.some((source) => source.name === "Current approved candidate" || source.name === "Owner feedback"), false); return evidence("technical", { schemaVersion: 1, reviewerId: "technical-reviewer", discipline: "technical", verdict: "pass", findings: [] }); }
       return evidence(role, researchEvidence(role));
     } },
   );

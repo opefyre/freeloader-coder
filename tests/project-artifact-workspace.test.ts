@@ -36,6 +36,7 @@ test("live artifact journey returns truthful status and supports safe in-app rea
 
 test("artifact workspace is concise, keyboard reachable, responsive, and distinguishes owner states", async () => {
   const source = await readFile(join(process.cwd(), "apps/studio/src/components/projects/project-artifact-workspace.tsx"), "utf8");
+  const renderer = await readFile(join(process.cwd(), "apps/studio/src/components/projects/markdown-document.tsx"), "utf8");
   assert.match(source, /<button[^>]+type="button"/);
   assert.match(source, /focus-visible:ring/);
   assert.match(source, /sm:grid-cols-2 xl:grid-cols-3/);
@@ -48,6 +49,11 @@ test("artifact workspace is concise, keyboard reachable, responsive, and disting
   assert.match(source, /getProjectArtifact/);
   assert.match(source, /role="dialog"/);
   assert.match(source, /MarkdownDocument/);
+  assert.match(renderer, /ReactMarkdown/);
+  assert.match(renderer, /remarkGfm/);
+  assert.match(renderer, /skipHtml/);
+  assert.match(renderer, /table:/);
+  assert.match(renderer, /blockquote:/);
   assert.doesNotMatch(source, /absolute path|digest:|producer:/i);
 });
 

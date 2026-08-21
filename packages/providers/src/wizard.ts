@@ -4,11 +4,14 @@ export type ProviderWizardId =
   | "openrouter"
   | "cloudflare"
   | "github-models"
-  | "cerebras"
+  | "nvidia-nim"
+  | "huggingface"
+  | "aion"
+  | "kilo"
+  | "cohere"
   | "mistral"
   | "zhipu"
   | "sambanova"
-  | "deepseek"
   | "local-model-runtime";
 
 export type ProviderAuthMode =
@@ -119,20 +122,69 @@ export const providerConnectionGuides: readonly ProviderConnectionGuide[] = [
     revocation: "Revoke the authorization in GitHub and disconnect locally."
   },
   {
-    id: "cerebras",
-    label: "Cerebras",
+    id: "nvidia-nim",
+    label: "NVIDIA NIM",
     authMode: "guided_key",
-    dashboardUrl: "https://cloud.cerebras.ai/",
-    freeStatus: "Free account · live account limits required",
-    dataUse: "External processing under the connected Cerebras account policy",
-    minimumPermission: "Inference key for one free account",
+    dashboardUrl: "https://build.nvidia.com/explore/discover",
+    freeStatus: "Free Developer Program access · enterprise routes denied",
+    dataUse: "External processing under the NVIDIA Developer Program terms",
+    minimumPermission: "Hosted NIM inference key only",
     steps: [
-      "Open the Cerebras dashboard and create an inference key.",
+      "Join the free NVIDIA Developer Program and create an API key.",
       "Return and use secure entry; the key is immediately masked.",
       "Probe the account model list and current request/token limits.",
       "Run chat, structured-output, and selected capability canaries."
     ],
-    revocation: "Delete the key in Cerebras and remove its local vault reference."
+    revocation: "Revoke the key in NVIDIA and remove its local vault reference."
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    authMode: "guided_key",
+    dashboardUrl: "https://huggingface.co/settings/tokens",
+    freeStatus: "Recurring free-user credit · paid overage impossible",
+    dataUse: "Requests may be routed to a selected inference provider under its terms",
+    minimumPermission: "Fine-grained inference token without write permissions",
+    steps: [
+      "Create a fine-grained Hugging Face token for inference only.",
+      "Return and use secure entry; the token is immediately masked.",
+      "Verify free-user credit and the selected chat model.",
+      "Stop routing when the recurring monthly credit is exhausted."
+    ],
+    revocation: "Revoke the token in Hugging Face and remove its local vault reference."
+  },
+  {
+    id: "aion",
+    label: "Aion Labs",
+    authMode: "guided_key",
+    dashboardUrl: "https://www.aionlabs.ai/app/api-keys/",
+    freeStatus: "Daily free credit · no card required",
+    dataUse: "External processing under the Aion Labs free-account policy",
+    minimumPermission: "Inference key for one free account",
+    steps: ["Create a free account without adding payment details.", "Create an inference key and return to secure entry.", "Verify the free tier and exact model.", "Enforce the documented daily token ceiling."],
+    revocation: "Delete the key in Aion Labs and remove its local vault reference."
+  },
+  {
+    id: "kilo",
+    label: "Kilo Gateway",
+    authMode: "guided_key",
+    dashboardUrl: "https://app.kilo.ai/",
+    freeStatus: "Auto Free only · paid models denied",
+    dataUse: "Auto Free may route to training-eligible upstream providers",
+    minimumPermission: "Gateway inference key without purchased credits",
+    steps: ["Create or sign in to a free Kilo account.", "Create a gateway key without purchasing credits.", "Select only kilo-auto/free.", "Verify a live free-model canary and fail closed on HTTP 402."],
+    revocation: "Delete the gateway key in Kilo and remove its local vault reference."
+  },
+  {
+    id: "cohere",
+    label: "Cohere Trial",
+    authMode: "guided_key",
+    dashboardUrl: "https://dashboard.cohere.com/api-keys",
+    freeStatus: "Trial key · 1,000 calls monthly · non-production",
+    dataUse: "External processing under Cohere trial terms",
+    minimumPermission: "Trial inference key only",
+    steps: ["Create or sign in to a Cohere account.", "Copy the trial key without upgrading.", "Verify the selected Command model.", "Stop at the monthly call limit and never request a production key."],
+    revocation: "Revoke the trial key in Cohere and remove its local vault reference."
   },
   {
     id: "mistral",
@@ -181,22 +233,6 @@ export const providerConnectionGuides: readonly ProviderConnectionGuide[] = [
       "Reserve review and recovery capacity before enabling routing."
     ],
     revocation: "Delete the key in SambaNova and remove the local vault reference."
-  },
-  {
-    id: "deepseek",
-    label: "DeepSeek credit",
-    authMode: "guided_key",
-    dashboardUrl: "https://platform.deepseek.com/",
-    freeStatus: "Temporary promotional credit · never permanent free",
-    dataUse: "External processing only after explicit credit-only enablement",
-    minimumPermission: "Balance read and inference with topped-up funds isolated",
-    steps: [
-      "Enable promotional-credit mode explicitly; it is off by default.",
-      "Create a key and verify granted and topped-up balances separately.",
-      "Prove topped-up funds cannot be consumed and record credit expiry.",
-      "Set a hard reserve and canary the exact model before limited routing."
-    ],
-    revocation: "Delete the key in DeepSeek; no top-up or billing action is ever available."
   },
   {
     id: "local-model-runtime",

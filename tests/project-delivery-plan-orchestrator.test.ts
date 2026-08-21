@@ -34,18 +34,19 @@ test("approved major solution becomes an independently reviewed backlog artifact
   assert.equal((published as { qaPassed: boolean }).qaPassed, true);
 });
 
-test("backlog planning fails closed on reviewer dissent, planner self-review, and evidence mismatch", async () => {
-  const run = async (mismatch: boolean, dissent: boolean, selfReview = false) => new ProjectDeliveryPlanOrchestrator(
+test("backlog planning fails closed on reviewer dissent, contradictory pass, planner self-review, and evidence mismatch", async () => {
+  const run = async (mismatch: boolean, dissent: boolean, selfReview = false, contradictoryPass = false) => new ProjectDeliveryPlanOrchestrator(
     { get: async () => featureLifecycle, eligibility: async () => ({ schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: featureLifecycle.assessment, evidence: ["Major feature."], alternatives: [], override: null, decidedAt: 1 }), publishBacklog: async () => { throw new Error("must not publish"); } },
     { read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); }, publish: async () => { throw new Error("must not publish"); } },
     { readVerified: async () => ({ digest: contextDigest, markdown: "context" }) },
     { read: async () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: solutionDigest, markdown: "solution" }) },
     { authorize: async () => permit },
-    { run: async (input) => input.role === "delivery_planning" ? { providerId: "groq", modelId: "planner", response: { ...completeDeliveryPlan(), ...(mismatch ? { solutionDigest: "d".repeat(64) } : {}) } } : { providerId: selfReview && input.role === "delivery_review" ? "groq" : input.role, modelId: selfReview && input.role === "delivery_review" ? "planner" : "reviewer", response: { schemaVersion: 1, reviewerId: input.role, discipline: input.role === "delivery_review" ? "delivery" : "technical", verdict: dissent && input.role === "delivery_review" ? "fail" : "pass", findings: dissent ? ["Missing recovery detail."] : [] } } },
+    { run: async (input) => input.role === "delivery_planning" ? { providerId: "groq", modelId: "planner", response: { ...completeDeliveryPlan(), ...(mismatch ? { solutionDigest: "d".repeat(64) } : {}) } } : { providerId: selfReview && input.role === "delivery_review" ? "groq" : input.role, modelId: selfReview && input.role === "delivery_review" ? "planner" : "reviewer", response: { schemaVersion: 1, reviewerId: input.role, discipline: input.role === "delivery_review" ? "delivery" : "technical", verdict: dissent && input.role === "delivery_review" ? "fail" : "pass", findings: (dissent || (contradictoryPass && input.role === "delivery_review")) ? ["Missing recovery detail."] : [] } } },
     () => 20,
   ).run(projectId);
   await assert.rejects(() => run(true, false), /not bound/);
   await assert.rejects(() => run(false, true), DeliveryPlanReviewDissentError);
+  await assert.rejects(() => run(false, false, false, true), DeliveryPlanReviewDissentError);
   await assert.rejects(() => run(false, false, true), /planner and two independent reviewer identities/);
 });
 
@@ -71,10 +72,39 @@ test("free-provider planning exhaustion falls back to a complete local plan and 
   const scaffold = subtasks.find((item: any) => item.allowedFiles.includes("package.json"));
   assert.ok(scaffold);
   assert.deepEqual(scaffold.dependencies, []);
+  assert.ok(scaffold.allowedFiles.includes(".gitignore"));
+  assert.ok(scaffold.allowedFiles.includes(".prettierignore"));
   assert.ok(subtasks.filter((item: any) => item.id !== scaffold.id).every((item: any) => item.dependencies.includes(scaffold.id)));
+  const ux = subtasks.find((item: any) => draft.coverage.find((entry: any) => entry.requirement === "user_experience").itemIds.includes(item.id));
+  assert.ok(ux.allowedFiles.includes("index.html"));
+  assert.ok(ux.validationProfiles.includes("build"));
+  assert.ok(ux.validationProfiles.includes("visual"));
   assert.equal(draft.coverage.length, 10);
   assert.equal(JSON.stringify(draft).includes("local://SOLUTION.md"), false);
+  assert.equal(JSON.stringify(draft).includes("local://RESEARCH.md"), false);
   assert.ok(draft.citations.includes("local://DESIGN.md"));
   assert.ok(draft.reviews.every((review: any) => review.verdict === "pass"));
   assert.match(draft.reviews[1].reviewerId, /codkesh-local\/deterministic-technical-validator-v1/);
+});
+
+test("machine-disproved structural dissent is adjudicated while independent technical QA remains mandatory", async () => {
+  let draft: any;
+  const solutionContent = { schemaVersion: 1 as const, title: "Local decision journal", summary: "Build the approved local-first journal with search, backup, restore, and independent QA.", behavior: ["Capture decisions."], architecture: ["Run locally."], userExperience: ["Provide a minimal journal."], data: ["Persist local records."], integrations: ["Record Jira evidence."], security: ["Restrict local access."], privacy: ["Keep entries local."], reliability: ["Verify backup and restore."], rollout: ["Require owner approval."], metrics: ["Track validation."], alternatives: [{ option: "Local app", disposition: "selected" as const, rationale: "Meets constraints." }, { option: "Cloud SaaS", disposition: "rejected" as const, rationale: "Violates constraints." }], unresolvedBlockers: [], citations: ["local://CONTEXT.md", "local://RESEARCH.md"] };
+  const orchestrator = new ProjectDeliveryPlanOrchestrator(
+    { get: async () => lifecycle, eligibility: async () => ({ schemaVersion: 1, projectId, requestId: "request_0123456789abcdef0123", eligible: true, assessment: lifecycle.assessment, evidence: ["New product."], alternatives: [], override: null, decidedAt: 1 }), publishBacklog: async () => ({ ...lifecycle, stage: "backlog_qa", revision: 7 }) },
+    { read: async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); }, publish: async (_id: string, candidate: any) => { draft = candidate; return { kind: "backlog", projectRelativePath: ".pipeline/BACKLOG.md", digest: "c".repeat(64), revision: candidate.revision, createdAt: 20, citations: candidate.citations, reviewerIds: candidate.reviews.map((review: any) => review.reviewerId), qaPassed: true }; } } as any,
+    { readVerified: async () => ({ digest: contextDigest, markdown: "# Context\n\nVerified." }) },
+    { read: async () => ({ schemaVersion: 1, projectId, projectRelativePath: ".pipeline/SOLUTION.md", revision: 1, digest: solutionDigest, markdown: "# Solution\n\nApproved." }), readContent: async () => solutionContent },
+    { authorize: async () => permit },
+    { run: async (input) => {
+      if (input.role === "delivery_planning") throw new FreeProviderSolutionUnavailableError(1_000, "Free planner unavailable.");
+      if (input.role === "delivery_review") return { providerId: "gemini", modelId: "delivery-reviewer", response: { schemaVersion: 1, reviewerId: "delivery-reviewer", discipline: "delivery", verdict: "fail", findings: ["plan_0000000000000004: Missing pinned lockfile (package-lock.json).", "plan_0000000000000004: Missing compiler configuration (tsconfig.json).", "plan_0000000000000004: Missing validator configuration (eslint.config.js).", "plan_0000000000000004: Missing executable smoke test (tests/scaffold.test.ts).", "plan_0000000000000007: No executable test files present."] } };
+      return { providerId: "nvidia-nim", modelId: "technical-reviewer", response: { schemaVersion: 1, reviewerId: "technical-reviewer", discipline: "technical", verdict: "pass", findings: [] } };
+    } },
+    () => 20,
+  );
+  const result = await orchestrator.run(projectId);
+  assert.equal(result.stage, "backlog_qa");
+  assert.match(draft.reviews[0].reviewerId, /codkesh-local\/deterministic-delivery-validator-v1/);
+  assert.match(draft.reviews[1].reviewerId, /nvidia-nim\/technical-reviewer/);
 });

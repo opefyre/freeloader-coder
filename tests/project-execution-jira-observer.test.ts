@@ -73,6 +73,35 @@ test("Jira observer detects an external workflow edit instead of overwriting it"
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("Jira observer may close an untouched initial issue when execution finishes before the polling interval", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-jira-fast-completion-"));
+  try {
+    let status = "To Do";
+    let transitionPosts = 0;
+    const comments: unknown[] = [];
+    const fetcher: typeof fetch = async (url, init) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname.endsWith("/comment") && init?.method === "POST") { comments.push(JSON.parse(String(init.body))); return json({ id: "1" }, 201); }
+      if (parsed.pathname.endsWith("/comment")) return json({ comments });
+      if (parsed.pathname.endsWith("/transitions") && init?.method === "POST") { transitionPosts += 1; status = "Done"; return new Response(null, { status: 204 }); }
+      if (parsed.pathname.endsWith("/transitions")) return json({ transitions: [{ id: "31", name: "Done", to: { name: "Done" } }] });
+      if (parsed.pathname.includes("/issue/PIPE-4")) return json({ fields: { status: { name: status } } });
+      throw new Error(`Unexpected request: ${parsed.pathname}`);
+    };
+    const observer = new ProjectExecutionJiraObserver(
+      root,
+      { get: async () => completedRecord() },
+      { get: async () => ({ completed: true, issues: { [taskId]: { issueKey: "PIPE-4" } } }) },
+      plans(),
+      { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) },
+      fetcher,
+      () => 200
+    );
+    assert.deepEqual(await observer.synchronize(projectId), { synchronized: 1, pending: 0 });
+    assert.equal(transitionPosts, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("Jira observer rejects false completion before any Jira comment or transition", async () => {
   const root = await mkdtemp(join(tmpdir(), "execution-jira-false-closure-"));
   try {

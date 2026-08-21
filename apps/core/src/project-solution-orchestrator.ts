@@ -67,6 +67,7 @@ export class ProjectSolutionOrchestrator {
     const feedback = lifecycle.designFeedback.at(-1)?.feedback.trim() || "No owner revision feedback.";
     const existingContent = existing ? await this.solutions.readContent(projectId) : null;
     const baseSources = [{ name: "CONTEXT.md", content: verified.markdown }, { name: "Owner feedback", content: feedback }, ...(existingContent ? [{ name: "Current approved candidate", content: safeJson(existingContent) }] : [])];
+    const reviewBaseSources = baseSources.filter((source) => source.name === "CONTEXT.md");
     const revisionScope = existingContent ? solutionRevisionScopeSchema.parse((await this.model.run({
       projectId, role: "solution_revision_scope", contextDigest: verified.digest,
       instruction: revisionScopeInstruction(), sources: baseSources, permit,
@@ -96,12 +97,14 @@ export class ProjectSolutionOrchestrator {
     for (let round = 0; ; round += 1) {
       const reviewSource = { name: "Candidate solution", content: safeJson(content) };
       [productReviewEvidence, technicalReviewEvidence] = await Promise.all([
-        this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
-        this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
+        this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...reviewBaseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
+        this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...reviewBaseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
       ]);
       productReview = solutionReviewResultSchema.parse(productReviewEvidence.response);
       technicalReview = solutionReviewResultSchema.parse(technicalReviewEvidence.response);
       if (productReview.discipline !== "product" || technicalReview.discipline !== "technical") throw new Error("Solution reviewers returned mismatched disciplines.");
+      productReview = normalizeReviewVerdict(productReview);
+      technicalReview = normalizeReviewVerdict(technicalReview);
       if (productReview.verdict === "pass" && technicalReview.verdict === "pass") break;
       const findings = [...productReview.findings, ...technicalReview.findings];
       if (round >= maxHealingRounds) throw new SolutionReviewDissentError(findings);
@@ -109,7 +112,7 @@ export class ProjectSolutionOrchestrator {
         projectId, role: "solution_reconciliation", contextDigest: verified.digest,
         instruction: healingInstruction(),
         sources: [
-          ...baseSources,
+          ...reviewBaseSources,
           { name: "RESEARCH.md", content: researchArtifact.body },
           reviewSource,
           { name: "Independent review findings", content: safeJson(findings) },
@@ -120,6 +123,7 @@ export class ProjectSolutionOrchestrator {
       content = groundSolutionCitations(existingContent && revisionScope ? mergeScopedRevision(existingContent, healedCandidate, revisionScope.sections) : healedCandidate, researchArtifact.body);
     }
     const reviewerIds = [reviewerIdentity(productReviewEvidence, productReview.reviewerId), reviewerIdentity(technicalReviewEvidence, technicalReview.reviewerId)];
+    if (reviewerRoute(productReviewEvidence) === reviewerRoute(technicalReviewEvidence)) throw new Error("Solution review requires independent provider/model routes.");
     if (reviewerIds[0] === reviewerIds[1]) throw new Error("Solution review requires independent reviewer identities.");
     const artifact = await this.solutions.publish(projectId, {
       ...content, revision, reviews: [
@@ -142,6 +146,10 @@ export class SolutionReviewDissentError extends Error {
 
 function reviewerIdentity(evidence: SolutionModelEvidence, declared: string) {
   return `${evidence.providerId}/${evidence.modelId}/${declared}`.slice(0, 160);
+}
+
+function reviewerRoute(evidence: SolutionModelEvidence) {
+  return `${evidence.providerId}/${evidence.modelId}`;
 }
 
 function safeJson(value: unknown) {
@@ -177,7 +185,26 @@ function researchInstruction(discipline: "product" | "technical", topics: readon
 function reconciliationInstruction() { return "Reconcile the sanitized RESEARCH.md and grounded CONTEXT.md into one complete implementable solution. Resolve conflicts using CONTEXT.md as authority and incorporate owner feedback. Separate observed facts from proposed design decisions: facts require cited evidence, while architecture, security, privacy, storage, backup, integration, and delivery choices must be concrete proposals with rationale and later validation—not invented claims. Research gaps may limit competitive claims, but they do not prevent choosing an implementable design unless an owner preference or external authority is truly required. Cite both local://CONTEXT.md and local://RESEARCH.md; cite an HTTP(S) URL only when it appears in sanitized RESEARCH.md. Return schemaVersion=1 as a number. Populate every required section with specific mechanisms and validation expectations. alternatives must contain at least one selected and one rejected item, each with option, disposition, and rationale. unresolvedBlockers must contain only decisions that cannot safely be made from the mission and engineering judgment; use an empty array when none remain. Return JSON matching the requested schema only."; }
 function healingInstruction() { return "Revise the candidate enough to resolve every independent review finding. CONTEXT.md and sanitized RESEARCH.md are the sole evidence authorities for factual claims. Do not turn ordinary design work into owner blockers: choose concrete implementable storage, encryption, local access, backup/recovery, AI fallback, delivery, and validation mechanisms as explicitly proposed design decisions with rationale. Keep market or competitor evidence gaps explicit and avoid unsupported market claims. Use unresolvedBlockers only when implementation truly requires missing owner intent or an external authority; otherwise resolve the finding through a bounded design decision and verification plan. Keep already-correct requirements intact. Cite local://CONTEXT.md and local://RESEARCH.md only when supplied, and cite HTTP(S) sources only when present in sanitized RESEARCH.md. Return a complete solution with schemaVersion=1 as a number, every required section, at least one selected and one rejected alternative, and the exact requested JSON schema only."; }
 function revisionScopeInstruction() { return "Compare the owner feedback with the current candidate and CONTEXT.md. Return only the exact solution section keys that must change. Do not include unaffected sections. Return strict structured JSON."; }
-function reviewInstruction(discipline: "product" | "technical") { return `Independently audit the candidate solution from the ${discipline} discipline against CONTEXT.md and owner feedback. Fail on omissions, contradictions, invented factual claims, unsafe assumptions, or non-implementable guidance. Do not fail a concrete proposed design choice merely because research did not observe it; instead require clear rationale, constraints, and a validation path. Market evidence gaps must remain explicit and must not become unsupported market claims. Return a strict verdict and actionable findings.`; }
+function reviewInstruction(discipline: "product" | "technical") { return [
+  `Independently audit the candidate solution from the ${discipline} discipline against CONTEXT.md and owner feedback.`,
+  "This is a PRE-IMPLEMENTATION DESIGN gate for a greenfield project. An empty repository, missing package manifest, absent tests, and absent implementation files are expected and are not review failures.",
+  "Evaluate whether the proposed behavior, UX, architecture, data model, privacy, security, operations, tests, and validation paths are complete enough to guide later implementation; do not demand that those artifacts already exist.",
+  "Treat technologies, schemas, storage mechanisms, scripts, controls, metrics, and test tools written as future-tense or proposed design decisions as proposals, not invented observed facts.",
+  "Fail only on actual design omissions, contradictions with CONTEXT.md, factual claims presented as already observed without evidence, unsafe choices, unresolved owner decisions, or guidance that cannot be implemented or validated later.",
+  "Do not fail because market evidence is unavailable when the candidate keeps those gaps explicit and avoids unsupported market claims.",
+  "Do not require owner attachments or revision feedback when CONTEXT.md records that none were supplied.",
+  "A pass means the design is sufficiently concrete and traceable to proceed to owner approval and delivery planning—not that implementation already exists.",
+  "Return a strict verdict and actionable findings. findings contains only unresolved blocking findings: when verdict=pass it must be an empty array; when any correction, omission, contradiction, or concern remains, verdict must be fail and findings must describe it.",
+].join(" "); }
+
+function normalizeReviewVerdict(review: ReturnType<typeof solutionReviewResultSchema.parse>) {
+  if (review.verdict === "pass" && review.findings.some(isBlockingFinding)) return { ...review, verdict: "fail" as const };
+  return review;
+}
+
+function isBlockingFinding(finding: string) {
+  return /\b(?:however|requires? attention|must (?:be|add|address|clarify|define|include|remove|replace)|does not (?:address|cover|define|include|implement|specify)|did not (?:address|cover|define|include|implement|specify)|missing|omission|contradict(?:s|ion|ory)?|incomplete|unsafe|unresolved|cannot proceed|not implementable|fails? acceptance)\b/i.test(finding);
+}
 
 export function solutionRunDigest(input: { projectId: string; contextDigest: string; revision: number }) {
   return createHash("sha256").update(`${input.projectId}:${input.contextDigest}:${input.revision}`).digest("hex");

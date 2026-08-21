@@ -11,6 +11,9 @@ test("provider wizard exposes secure live admission, recovery, and revocation st
   assert.match(source, /operating-system vault/);
   assert.match(source, /Running admission checks/);
   assert.match(source, /Re-check/);
+  assert.match(source, /Re-check required/);
+  assert.match(source, /if \(connection\.admission\.admitted\) return "ready"/);
+  assert.doesNotMatch(source, /Routing ready/);
   assert.match(source, /Revoke key/);
   assert.match(source, /mutateProviderConnection/);
   assert.doesNotMatch(source, /demoFingerprint|recordProviderValidation/);
