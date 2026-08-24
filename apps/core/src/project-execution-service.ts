@@ -97,7 +97,7 @@ export class ProjectExecutionService {
   async recordImplementation(projectId: string, taskId: string, leaseId: string, ownerId: string, evidenceDigest: string) {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
       if (task.status !== "running" && task.status !== "healing") throw new ProjectExecutionError("invalid_stage", "Implementation evidence is not accepted in this stage.");
-      const updated = { ...task, status: "validating" as const, deferredProviderIds: [], implementationEvidence: [...task.implementationEvidence, digestSchema.parse(evidenceDigest)], failureClass: null, revision: task.revision + 1, safeMessage: "Deterministic validation is running.", updatedAt: now };
+      const updated = { ...task, status: "validating" as const, deferredProviderIds: [], verifiedRecoveryEvidenceDigest: null, implementationEvidence: [...task.implementationEvidence, digestSchema.parse(evidenceDigest)], failureClass: null, revision: task.revision + 1, safeMessage: "Deterministic validation is running.", updatedAt: now };
       return { record: replaceTask(record, updated), result: updated };
     });
   }
@@ -343,6 +343,7 @@ export class ProjectExecutionService {
         ...task,
         status: "queued",
         assignment: null,
+        verifiedRecoveryEvidenceDigest: evidenceDigest,
         revision: task.revision + 1,
         safeMessage: `Owner approved one freshly verified pre-review recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`,
         updatedAt: now,

@@ -413,6 +413,7 @@ test("repeated validation failures exhaust the bounded repair budget and quarant
     assert.equal(recovered.status, "queued");
     assert.equal(recovered.attempt, 2, "recovery preserves the exhausted repair history");
     assert.equal(recovered.validations.length, 3, "recovery preserves failed validation evidence");
+    assert.match(recovered.verifiedRecoveryEvidenceDigest ?? "", /^[a-f0-9]{64}$/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

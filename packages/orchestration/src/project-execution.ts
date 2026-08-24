@@ -69,6 +69,7 @@ export const executionTaskSchema = z.strictObject({
   attempt: z.number().int().nonnegative().max(20),
   assignment: executionAssignmentSchema.nullable(),
   deferredProviderIds: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  verifiedRecoveryEvidenceDigest: digest.nullable().optional(),
   lease: executionLeaseSchema.nullable(),
   implementationEvidence: z.array(digest).max(100),
   validations: z.array(executionValidationSchema).max(100),

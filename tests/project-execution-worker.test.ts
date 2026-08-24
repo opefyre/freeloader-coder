@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { ProjectExecutionService } from "../apps/core/src/project-execution-service.js";
 import { ProjectExecutionWorker, type ProjectExecutionAdapters } from "../apps/core/src/project-execution-worker.js";
+import type { ExecutionCandidate, ExecutionTask } from "../packages/orchestration/src/project-execution.js";
 import { completeDeliveryPlan } from "./delivery-plan-fixture.js";
 
 const projectId = "project_abcdef0123456789";
@@ -83,6 +84,38 @@ test("provider proposal contract failure rotates automatically before workspace 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("freshly verified quarantine recovery skips model reimplementation and resumes at validation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-verified-recovery-"));
+  try {
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate()]);
+    const lease = claimed.task!.lease!;
+    let task: ExecutionTask = await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    task = await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 1, evidenceDigest: digest });
+    task = await service.assessHealing(projectId, taskId, lease.leaseId, "worker-a", { failureClass: "implementation", changedFiles: ["src/app.ts"], policy: { maxAttempts: 0, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["typecheck", "unit"], requiredReviewRoles: ["functional", "design"], minimumGoldenScore: 90 }, goldenScore: 100, previousGoldenScore: 100 });
+    const recovered = await service.authorizeQuarantineRecovery(projectId, { taskId, expectedRevision: task.revision, approvalId: "approval_1234567890abcdef1234", rationale: "Fresh deterministic repair evidence passed every required validation profile." }, [
+      { profile: "typecheck", passed: true, exitCode: 0, evidenceDigest: evidence },
+      { profile: "unit", passed: true, exitCode: 0, evidenceDigest: evidence },
+    ]);
+    assert.match(recovered.verifiedRecoveryEvidenceDigest ?? "", /^[a-f0-9]{64}$/);
+    let implementCalls = 0;
+    const adapters: ProjectExecutionAdapters = {
+      candidates: async () => [candidate()],
+      implement: async () => { implementCalls += 1; return implementation(); },
+      validate: async (_project, _task, tier) => ({ tier, commandLabel: tier, passed: true, exitCode: 0, evidenceDigest: evidence }),
+      classifyFailure: async () => "implementation",
+      healingPolicy: async () => ({ maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["typecheck", "unit"], requiredReviewRoles: ["functional", "design"], minimumGoldenScore: 90 }),
+      heal: async () => implementation(),
+      review: async () => [review("functional-reviewer", "gemini", "functional"), review("design-reviewer", "cloudflare", "design")],
+      integrate: async () => ({ commitDigest: evidence, integrationDigest: evidence, validation: { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: evidence } }),
+    };
+    const result = await new ProjectExecutionWorker(service, adapters, "worker-b", 30_000).tick(projectId);
+    assert.equal(implementCalls, 0);
+    assert.equal(result?.tasks[0]?.status, "completed");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("post-completion observer failure preserves completion and does not halt autonomous continuation", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-observer-failure-"));
   try {
@@ -103,4 +136,5 @@ test("post-completion observer failure preserves completion and does not halt au
 });
 
 function implementation() { return { evidenceDigest: evidence, changedFiles: ["src/app.ts"], goldenScore: 95, previousGoldenScore: 95 }; }
+function candidate(): ExecutionCandidate { return { providerId: "groq", modelId: "coder", deviceId: "spare-mac", capabilities: ["chat", "structured_output"], privacyClasses: ["source_code"], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 4_000, deviceLoad: 0.2, preference: 10 }; }
 function review(reviewerId: string, providerId: string, role: "functional" | "design") { return { reviewerId, providerId, role, verdict: "pass" as const, findings: [{ id: `${role}-finding`, severity: "info" as const, evidenceRef: evidence, confidence: 0.99, acceptanceCriterion: "The approved behavior is implemented.", recommendedRepair: "No repair is required." }] }; }

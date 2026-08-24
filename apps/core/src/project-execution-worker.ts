@@ -42,7 +42,9 @@ export class ProjectExecutionWorker {
     const heartbeat = setInterval(() => { void this.service.heartbeat(projectId, task.id, lease.leaseId, this.workerId, this.leaseMs).catch(() => undefined); }, Math.max(5_000, Math.floor(this.leaseMs / 3)));
     heartbeat.unref();
     try {
-      let implementation = await this.adapters.implement(projectId, task, task.attempt);
+      let implementation = task.verifiedRecoveryEvidenceDigest
+        ? { evidenceDigest: task.verifiedRecoveryEvidenceDigest, changedFiles: [], goldenScore: 100, previousGoldenScore: 100 }
+        : await this.adapters.implement(projectId, task, task.attempt);
       task = await this.service.recordImplementation(projectId, task.id, lease.leaseId, this.workerId, implementation.evidenceDigest);
       while (true) {
         const fast = await this.adapters.validate(projectId, task, "fast");
