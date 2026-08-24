@@ -12,6 +12,7 @@ const MAX_OUTPUT = 256 * 1024;
 const GIT_TIMEOUT_MS = 30_000;
 const VALIDATION_TIMEOUT_MS = 10 * 60_000;
 const scripts = { format: "format:check", lint: "lint", typecheck: "typecheck", unit: "test", integration: "test:integration", build: "build", visual: "test:visual" } as const;
+const GENERATED_VALIDATION_DIRECTORIES = ["dist", "build", "coverage", ".vite"] as const;
 
 export type WorkspaceOperation = { type: "create" | "replace"; path: string; content: string; expectedBeforeDigest: string | null };
 export type WorkspaceValidation = { profile: ExecutionTask["validationProfiles"][number]; passed: boolean; exitCode: number; evidenceDigest: string; output: string };
@@ -148,6 +149,7 @@ export class ProjectTaskWorkspaceService {
   }
 
   async validate(root: string, task: ExecutionTask): Promise<WorkspaceValidation[]> {
+    await removeGeneratedValidationArtifacts(root);
     const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
     if (task.allowedFiles.includes("package.json") && task.validationProfiles.includes("unit")) {
       const testCommand = manifest.scripts?.[scripts.unit];
@@ -232,6 +234,22 @@ export class ProjectTaskWorkspaceService {
     await git(root, ["-c", "user.name=Pipeline Studio", "-c", "user.email=pipeline-studio@localhost", "revert", "--no-edit", commitDigest]);
     await git(root, ["diff", "--quiet", workspace.baseline, "HEAD"]);
     return { restoreDigest: hash(JSON.stringify({ baseline: workspace.baseline, failedCommit: commitDigest, restoredHead: (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() })) };
+  }
+}
+
+async function removeGeneratedValidationArtifacts(root: string) {
+  for (const directory of GENERATED_VALIDATION_DIRECTORIES) {
+    const target = resolve(root, directory);
+    assertWithin(root, target);
+    const tracked = await run("git", ["ls-files", "--error-unmatch", "--", directory], root, GIT_TIMEOUT_MS).then(() => true, () => false);
+    if (tracked) continue;
+    try {
+      const info = await lstat(target);
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new ProjectTaskWorkspaceError("workspace_conflict", `Generated validation path ${directory} is unsafe.`);
+      await rm(target, { recursive: true, force: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
   }
 }
 

@@ -98,6 +98,23 @@ test("validation rejects unconditional-success scripts", async () => {
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("validation removes untracked generated output before retrying project-wide checks", async () => {
+  const root = await mkdtemp(join(tmpdir(), "validator-generated-output-"));
+  try {
+    await mkdir(join(root, "dist"), { recursive: true });
+    await writeFile(join(root, "dist", "stale.js"), "stale generated output\n");
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { lint: "node -e \"const fs=require('node:fs'); if(fs.existsSync('dist')) process.exit(7)\"" } }));
+    await git(root, ["init", "-b", "main"]);
+    await git(root, ["add", "package.json"]);
+    await git(root, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const lintTask = { ...task(), validationProfiles: ["lint" as const] };
+    const result = await service.validate(root, lintTask);
+    assert.equal(result[0]?.passed, true);
+    await assert.rejects(() => readFile(join(root, "dist", "stale.js"), "utf8"), /ENOENT/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("unit validation requires and executes every task-owned test beyond the project test script", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-workspace-focused-tests-"));
   try {
