@@ -98,6 +98,25 @@ test("runtime adapter grounds a first source file in the reviewed delivery task"
   assert.deepEqual(result.changedFiles, ["src/workflow.ts"]);
 });
 
+test("scaffold implementation requires project-wide test discovery", async () => {
+  let instruction = "";
+  const workspace = { projectId, taskId, root: "/isolated", branch: "studio/task", baseline: "a".repeat(40), authorityDigest: digest };
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: 1, expiresAt: 999_999 };
+  const scaffoldTask = { ...executionTask(), allowedFiles: ["package.json", "tests/scaffold.test.ts"] };
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: { ...completeDeliveryPlan(), revision: 1, reviews: [], items: [{ ...completeDeliveryPlan().items[0]!, id: taskId, allowedFiles: scaffoldTask.allowedFiles }] } as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    { candidates: async () => [implementer], run: async (input: any) => { instruction = input.instruction; return { providerId: "groq", modelId: "coder", artifactDigest: digest, response: { summary: "Create complete scaffold", operations: [{ type: "create", path: "package.json", content: "{}\n", citations: [`delivery-plan://${taskId}`], rationale: "Create manifest." }, { type: "create", path: "tests/scaffold.test.ts", content: "export {};\n", citations: [`delivery-plan://${taskId}`], rationale: "Create test." }] } }; } },
+    { prepare: async () => workspace, sources: async () => [], apply: async () => ({ changedFiles: scaffoldTask.allowedFiles, evidenceDigest: digest }) } as any,
+    { synchronize: async () => undefined },
+  );
+  await adapters.implement(projectId, scaffoldTask, 0);
+  assert.match(instruction, /complete current and future test suite/);
+  assert.match(instruction, /must never name only tests\/scaffold\.test\.ts/);
+});
+
 test("healing normalizes a grounded create proposal into a stale-safe replacement", async () => {
   const workspace = { projectId, taskId, root: "/isolated", branch: "studio/task", baseline: "a".repeat(40), authorityDigest: digest };
   let observedType = "";
