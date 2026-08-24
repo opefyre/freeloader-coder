@@ -97,7 +97,7 @@ export class ProjectExecutionService {
   async recordImplementation(projectId: string, taskId: string, leaseId: string, ownerId: string, evidenceDigest: string) {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
       if (task.status !== "running" && task.status !== "healing") throw new ProjectExecutionError("invalid_stage", "Implementation evidence is not accepted in this stage.");
-      const updated = { ...task, status: "validating" as const, implementationEvidence: [...task.implementationEvidence, digestSchema.parse(evidenceDigest)], failureClass: null, revision: task.revision + 1, safeMessage: "Deterministic validation is running.", updatedAt: now };
+      const updated = { ...task, status: "validating" as const, deferredProviderIds: [], implementationEvidence: [...task.implementationEvidence, digestSchema.parse(evidenceDigest)], failureClass: null, revision: task.revision + 1, safeMessage: "Deterministic validation is running.", updatedAt: now };
       return { record: replaceTask(record, updated), result: updated };
     });
   }
@@ -286,6 +286,14 @@ export class ProjectExecutionService {
   async releaseForRetry(projectId: string, taskId: string, leaseId: string, ownerId: string, safeMessage: string) {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
       const updated: ExecutionTask = { ...task, status: "queued", assignment: null, lease: null, revision: task.revision + 1, safeMessage, updatedAt: now };
+      return { record: projectState(replaceTask(record, updated), now), result: updated };
+    });
+  }
+
+  async releaseContractFailureForRetry(projectId: string, taskId: string, leaseId: string, ownerId: string, providerId: string, safeMessage: string) {
+    return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
+      const deferredProviderIds = [...new Set([...(task.deferredProviderIds ?? []), providerId])].slice(-20);
+      const updated: ExecutionTask = { ...task, status: "queued", attempt: Math.min(20, task.attempt + 1), assignment: null, deferredProviderIds, lease: null, failureClass: "implementation", revision: task.revision + 1, safeMessage, updatedAt: now };
       return { record: projectState(replaceTask(record, updated), now), result: updated };
     });
   }

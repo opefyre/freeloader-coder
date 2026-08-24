@@ -62,7 +62,7 @@ test("integration conflict pauses safely, preserves non-completion, and publishe
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("provider proposal contract failure is contained as repairable implementation attention", async () => {
+test("provider proposal contract failure rotates automatically before workspace mutation", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-proposal-contract-"));
   try {
     const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
@@ -74,10 +74,12 @@ test("provider proposal contract failure is contained as repairable implementati
       review: async () => [], integrate: async () => ({ commitDigest: evidence, integrationDigest: evidence, validation: { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: evidence } }),
     };
     const result = await new ProjectExecutionWorker(service, adapters, "worker-a", 30_000).tick(projectId);
-    assert.equal(result?.state, "needs_user");
-    assert.equal(result?.tasks[0]?.status, "needs_user");
+    assert.equal(result?.state, "running");
+    assert.equal(result?.tasks[0]?.status, "queued");
     assert.equal(result?.tasks[0]?.failureClass, "implementation");
-    assert.match(result?.tasks[0]?.safeMessage ?? "", /failed strict response contract/);
+    assert.equal(result?.tasks[0]?.attempt, 1);
+    assert.deepEqual(result?.tasks[0]?.deferredProviderIds, ["groq"]);
+    assert.match(result?.tasks[0]?.safeMessage ?? "", /rotated to another eligible free provider automatically/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

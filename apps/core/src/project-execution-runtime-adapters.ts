@@ -35,14 +35,16 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
 
   async candidates(projectId: string, task: ExecutionTask) {
     const candidates = await this.model.candidates(await this.permit(projectId), "implementer");
+    const withoutDeferred = candidates.filter((candidate) => !(task.deferredProviderIds ?? []).includes(candidate.providerId));
+    const available = withoutDeferred.length > 0 ? withoutDeferred : candidates;
     const rejected = task.reviewAttempts?.at(-1);
-    if (!rejected?.implementerProviderId) return candidates;
+    if (!rejected?.implementerProviderId) return available;
     const priorPassedEveryGate = rejected.validations.some((validation) => validation.tier === "full" && validation.passed)
       && rejected.reviews.length > 0
       && rejected.reviews.every((review) => review.verdict === "pass");
-    if (priorPassedEveryGate) return candidates;
-    const rotated = candidates.filter((candidate) => candidate.providerId !== rejected.implementerProviderId);
-    return rotated.length > 0 ? rotated : candidates;
+    if (priorPassedEveryGate) return available;
+    const rotated = available.filter((candidate) => candidate.providerId !== rejected.implementerProviderId);
+    return rotated.length > 0 ? rotated : available;
   }
 
   async implement(projectId: string, task: ExecutionTask, attempt: number) {

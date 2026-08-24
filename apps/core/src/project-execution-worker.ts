@@ -83,8 +83,19 @@ export class ProjectExecutionWorker {
       return await this.service.get(projectId);
     } catch (error) {
       if (task.status === "completed") return await this.service.get(projectId);
+      const proposalContractFailure = error instanceof Error && /Provider proposal (?:failed strict response contract|exceeded grounded file authority|conflicts with observed file state|omitted required task files)/.test(error.message);
       if (error instanceof FreeProviderExecutionError && (error.code === "capacity_unavailable" || error.code === "provider_failed")) {
         await this.service.releaseForRetry(projectId, task.id, lease.leaseId, this.workerId, "The assigned free provider is temporarily unavailable. The task is safely queued for its next eligible window.");
+      } else if (proposalContractFailure && task.assignment) {
+        const policy = await this.adapters.healingPolicy(projectId, task);
+        if (task.attempt < policy.maxAttempts) {
+          await this.service.releaseContractFailureForRetry(projectId, task.id, lease.leaseId, this.workerId, task.assignment.providerId, "The provider response failed the source contract before any workspace mutation. Codkesh rotated to another eligible free provider automatically.");
+          await this.adapters.observe?.(projectId, task).catch(() => undefined);
+          return await this.service.get(projectId);
+        }
+        await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, "Execution needs attention: Every bounded provider-output repair attempt failed the source contract before mutation.", "implementation");
+        await this.adapters.observe?.(projectId, task).catch(() => undefined);
+        return await this.service.get(projectId);
       } else {
         const failureClass = error instanceof ProjectTaskWorkspaceError && !["canonical_dirty", "repository_invalid"].includes(error.code)
           ? "implementation" as const
