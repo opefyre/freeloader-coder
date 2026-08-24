@@ -231,7 +231,7 @@ test("independent review rotates to another eligible free provider when one reje
         if (input.role === "implementer") return { providerId: "groq", modelId: "coder", artifactDigest: "a".repeat(64), response: { summary: "Prepare review fixture", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Prepare the reviewed change." }] } };
         attempted.push(input.assignment.providerId);
         reviewSystems.push(input.system);
-        if (input.assignment.providerId === "kilo") throw new Error("message contract rejected");
+        if (input.assignment.providerId === "kilo") return { providerId: "kilo", modelId: "reviewer", artifactDigest: "b".repeat(64), response: { reviewerId: "contradictory-reviewer", verdict: "pass", findings: [{ id: "blocking", severity: "major", evidenceRef: digest, confidence: 0.9, acceptanceCriterion: "Approved behavior is present.", recommendedRepair: "Change the approved behavior." }] } };
         const role = input.taskId.endsWith("security") ? "security" : "functional";
         return { providerId: input.assignment.providerId, modelId: "reviewer", artifactDigest: "b".repeat(64), response: { reviewerId: `${role}-reviewer`, verdict: "pass", findings: [] } };
       },

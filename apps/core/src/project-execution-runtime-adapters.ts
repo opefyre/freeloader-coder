@@ -173,6 +173,9 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
             instruction: JSON.stringify({ role, title: task.title, acceptanceCriteria: item?.acceptanceCriteria ?? [], currentValidationEvidence: latestValidationEvidence(task), validationHistory: task.validations.map((validation) => ({ tier: validation.tier, passed: validation.passed, evidenceDigest: validation.evidenceDigest, observedAt: validation.observedAt })), response: { reviewerId: "stable reviewer identity", verdict: "pass|fail|needs_user", findings: [{ id: "string", severity: "info|minor|major|critical", evidenceRef: "source or validation digest", confidence: 0.9, acceptanceCriterion: "criterion", recommendedRepair: "action" }] } }),
             sources: sources.map((source) => ({ name: source.path, content: source.content })), responseSchema: reviewResponseSchema(), maxOutputTokens: 8_000 });
           const parsed = reviewSchema.parse(result.response);
+          if (parsed.verdict === "pass" && parsed.findings.some((finding) => finding.severity === "major" || finding.severity === "critical")) {
+            throw new Error("Reviewer response is internally contradictory: a passing verdict cannot contain blocking findings.");
+          }
           reviews.push({ reviewerId: `${result.providerId}/${result.modelId}/${role}/${parsed.reviewerId}`.slice(0, 160), providerId: result.providerId, role, verdict: parsed.verdict, findings: parsed.findings });
           completed = true;
           break;
