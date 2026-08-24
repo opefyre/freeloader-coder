@@ -597,7 +597,14 @@ const controlPlane = createControlPlaneServer({
           const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
           await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
         }
-        if (verification) await projectExecutions.authorizeQuarantineRecovery(projectId, input, verification);
+        if (verification) {
+          if (verification.every((item) => item.passed && item.exitCode === 0)) {
+            await projectExecutions.authorizeQuarantineRecovery(projectId, input, verification);
+          } else {
+            const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
+            await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
+          }
+        }
       } else if (task && ["needs_user", "quarantined"].includes(task.status) && (task.reviews.some((review) => review.verdict !== "pass") || (task.status === "needs_user" && task.reviews.length > 0 && (task.failureClass === "implementation" || task.safeMessage.includes("Post-integration validation") || task.safeMessage === "Execution needs attention: Commit changes do not match exact file authority.")) || (task.status === "needs_user" && task.implementationEvidence.length === 0 && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state)/.test(task.safeMessage)))) {
         const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
         await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
