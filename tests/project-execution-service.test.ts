@@ -299,7 +299,7 @@ test("repeated validation failures exhaust the bounded repair budget and quarant
     const policy = { maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["typecheck", "test"], requiredReviewRoles: ["functional", "design"], minimumGoldenScore: 90 };
     for (let cycle = 0; cycle < 3; cycle += 1) {
       task = await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
-      task = await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 1, evidenceDigest: evidence });
+      task = await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 1, evidenceDigest: `${cycle}`.repeat(64) });
       task = await service.assessHealing(projectId, taskId, lease.leaseId, "worker-a", { failureClass: "implementation", changedFiles: ["src/app.ts"], policy, goldenScore: 95, previousGoldenScore: 95 });
     }
     assert.equal(task.status, "quarantined");
@@ -324,6 +324,26 @@ test("repeated validation failures exhaust the bounded repair budget and quarant
     assert.equal(recovered.status, "queued");
     assert.equal(recovered.attempt, 2, "recovery preserves the exhausted repair history");
     assert.equal(recovered.validations.length, 3, "recovery preserves failed validation evidence");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("identical validation evidence stops automatic healing without exhausting the budget", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-no-progress-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    let task = claimed.task!;
+    task = await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    task = await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 1, evidenceDigest: evidence });
+    task = await service.assessHealing(projectId, taskId, lease.leaseId, "worker-a", { failureClass: "implementation", changedFiles: ["src/app.ts"], policy: { maxAttempts: 10, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["typecheck"], requiredReviewRoles: ["functional", "security"], minimumGoldenScore: 90 }, goldenScore: 95, previousGoldenScore: 95 });
+    task = await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    task = await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: false, exitCode: 1, evidenceDigest: evidence });
+    task = await service.assessHealing(projectId, taskId, lease.leaseId, "worker-a", { failureClass: "implementation", changedFiles: ["src/app.ts"], policy: { maxAttempts: 10, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["typecheck"], requiredReviewRoles: ["functional", "security"], minimumGoldenScore: 90 }, goldenScore: 95, previousGoldenScore: 95 });
+    assert.equal(task.status, "needs_user");
+    assert.equal(task.attempt, 1);
+    assert.match(task.safeMessage, /same validation failure repeated/i);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

@@ -89,7 +89,8 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     });
     const applied = await this.workspaces.apply(workspace, task, operations);
     const dependencies = await this.workspaces.prepareDependencies?.(workspace, task) ?? null;
-    return { evidenceDigest: hash(`${result.artifactDigest}:${applied.evidenceDigest}:${dependencies?.evidenceDigest ?? "no-dependency-step"}`), changedFiles: dependencies?.changedFiles ?? applied.changedFiles, goldenScore: 100, previousGoldenScore: 100 };
+    const formatting = await this.workspaces.formatAuthorizedFiles?.(workspace, task) ?? null;
+    return { evidenceDigest: hash(`${result.artifactDigest}:${applied.evidenceDigest}:${dependencies?.evidenceDigest ?? "no-dependency-step"}:${formatting?.evidenceDigest ?? "no-format-step"}`), changedFiles: [...new Set([...(dependencies?.changedFiles ?? applied.changedFiles), ...(formatting?.changedFiles ?? [])])], goldenScore: 100, previousGoldenScore: 100 };
   }
 
   async validate(projectId: string, task: ExecutionTask, tier: "fast" | "full"): Promise<WorkerValidation> {
@@ -108,6 +109,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     const workspace = this.#workspaces.get(key(projectId, task.id)) ?? await this.workspaces.prepare(projectId, root, task);
     this.#workspaces.set(key(projectId, task.id), workspace);
     await this.workspaces.prepareDependencies?.(workspace, task);
+    await this.workspaces.formatAuthorizedFiles?.(workspace, task);
     const results = await this.workspaces.validate(workspace.root, task);
     if (results.some((result) => !result.passed)) this.#validationFeedback.set(key(projectId, task.id), results.filter((result) => !result.passed).map((result) => ({ profile: result.profile, exitCode: result.exitCode, output: result.output.slice(0, 8_000) })));
     return results;

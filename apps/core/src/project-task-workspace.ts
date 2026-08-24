@@ -133,6 +133,19 @@ export class ProjectTaskWorkspaceService {
     return { changedFiles: changed, evidenceDigest: hash(JSON.stringify({ authorityDigest: workspace.authorityDigest, command: "npm-install-lock-and-ci-ignore-scripts", changed })) };
   }
 
+  async formatAuthorizedFiles(workspace: PreparedTaskWorkspace, task: ExecutionTask) {
+    if (!task.validationProfiles.includes("format")) return null;
+    const manifest = JSON.parse(await readFile(resolve(workspace.root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+    const command = manifest.scripts?.[scripts.format];
+    if (!command || !/\bprettier\b.*\b--check\b/.test(command)) return null;
+    const files = await existingAllowedFiles(workspace.root, task.allowedFiles);
+    await run(resolve(workspace.root, "node_modules", ".bin", "prettier"), ["--write", ...files], workspace.root, VALIDATION_TIMEOUT_MS);
+    const changed = parseChanged(await git(workspace.root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]));
+    const allowed = new Set(task.allowedFiles);
+    if (changed.some((path) => !allowed.has(path))) throw new ProjectTaskWorkspaceError("operation_denied", "Deterministic formatting changed files outside exact task authority.");
+    return { changedFiles: changed, evidenceDigest: hash(JSON.stringify({ authorityDigest: workspace.authorityDigest, command: "prettier-write-authorized-files", changed })) };
+  }
+
   async validate(root: string, task: ExecutionTask): Promise<WorkspaceValidation[]> {
     const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
     if (task.allowedFiles.includes("package.json") && task.validationProfiles.includes("unit")) {

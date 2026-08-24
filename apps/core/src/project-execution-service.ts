@@ -144,6 +144,12 @@ export class ProjectExecutionService {
     return this.#updateOwned(projectId, taskId, leaseId, ownerId, (record, task, now) => {
       if (task.status !== "validating") throw new ProjectExecutionError("invalid_stage", "Healing assessment requires failed validation evidence.");
       if (!task.validations.some((validation) => !validation.passed)) throw new ProjectExecutionError("validation_required", "Healing requires observed failed validation.");
+      const failures = task.validations.filter((validation) => !validation.passed);
+      if (failures.length >= 2 && failures.at(-1)?.evidenceDigest === failures.at(-2)?.evidenceDigest) {
+        const updated = { ...task, status: "needs_user" as const, failureClass: input.failureClass, lease: null, revision: task.revision + 1, safeMessage: "The same validation failure repeated without new evidence. Automatic retries stopped to preserve the repair budget.", updatedAt: now };
+        const next = projectState(replaceTask(record, updated), now);
+        return { record: next, result: updated };
+      }
       const healing = planHealing({ ...input, attempt: task.attempt });
       const status = healing.status === "repairable" ? "healing" as const : healing.status === "needs_user" ? "needs_user" as const : "quarantined" as const;
       const updated = { ...task, status, attempt: healing.status === "repairable" ? task.attempt + 1 : task.attempt, failureClass: healing.failureClass, lease: healing.status === "repairable" ? task.lease : null, revision: task.revision + 1, safeMessage: healing.status === "repairable" ? "A bounded repair is authorized; all validation and review gates remain required." : healing.status === "needs_user" ? "Healing requires an owner decision or environment change." : "Healing was safely quarantined by policy.", updatedAt: now };
