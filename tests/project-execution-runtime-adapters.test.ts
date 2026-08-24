@@ -147,6 +147,7 @@ test("independent review rotates to another eligible free provider when one reje
   const compatible = candidate("mistral", "provider:compatible-reviewer");
   const secondCompatible = candidate("gemini", "provider:second-compatible-reviewer");
   const attempted: string[] = [];
+  const reviewSystems: string[] = [];
   const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq", "kilo", "mistral", "gemini"], approvedAt: 1, expiresAt: 999_999 };
   const adapters = new ProjectExecutionRuntimeAdapters(
     { canonicalRoot: async () => "/canonical" },
@@ -158,6 +159,7 @@ test("independent review rotates to another eligible free provider when one reje
       run: async (input: any) => {
         if (input.role === "implementer") return { providerId: "groq", modelId: "coder", artifactDigest: "a".repeat(64), response: { summary: "Prepare review fixture", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Prepare the reviewed change." }] } };
         attempted.push(input.assignment.providerId);
+        reviewSystems.push(input.system);
         if (input.assignment.providerId === "kilo") throw new Error("message contract rejected");
         const role = input.taskId.endsWith("security") ? "security" : "functional";
         return { providerId: input.assignment.providerId, modelId: "reviewer", artifactDigest: "b".repeat(64), response: { reviewerId: `${role}-reviewer`, verdict: "pass", findings: [] } };
@@ -171,6 +173,8 @@ test("independent review rotates to another eligible free provider when one reje
   const reviews = await adapters.review(projectId, { ...task, validations: [{ tier: "fast", commandLabel: "unit", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 1 }] });
   assert.deepEqual(reviews.map((review) => review.providerId), ["mistral", "gemini"]);
   assert.deepEqual(attempted, ["kilo", "mistral", "gemini"]);
+  assert.ok(reviewSystems.every((system) => system.includes("must not fail code for an alleged parse, format, lint, typecheck, build, or test error")));
+  assert.ok(reviewSystems.every((system) => system.includes("tsconfig.json is TypeScript JSONC")));
 });
 
 function candidate(providerId: string, deviceId: string): ExecutionCandidate { return { providerId, modelId: providerId === "groq" ? "coder" : "reviewer", deviceId, capabilities: ["chat", "structured_output"], privacyClasses: ["source_code"], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 1, requiredMemoryMb: 0, deviceLoad: 0, preference: 10 }; }
