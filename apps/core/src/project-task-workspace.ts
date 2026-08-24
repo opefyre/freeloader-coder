@@ -137,7 +137,7 @@ export class ProjectTaskWorkspaceService {
     if (!task.validationProfiles.includes("format")) return null;
     const manifest = JSON.parse(await readFile(resolve(workspace.root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
     const command = manifest.scripts?.[scripts.format];
-    if (!command || !/\bprettier\b.*\b--check\b/.test(command)) return null;
+    if (!command || !isPrettierCheck(command)) return null;
     const files = (await existingAllowedFiles(workspace.root, task.allowedFiles)).filter(isPrettierSupportedFile);
     if (files.length === 0) return null;
     await run(resolve(workspace.root, "node_modules", ".bin", "prettier"), ["--write", ...files], workspace.root, VALIDATION_TIMEOUT_MS);

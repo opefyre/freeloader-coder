@@ -142,6 +142,7 @@ test("deterministic formatting skips extensionless control files outside the dec
     const service = new ProjectTaskWorkspaceService(join(root, "state"));
     const formatTask = { ...task(), allowedFiles: [".gitignore", "tests/feature.test.ts"], validationProfiles: ["format" as const] };
     const workspace = await service.prepare("project_abcdef0123456789", root, formatTask);
+    await service.prepareDependencies(workspace, formatTask);
     const result = await service.formatAuthorizedFiles(workspace, formatTask);
     assert.deepEqual(result?.changedFiles, ["tests/feature.test.ts"]);
     assert.equal(await readFile(join(workspace.root, ".gitignore"), "utf8"), "node_modules/\n");
