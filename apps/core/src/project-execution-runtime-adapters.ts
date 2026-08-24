@@ -129,7 +129,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
   }
 
   async classifyFailure(_projectId: string, _task: ExecutionTask, validation: WorkerValidation) { return validation.exitCode === 124 ? "environment" as const : "implementation" as const; }
-  async healingPolicy(_projectId: string, task: ExecutionTask) { return { maxAttempts: 3, allowedFiles: task.allowedFiles, protectedPaths: [".git", ".env", "secrets", "credentials"], requiredChecks: task.validationProfiles, requiredReviewRoles: task.uiChanged ? ["functional" as const, "design" as const] : ["functional" as const, "security" as const], minimumGoldenScore: 90 }; }
+  async healingPolicy(_projectId: string, task: ExecutionTask) { return { maxAttempts: 5, allowedFiles: task.allowedFiles, protectedPaths: [".git", ".env", "secrets", "credentials"], requiredChecks: task.validationProfiles, requiredReviewRoles: task.uiChanged ? ["functional" as const, "design" as const] : ["functional" as const, "security" as const], minimumGoldenScore: 90 }; }
   async heal(projectId: string, task: ExecutionTask, attempt: number) { return this.implement(projectId, task, attempt); }
 
   async review(projectId: string, task: ExecutionTask): Promise<readonly QualityReview[]> {

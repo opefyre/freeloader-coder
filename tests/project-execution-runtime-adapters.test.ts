@@ -58,9 +58,9 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
   );
   const task = executionTask();
   assert.equal((await adapters.candidates(projectId))[0]?.providerId, "groq");
-  assert.equal((await adapters.healingPolicy(projectId, task)).maxAttempts, 3);
-  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 7 })).maxAttempts, 3);
-  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 9 })).maxAttempts, 3);
+  assert.equal((await adapters.healingPolicy(projectId, task)).maxAttempts, 5);
+  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 7 })).maxAttempts, 5);
+  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 9 })).maxAttempts, 5);
   const implementation = await adapters.implement(projectId, task, 0);
   assert.deepEqual(implementation.changedFiles, ["src/workflow.ts"]);
   assert.equal((await adapters.validate(projectId, task, "fast")).passed, true);
