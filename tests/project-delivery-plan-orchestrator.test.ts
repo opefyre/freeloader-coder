@@ -74,6 +74,7 @@ test("free-provider planning exhaustion falls back to a complete local plan and 
   assert.deepEqual(scaffold.dependencies, []);
   assert.ok(scaffold.allowedFiles.includes(".gitignore"));
   assert.ok(scaffold.allowedFiles.includes(".prettierignore"));
+  assert.ok(scaffold.implementationNotes.some((note: string) => note.startsWith("Complete downstream dependency inventory:")));
   assert.ok(subtasks.filter((item: any) => item.id !== scaffold.id).every((item: any) => item.dependencies.includes(scaffold.id)));
   const ux = subtasks.find((item: any) => draft.coverage.find((entry: any) => entry.requirement === "user_experience").itemIds.includes(item.id));
   assert.ok(ux.allowedFiles.includes("index.html"));
