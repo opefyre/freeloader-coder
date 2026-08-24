@@ -219,6 +219,25 @@ test("owner can repair a provider proposal that omitted a required task file", a
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner can repair a formatter parse failure before implementation evidence is recorded", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-formatter-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    const interrupted = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "Execution needs attention: Command failed: /isolated/node_modules/.bin/prettier --write src/app.ts\n[error] src/app.ts: SyntaxError: Expression expected.", "implementation");
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, {
+      approvalId: "approval_66666666666666666666",
+      expectedRevision: interrupted.revision,
+      rationale: "Repair the malformed bounded source before rerunning every gate.",
+    });
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.attempt, 0);
+    assert.equal(repaired.reviewAttempts?.length, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("owner-authorized deterministic validation repair preserves its bounded budget and archives failed proof", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-validation-repair-"));
   try {
