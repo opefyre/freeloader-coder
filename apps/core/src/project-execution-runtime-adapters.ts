@@ -32,7 +32,17 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     private readonly jira: { synchronize(projectId: string): Promise<unknown> }
   ) {}
 
-  async candidates(projectId: string) { return this.model.candidates(await this.permit(projectId), "implementer"); }
+  async candidates(projectId: string, task: ExecutionTask) {
+    const candidates = await this.model.candidates(await this.permit(projectId), "implementer");
+    const rejected = task.reviewAttempts?.at(-1);
+    if (!rejected?.implementerProviderId) return candidates;
+    const priorPassedEveryGate = rejected.validations.some((validation) => validation.tier === "full" && validation.passed)
+      && rejected.reviews.length > 0
+      && rejected.reviews.every((review) => review.verdict === "pass");
+    if (priorPassedEveryGate) return candidates;
+    const rotated = candidates.filter((candidate) => candidate.providerId !== rejected.implementerProviderId);
+    return rotated.length > 0 ? rotated : candidates;
+  }
 
   async implement(projectId: string, task: ExecutionTask, attempt: number) {
     if (!task.assignment) throw new Error("Implementation requires an exact provider assignment.");

@@ -58,7 +58,7 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
     { synchronize: async () => { calls.push("jira"); } }
   );
   const task = executionTask();
-  assert.equal((await adapters.candidates(projectId))[0]?.providerId, "groq");
+  assert.equal((await adapters.candidates(projectId, task))[0]?.providerId, "groq");
   assert.equal((await adapters.healingPolicy(projectId, task)).maxAttempts, 5);
   assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 7 })).maxAttempts, 5);
   assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 9 })).maxAttempts, 5);
@@ -100,6 +100,31 @@ test("runtime adapter grounds a first source file in the reviewed delivery task"
   const result = await adapters.implement(projectId, executionTask(), 0);
   assert.equal(applied, true);
   assert.deepEqual(result.changedFiles, ["src/workflow.ts"]);
+});
+
+test("a rejected implementation cycle rotates to another eligible free provider", async () => {
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq", "gemini"], approvedAt: 1, expiresAt: 999_999 };
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: completeDeliveryPlan() as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    { candidates: async () => [implementer, reviewer], run: async () => { throw new Error("not used"); } },
+    {} as any,
+    { synchronize: async () => undefined },
+  );
+  const rejectedAttempt = {
+    approvalId: "approval_11111111111111111111",
+    priorRevision: 1,
+    implementerProviderId: "groq",
+    implementationEvidence: [digest],
+    validations: [],
+    reviews: [],
+    rationale: "The generated source did not parse.",
+    decidedAt: 1,
+  };
+  const candidates = await adapters.candidates(projectId, { ...executionTask(), reviewAttempts: [rejectedAttempt] });
+  assert.deepEqual(candidates.map((candidate) => candidate.providerId), ["gemini"]);
 });
 
 test("scaffold implementation requires project-wide test discovery", async () => {
