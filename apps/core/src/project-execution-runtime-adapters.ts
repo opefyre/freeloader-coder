@@ -94,7 +94,9 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
         response: { summary: "string", operations: [{ type: "create|replace", path: "exact allowed path", content: "complete UTF-8 file", citations: ["supplied source name"], rationale: "string" }] }
       }),
       sources: groundingSources, responseSchema: implementationResponseSchema(editableFiles, groundingSources.map((source) => source.name)), maxOutputTokens: 32_000 });
-    const proposal = implementationSchema.parse(result.response);
+    const parsedProposal = implementationSchema.safeParse(result.response);
+    if (!parsedProposal.success) throw new Error(`Provider proposal failed strict response contract: ${parsedProposal.error.issues.map((issue) => `${issue.path.join(".") || "response"} ${issue.message}`).join("; ")}`);
+    const proposal = parsedProposal.data;
     const sourceByPath = new Map(sources.map((source) => [source.path, source]));
     const citationNames = new Set(groundingSources.map((source) => source.name));
     const allowed = new Set(editableFiles);
@@ -205,7 +207,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
   private requireWorkspace(projectId: string, taskId: string) { const workspace = this.#workspaces.get(key(projectId, taskId)); if (!workspace) throw new Error("Task workspace is not active in this controller process."); return workspace; }
 }
 
-function implementationResponseSchema(allowedFiles: readonly string[], citationNames: readonly string[]) { return { type: "object", additionalProperties: false, required: ["summary", "operations"], properties: { summary: { type: "string" }, operations: { type: "array", minItems: 1, maxItems: allowedFiles.length, items: { type: "object", additionalProperties: false, required: ["type", "path", "content", "citations", "rationale"], properties: { type: { enum: ["create", "replace"] }, path: { type: "string", enum: [...allowedFiles] }, content: { type: "string" }, citations: { type: "array", minItems: 1, items: { type: "string", enum: [...citationNames] } }, rationale: { type: "string" } } } } } } as const; }
+function implementationResponseSchema(allowedFiles: readonly string[], citationNames: readonly string[]) { return { type: "object", additionalProperties: false, required: ["summary", "operations"], properties: { summary: { type: "string", minLength: 1, maxLength: 500 }, operations: { type: "array", minItems: 1, maxItems: allowedFiles.length, items: { type: "object", additionalProperties: false, required: ["type", "path", "content", "citations", "rationale"], properties: { type: { enum: ["create", "replace"] }, path: { type: "string", enum: [...allowedFiles] }, content: { type: "string" }, citations: { type: "array", minItems: 1, items: { type: "string", enum: [...citationNames] } }, rationale: { type: "string" } } } } } } as const; }
 function latestValidationEvidence(task: ExecutionTask) {
   const latest = new Map<string, ExecutionTask["validations"][number]>();
   for (const validation of task.validations) latest.set(validation.tier, validation);

@@ -88,7 +88,7 @@ export class ProjectExecutionWorker {
       } else {
         const failureClass = error instanceof ProjectTaskWorkspaceError && !["canonical_dirty", "repository_invalid"].includes(error.code)
           ? "implementation" as const
-          : error instanceof Error && /(?:Provider proposal (?:exceeded grounded file authority|conflicts with observed file state|omitted required task files)|Command failed:[\s\S]{0,600}\bprettier --write\b)/.test(error.message)
+          : error instanceof Error && /(?:Provider proposal (?:failed strict response contract|exceeded grounded file authority|conflicts with observed file state|omitted required task files)|Command failed:[\s\S]{0,600}\bprettier --write\b)/.test(error.message)
           ? "implementation" as const
           : undefined;
         await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, safeError(error), failureClass);
