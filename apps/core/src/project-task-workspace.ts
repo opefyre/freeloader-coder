@@ -138,7 +138,8 @@ export class ProjectTaskWorkspaceService {
     const manifest = JSON.parse(await readFile(resolve(workspace.root, "package.json"), "utf8")) as { scripts?: Record<string, string> };
     const command = manifest.scripts?.[scripts.format];
     if (!command || !/\bprettier\b.*\b--check\b/.test(command)) return null;
-    const files = await existingAllowedFiles(workspace.root, task.allowedFiles);
+    const files = (await existingAllowedFiles(workspace.root, task.allowedFiles)).filter(isPrettierSupportedFile);
+    if (files.length === 0) return null;
     await run(resolve(workspace.root, "node_modules", ".bin", "prettier"), ["--write", ...files], workspace.root, VALIDATION_TIMEOUT_MS);
     const changed = parseChanged(await git(workspace.root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]));
     const allowed = new Set(task.allowedFiles);
@@ -163,8 +164,8 @@ export class ProjectTaskWorkspaceService {
       }
       try {
         const command = manifest.scripts[script];
-        const result = profile === "format" && isScopedPrettierCheck(command)
-          ? await run(resolve(root, "node_modules", ".bin", "prettier"), ["--check", ...await existingAllowedFiles(root, task.allowedFiles)], root, VALIDATION_TIMEOUT_MS)
+        const result = profile === "format" && isPrettierCheck(command)
+          ? await run(resolve(root, "node_modules", ".bin", "prettier"), ["--check", ...(await existingAllowedFiles(root, task.allowedFiles)).filter(isPrettierSupportedFile)], root, VALIDATION_TIMEOUT_MS)
           : profile === "typecheck" && isScopedTypeScriptCheck(command)
             ? await run(resolve(root, "node_modules", ".bin", "tsc"), ["--noEmit", "--typeRoots", "./node_modules/@types"], root, VALIDATION_TIMEOUT_MS)
             : profile === "unit"
@@ -243,8 +244,8 @@ function isNoOpValidationScript(command: string) {
     || /console\.log\s*\(/.test(normalized) && !/[;&|]\s*(?:node|npm|npx|tsc|eslint|prettier|vitest|jest)\b/.test(normalized);
 }
 
-function isScopedPrettierCheck(command: string) {
-  return /^prettier --check \.(?: --ignore-unknown)?$/.test(command.trim().replace(/\s+/g, " "));
+function isPrettierCheck(command: string) {
+  return /(?:^|\s)prettier\s+--check(?:\s|$)/.test(command.trim().replace(/\s+/g, " "));
 }
 
 function isScopedTypeScriptCheck(command: string) {
@@ -271,6 +272,10 @@ async function existingAllowedFiles(root: string, allowedFiles: readonly string[
   }
   if (existing.length === 0) throw new ProjectTaskWorkspaceError("validation_unavailable", "No authorized files are available for formatting validation.");
   return existing;
+}
+
+function isPrettierSupportedFile(path: string) {
+  return /\.(?:[cm]?[jt]sx?|json|md|mdx|css|scss|less|html|ya?ml|graphql|gql)$/i.test(path);
 }
 
 async function runUnitValidation(root: string, task: ExecutionTask) {

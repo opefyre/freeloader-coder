@@ -224,6 +224,21 @@ test("owner-authorized deterministic validation repair preserves its bounded bud
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("legacy workspace lifecycle interruption can resume without erasing preserved implementation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-legacy-workspace-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate], 60_000);
+    const task = claimed.task!;
+    await service.interrupt(projectId, task.id, task.lease!.leaseId, "worker-a", "Execution needs attention: ENOENT: no such file or directory, open '/tmp/project-task-worktrees/task/package.json'", "product_decision");
+    const interrupted = (await service.get(projectId))!.tasks[0]!;
+    const resumed = await service.authorizeEnvironmentRetry(projectId, { taskId: interrupted.id, expectedRevision: interrupted.revision, rationale: "Verified lifecycle fix is active." });
+    assert.equal(resumed.status, "queued");
+    assert.equal(resumed.reviewAttempts?.length ?? 0, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("owner can revalidate unchanged delivered files after a legacy post-review commit-authority stop", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-commit-revalidation-"));
   try {

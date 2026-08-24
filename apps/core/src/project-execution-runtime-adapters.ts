@@ -37,7 +37,10 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
   async implement(projectId: string, task: ExecutionTask, attempt: number) {
     if (!task.assignment) throw new Error("Implementation requires an exact provider assignment.");
     const root = await this.roots.canonicalRoot(projectId);
-    const isRepair = task.implementationEvidence.length === 0 && (task.reviewAttempts?.length ?? 0) > 0;
+    const latestAttempt = task.reviewAttempts?.at(-1);
+    const isRepair = task.implementationEvidence.length === 0 && Boolean(latestAttempt && (
+      latestAttempt.reviews.length > 0 || latestAttempt.implementationEvidence.length === 0
+    ));
     if (isRepair) this.#workspaces.delete(key(projectId, task.id));
     const workspace = this.#workspaces.get(key(projectId, task.id)) ?? await this.workspaces.prepare(projectId, root, task);
     if (isRepair) await this.workspaces.resetAuthorizedFiles(workspace, task);
@@ -79,6 +82,10 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     const sourceByPath = new Map(sources.map((source) => [source.path, source]));
     const citationNames = new Set(groundingSources.map((source) => source.name));
     const allowed = new Set(editableFiles);
+    const proposedPaths = new Set(proposal.operations.map((operation) => operation.path));
+    const generatedPaths = new Set(editableFiles.includes("package.json") ? ["package-lock.json"] : []);
+    const omitted = editableFiles.filter((path) => !sourceByPath.has(path) && !proposedPaths.has(path) && !generatedPaths.has(path));
+    if (omitted.length > 0) throw new Error(`Provider proposal omitted required task files: ${omitted.join(", ")}.`);
     const operations: WorkspaceOperation[] = proposal.operations.map((operation) => {
       if (!allowed.has(operation.path) || operation.citations.some((citation) => !citationNames.has(citation))) throw new Error("Provider proposal exceeded grounded file authority.");
       const source = sourceByPath.get(operation.path);

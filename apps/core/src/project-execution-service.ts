@@ -292,7 +292,11 @@ export class ProjectExecutionService {
       const task = record.tasks.find((candidate) => candidate.id === retry.taskId);
       if (!task) throw new ProjectExecutionError("not_found", "Execution task was not found.");
       if (task.revision !== retry.expectedRevision) throw new ProjectExecutionError("stale_revision", "Execution evidence changed. Review the latest state before retrying.");
-      if (task.status !== "needs_user" || task.lease || task.reviews.length > 0 || task.commitDigest || task.integrationDigest || (task.failureClass && !["implementation", "environment"].includes(task.failureClass))) {
+      const legacyWorkspaceLifecycleFailure = task.failureClass === "product_decision"
+        && task.safeMessage.includes("ENOENT: no such file or directory")
+        && task.safeMessage.includes("project-task-worktrees")
+        && task.safeMessage.endsWith("package.json'");
+      if (task.status !== "needs_user" || task.lease || task.reviews.length > 0 || task.commitDigest || task.integrationDigest || (task.failureClass && !["implementation", "environment"].includes(task.failureClass) && !legacyWorkspaceLifecycleFailure)) {
         throw new ProjectExecutionError("retry_denied", "Only a pre-review, pre-commit environment failure can be resumed with this action.");
       }
       const now = this.now();

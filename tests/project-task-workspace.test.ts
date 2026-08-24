@@ -130,6 +130,25 @@ test("new-product scaffold rejects a test command that can never discover downst
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("deterministic formatting skips extensionless control files outside the declared Prettier corpus", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-workspace-format-authority-"));
+  try {
+    await mkdir(join(root, "tests"), { recursive: true });
+    await writeFile(join(root, "package.json"), JSON.stringify({ scripts: { "format:check": "prettier --check \"**/*.{ts,js,json,md}\"" }, devDependencies: { prettier: "3.2.4" } }));
+    await writeFile(join(root, ".gitignore"), "node_modules/\n");
+    await writeFile(join(root, "tests", "feature.test.ts"), "const value={answer:42}\n");
+    await run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: root });
+    await git(root, ["init", "-b", "main"]); await git(root, ["add", "."]); await git(root, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const formatTask = { ...task(), allowedFiles: [".gitignore", "tests/feature.test.ts"], validationProfiles: ["format" as const] };
+    const workspace = await service.prepare("project_abcdef0123456789", root, formatTask);
+    const result = await service.formatAuthorizedFiles(workspace, formatTask);
+    assert.deepEqual(result?.changedFiles, ["tests/feature.test.ts"]);
+    assert.equal(await readFile(join(workspace.root, ".gitignore"), "utf8"), "node_modules/\n");
+    assert.equal((await service.validate(workspace.root, formatTask))[0]?.passed, true);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("isolated workspace rejects unauthorized paths and stale replacement evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-task-denial-"));
   const repository = join(root, "repo");

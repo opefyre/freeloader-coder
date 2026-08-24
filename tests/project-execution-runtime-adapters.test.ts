@@ -115,6 +115,33 @@ test("healing normalizes a grounded create proposal into a stale-safe replacemen
   assert.equal(observedType, "replace");
 });
 
+test("validation-only recovery preserves the verified workspace instead of erasing prior implementation", async () => {
+  const workspace = { projectId, taskId, root: "/isolated", branch: "studio/task", baseline: "a".repeat(40), authorityDigest: digest };
+  let resets = 0;
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: 1, expiresAt: 999_999 };
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: { ...completeDeliveryPlan(), revision: 1, reviews: [] } as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    { candidates: async () => [implementer], run: async () => ({ providerId: "groq", modelId: "coder", artifactDigest: "a".repeat(64), response: { summary: "Preserve and refine implementation", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Apply the bounded validation correction." }] } }) },
+    {
+      prepare: async () => workspace,
+      resetAuthorizedFiles: async () => { resets += 1; },
+      sources: async () => [{ path: "src/workflow.ts", content: "export const value = 1;\n", digest }],
+      apply: async () => ({ changedFiles: ["src/workflow.ts"], evidenceDigest: digest }),
+    } as any,
+    { synchronize: async () => undefined },
+  );
+  const validationOnlyRecovery = {
+    ...executionTask(),
+    implementationEvidence: [],
+    reviewAttempts: [{ approvalId: "approval_11111111111111111111", priorRevision: 9, implementerProviderId: "gemini", implementationEvidence: [digest], validations: [{ tier: "fast" as const, commandLabel: "unit", passed: false, exitCode: 1, evidenceDigest: digest, observedAt: 1 }], reviews: [], rationale: "Retry the deterministic validation correction.", decidedAt: 2 }],
+  };
+  await adapters.implement(projectId, validationOnlyRecovery, 1);
+  assert.equal(resets, 0);
+});
+
 test("independent review rotates to another eligible free provider when one rejects the request", async () => {
   const rejected = candidate("kilo", "provider:rejected-reviewer");
   const compatible = candidate("mistral", "provider:compatible-reviewer");

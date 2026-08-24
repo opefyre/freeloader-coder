@@ -86,9 +86,9 @@ export class ProjectExecutionWorker {
       if (error instanceof FreeProviderExecutionError && (error.code === "capacity_unavailable" || error.code === "provider_failed")) {
         await this.service.releaseForRetry(projectId, task.id, lease.leaseId, this.workerId, "The assigned free provider is temporarily unavailable. The task is safely queued for its next eligible window.");
       } else {
-        const failureClass = error instanceof ProjectTaskWorkspaceError && ["operation_denied", "stale_source", "integration_conflict"].includes(error.code)
+        const failureClass = error instanceof ProjectTaskWorkspaceError && !["canonical_dirty", "repository_invalid"].includes(error.code)
           ? "implementation" as const
-          : error instanceof Error && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state)/.test(error.message)
+          : error instanceof Error && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state|omitted required task files)/.test(error.message)
           ? "implementation" as const
           : undefined;
         await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, safeError(error), failureClass);

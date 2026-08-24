@@ -589,14 +589,15 @@ const controlPlane = createControlPlaneServer({
         const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
         await projectExecutions.authorizeCompletedRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
       } else if (task && task.reviews.length === 0 && (task.status === "quarantined" || (task.status === "needs_user" && (task.safeMessage.includes("npm ci") || task.safeMessage.includes("Bounded source evidence") || ((task.failureClass === "implementation" || task.safeMessage === "Execution needs attention: Healing budget is invalid.") && task.validations.some((validation) => !validation.passed)))))) {
+        let verification;
         try {
-          const verification = await executionAdapters.verifyQuarantineRepair(projectId, task);
-          await projectExecutions.authorizeQuarantineRecovery(projectId, input, verification);
+          verification = await executionAdapters.verifyQuarantineRepair(projectId, task);
         } catch (error) {
           if (!["needs_user", "quarantined"].includes(task.status) || (task.failureClass !== "implementation" && task.safeMessage !== "Execution needs attention: Healing budget is invalid.") || !task.validations.some((validation) => !validation.passed)) throw error;
           const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
           await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
         }
+        if (verification) await projectExecutions.authorizeQuarantineRecovery(projectId, input, verification);
       } else if (task && ["needs_user", "quarantined"].includes(task.status) && (task.reviews.some((review) => review.verdict !== "pass") || (task.status === "needs_user" && task.reviews.length > 0 && (task.failureClass === "implementation" || task.safeMessage.includes("Post-integration validation") || task.safeMessage === "Execution needs attention: Commit changes do not match exact file authority.")) || (task.status === "needs_user" && task.implementationEvidence.length === 0 && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state)/.test(task.safeMessage)))) {
         const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
         await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
