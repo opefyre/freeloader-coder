@@ -52,7 +52,12 @@ export class ProjectExecutionService {
     if (!this.eligibility) throw new ProjectExecutionError("eligibility_missing", "Implementation requires a current major-work eligibility authority.");
     const authority = await this.eligibility.eligibility(projectId);
     if (!authority) throw new ProjectExecutionError("eligibility_missing", "Implementation requires a current major-work eligibility authority.");
-    assertDeliveryPlanningEligible(authority, { projectId, now: this.now() });
+    assertDeliveryPlanningEligible(authority, {
+      projectId,
+      assessment: authority.assessment,
+      now: this.now(),
+      allowExpiredIfAssessmentCurrent: true,
+    });
     const [{ draft, document }, jira] = await Promise.all([this.plans.readDraft(projectId), this.jira.get(projectId)]);
     if (!jira?.completed || jira.planDigest !== document.digest) throw new ProjectExecutionError("jira_not_ready", "Implementation cannot start until the reviewed Jira hierarchy is complete.");
     if (existing) {

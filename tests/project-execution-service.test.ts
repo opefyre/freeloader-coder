@@ -44,14 +44,27 @@ test("durable execution enforces one lease, ordered validation, independent quor
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("execution initialization fails before reading delivery effects when eligibility is missing or expired", async () => {
+test("execution initialization requires eligibility before reading delivery effects", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-eligibility-"));
   let planReads = 0;
   const plans = { readDraft: async () => { planReads += 1; return { draft, document: { schemaVersion: 1 as const, projectId, projectRelativePath: ".pipeline/BACKLOG.md" as const, revision: 1, digest, markdown: "# Plan", itemCount: 4 } }; } };
   const jira = { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) };
   await assert.rejects(() => new ProjectExecutionService(root, plans, jira, () => 100).initialize(projectId), /eligibility authority/i);
-  await assert.rejects(() => new ProjectExecutionService(root, plans, jira, () => 100_000_000, { eligibility: async () => ({ ...(await eligibility.eligibility()), decidedAt: 1 }) }).initialize(projectId), /expired/i);
   assert.equal(planReads, 0);
+});
+
+test("execution initialization preserves an expired eligibility decision while its assessed scope is current", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-current-eligibility-"));
+  try {
+    const plans = { readDraft: async () => ({ draft, document: { schemaVersion: 1 as const, projectId, projectRelativePath: ".pipeline/BACKLOG.md" as const, revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) };
+    const jira = { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) };
+    const service = new ProjectExecutionService(root, plans, jira, () => 100_000_000, {
+      eligibility: async () => ({ ...(await eligibility.eligibility()), decidedAt: 1 }),
+    });
+    const initialized = await service.initialize(projectId);
+    assert.equal(initialized.state, "running");
+    assert.equal(initialized.tasks.length, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("failed validation permits only bounded healing and expired outcomes require owner review", async () => {
