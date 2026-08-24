@@ -9,7 +9,7 @@ import { readPrivateProposalArtifact, writePrivateProposalArtifact } from "./loc
 import { ProviderCapacityStore } from "./provider-capacity-store.js";
 import { ProviderRuntimeService } from "./provider-service.js";
 
-const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token)["']?\s*[:=]\s*\\?["']?\S+|secret["']?\s*[:=]\s*\\?["']?(?:sk[-_]|gh[pousr]_|AIza|eyJ)[A-Za-z0-9._+=/-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 
 export class FreeProviderExecutionModel {
   readonly #runtime: ProviderRuntimeService;

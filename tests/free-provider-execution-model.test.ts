@@ -110,4 +110,25 @@ test("execution model blocks billing, stale consent, and assignment drift before
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("source screening permits schema and test references to secret fields but blocks credential values", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-model-source-screening-"));
+  try {
+    let calls = 0;
+    const stored = connection();
+    const repository = { list: async () => [stored], read: async (id: string) => id === stored.id ? stored : null };
+    const model = new FreeProviderExecutionModel(root, repository, { read: async () => "safe-test-credential" }, { adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
+      calls += 1;
+      return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ summary: "Reviewed", operations: [] }), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
+    } }) as unknown as ProviderAdapter }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const base = { projectId, taskId, assignment: { providerId: "groq", modelId: stored.modelId, deviceId: `provider:${stored.id}` }, role: "reviewer" as const, permit, system: "Return JSON.", instruction: "Review bounded changes.", responseSchema: { type: "object" } };
+
+    await model.run({ ...base, sources: [{ name: "tests/integration.test.ts", content: 'assert.deepEqual(value, { secret: "must-not-persist" });' }] });
+    assert.equal(calls, 1);
+    const credentialLikeValue = ["sk", "live", "1234567890abcdef"].join("-");
+    await assert.rejects(() => model.run({ ...base, taskId: "plan_2222222222222222", sources: [{ name: "src/config.ts", content: `const apiKey = "${credentialLikeValue}";` }] }), /sensitive or oversized/i);
+    assert.equal(calls, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 function connection(overrides: Partial<ProviderConnection> = {}): ProviderConnection { return { schemaVersion: 1, id: "connection-groq", providerId: "groq", modelId: "openai/gpt-oss-120b", apiBaseUrl: "https://api.groq.com/openai/v1", credentialReference: "vault:providers/groq/primary", credentialFingerprint: "012345abcdef", credentialState: "active", state: "ready", privacyClass: "training_eligible", capabilityRoles: ["implementer", "reviewer"], contextWindowTokens: 131_072, maxOutputTokens: 65_536, cost: { access: "account_limited_free", plan: "Free", zeroCost: true, billingEnabled: false, observedAt: now - 1, expiresAt: now + 60_000, source: "account_api" }, quota: { source: "account_api", observedAt: now - 1, expiresAt: now + 60_000, requestsPerMinute: 5, requestsPerDay: 100, tokensPerMinute: 30_000, tokensPerDay: 1_000_000, remainingRequests: 90, remainingTokens: 900_000, resetAt: now + 60_000 }, canary: { status: "passed", observedAt: now - 1, expiresAt: now + 60_000, modelId: "openai/gpt-oss-120b", capabilities: ["chat", "structured_output"], inputTokens: 1, outputTokens: 1, failureCode: null }, updatedAt: now - 1, ...overrides }; }
