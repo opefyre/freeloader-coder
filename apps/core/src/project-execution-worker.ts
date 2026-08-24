@@ -92,6 +92,10 @@ export class ProjectExecutionWorker {
           ? "implementation" as const
           : undefined;
         await this.service.interrupt(projectId, task.id, lease.leaseId, this.workerId, safeError(error), failureClass);
+        if (failureClass === "implementation") {
+          await this.adapters.observe?.(projectId, task).catch(() => undefined);
+          return await this.service.get(projectId);
+        }
       }
       await this.adapters.observe?.(projectId, task).catch(() => undefined);
       throw error;

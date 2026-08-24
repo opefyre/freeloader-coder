@@ -62,6 +62,24 @@ test("integration conflict pauses safely, preserves non-completion, and publishe
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("provider proposal contract failure is contained as owner-visible implementation attention", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-proposal-contract-"));
+  try {
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
+    const adapters: ProjectExecutionAdapters = {
+      candidates: async () => [{ providerId: "groq", modelId: "coder", deviceId: "spare-mac", capabilities: ["chat", "structured_output"], privacyClasses: ["source_code"], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 4_000, deviceLoad: 0.2, preference: 10 }],
+      implement: async () => { throw new Error("Provider proposal omitted required task files: tests/app.test.ts."); },
+      validate: async (_project, _task, tier) => ({ tier, commandLabel: tier, passed: true, exitCode: 0, evidenceDigest: evidence }),
+      classifyFailure: async () => "implementation", healingPolicy: async () => ({ maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["fast"], requiredReviewRoles: ["functional"], minimumGoldenScore: 90 }), heal: async () => implementation(),
+      review: async () => [], integrate: async () => ({ commitDigest: evidence, integrationDigest: evidence, validation: { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: evidence } }),
+    };
+    const result = await new ProjectExecutionWorker(service, adapters, "worker-a", 30_000).tick(projectId);
+    assert.equal(result?.state, "needs_user");
+    assert.equal(result?.tasks[0]?.status, "needs_user");
+    assert.match(result?.tasks[0]?.safeMessage ?? "", /omitted required task files/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("post-completion observer failure preserves completion and does not halt autonomous continuation", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-observer-failure-"));
   try {

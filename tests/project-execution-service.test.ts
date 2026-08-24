@@ -201,6 +201,24 @@ test("owner-authorized provider proposal repair is bounded and archives the fail
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner can repair a provider proposal that omitted a required task file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-omitted-file-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    const interrupted = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "Execution needs attention: Provider proposal omitted required task files: tests/app.test.ts.", "implementation");
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, {
+      approvalId: "approval_44444444444444444444",
+      expectedRevision: interrupted.revision,
+      rationale: "Retry with every required task-owned source and test file present.",
+    });
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.reviewAttempts?.length, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("owner-authorized deterministic validation repair preserves its bounded budget and archives failed proof", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-validation-repair-"));
   try {

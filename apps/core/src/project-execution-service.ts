@@ -179,7 +179,7 @@ export class ProjectExecutionService {
         && task.reviews.length === 0
         && task.validations.some((validation) => !validation.passed)
         && (task.failureClass === "implementation" || task.safeMessage === "Execution needs attention: Healing budget is invalid.");
-      const proposalContractDissent = task.status === "needs_user" && task.reviews.length === 0 && task.implementationEvidence.length === 0 && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state)/.test(task.safeMessage);
+      const proposalContractDissent = task.status === "needs_user" && task.reviews.length === 0 && task.implementationEvidence.length === 0 && /Provider proposal (?:exceeded grounded file authority|conflicts with observed file state|omitted required task files)/.test(task.safeMessage);
       if (!["needs_user", "quarantined"].includes(task.status) || (!validationDissent && !proposalContractDissent && task.reviews.length === 0) || (task.reviews.length > 0 && task.reviews.every((review) => review.verdict === "pass") && !cleanCheckoutFailure)) {
         throw new ProjectExecutionError("repair_denied", "Owner-authorized repair requires current validation, review, or clean-checkout dissent evidence.");
       }
