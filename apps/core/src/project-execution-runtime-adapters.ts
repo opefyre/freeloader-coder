@@ -74,7 +74,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
         validationFeedback: this.#validationFeedback.get(key(projectId, task.id)) ?? null,
         allowedFiles: editableFiles,
         scaffoldRule: editableFiles.includes("package.json")
-          ? "The package test script must discover the complete current and future test suite (for example tests/*.test.ts or an equivalent project-wide runner); it must never name only tests/scaffold.test.ts."
+          ? "The package test script must discover the complete current and future test suite (for example tests/*.test.ts or an equivalent project-wide runner); it must never name only tests/scaffold.test.ts. Every package imported by lint, compiler, test, or build configuration must be declared in package.json, and configuration APIs must match the declared package versions. Prefer the smallest internally consistent toolchain."
           : null,
         authorityRule: "Every operation path must exactly equal one allowedFiles entry. Create every task-owned test required by acceptance criteria. Do not propose package, lint, compiler, workflow, credential, or infrastructure files unless explicitly listed.",
         citationRule: `Cite exact supplied source names. A new file must cite ${taskSourceName}; a replacement must also cite its observed source path.`,

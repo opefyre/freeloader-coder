@@ -115,6 +115,8 @@ test("scaffold implementation requires project-wide test discovery", async () =>
   await adapters.implement(projectId, scaffoldTask, 0);
   assert.match(instruction, /complete current and future test suite/);
   assert.match(instruction, /must never name only tests\/scaffold\.test\.ts/);
+  assert.match(instruction, /Every package imported by lint, compiler, test, or build configuration must be declared/);
+  assert.match(instruction, /configuration APIs must match the declared package versions/);
 });
 
 test("healing normalizes a grounded create proposal into a stale-safe replacement", async () => {
