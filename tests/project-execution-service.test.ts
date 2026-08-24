@@ -221,6 +221,22 @@ test("owner-authorized provider proposal repair is bounded and archives the fail
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner can repair a legacy assigned failure that stopped before any implementation evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-legacy-pre-evidence-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    const stopped = await service.interrupt(projectId, taskId, lease.leaseId, "worker-a", "Execution needs attention: strict parser rejected a provider response.");
+
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, { approvalId: "approval_33333333333333333333", expectedRevision: stopped.revision, rationale: "Retry the pre-evidence proposal under the corrected strict contract." });
+    assert.equal(repaired.status, "queued");
+    assert.equal(repaired.attempt, 0);
+    assert.equal(repaired.reviewAttempts?.at(-1)?.implementationEvidence.length, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("owner can repair a provider proposal that omitted a required task file", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-omitted-file-repair-"));
   try {
