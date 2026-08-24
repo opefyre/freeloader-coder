@@ -105,6 +105,23 @@ test("runtime adapter grounds a first source file in the reviewed delivery task"
   assert.deepEqual(result.changedFiles, ["src/workflow.ts"]);
 });
 
+test("runtime adapter rejects JSX in a .ts proposal before workspace mutation", async () => {
+  const workspace = { projectId, taskId, root: "/isolated", branch: "studio/task", baseline: "a".repeat(40), authorityDigest: digest };
+  let applied = false;
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: 1, expiresAt: 999_999 };
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: completeDeliveryPlan() as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    { candidates: async () => [implementer], run: async () => ({ providerId: "groq", modelId: "coder", artifactDigest: digest, response: { summary: "Invalid JSX proposal", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const view = <main />;\n", citations: ["src/workflow.ts"], rationale: "Render the owner view." }] } }) },
+    { prepare: async () => workspace, sources: async () => [{ path: "src/workflow.ts", content: "export const value = 1;\n", digest: "c".repeat(64) }], apply: async () => { applied = true; throw new Error("must not apply"); } } as any,
+    { synchronize: async () => undefined },
+  );
+  await assert.rejects(() => adapters.implement(projectId, executionTask(), 0), /failed strict response contract.*invalid TypeScript syntax/);
+  assert.equal(applied, false);
+});
+
 test("a rejected implementation cycle rotates to another eligible free provider", async () => {
   const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq", "gemini"], approvedAt: 1, expiresAt: 999_999 };
   const adapters = new ProjectExecutionRuntimeAdapters(

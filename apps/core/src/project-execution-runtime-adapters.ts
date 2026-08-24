@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import ts from "typescript";
 import { z } from "zod";
 
 import type { ExecutionCandidate, ExecutionTask } from "../../../packages/orchestration/src/project-execution.js";
@@ -106,6 +107,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     if (omitted.length > 0) throw new Error(`Provider proposal omitted required task files: ${omitted.join(", ")}.`);
     const operations: WorkspaceOperation[] = proposal.operations.map((operation) => {
       if (!allowed.has(operation.path) || operation.citations.some((citation) => !citationNames.has(citation))) throw new Error("Provider proposal exceeded grounded file authority.");
+      assertSyntacticallyAdmissible(operation.path, operation.content);
       const source = sourceByPath.get(operation.path);
       const type = source ? "replace" as const : "create" as const;
       if (type === "create" && !operation.citations.includes(taskSourceName)) throw new Error("New-file proposal is not grounded in the reviewed delivery task.");
@@ -208,6 +210,13 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
 }
 
 function implementationResponseSchema(allowedFiles: readonly string[], citationNames: readonly string[]) { return { type: "object", additionalProperties: false, required: ["summary", "operations"], properties: { summary: { type: "string", minLength: 1, maxLength: 500 }, operations: { type: "array", minItems: 1, maxItems: allowedFiles.length, items: { type: "object", additionalProperties: false, required: ["type", "path", "content", "citations", "rationale"], properties: { type: { enum: ["create", "replace"] }, path: { type: "string", enum: [...allowedFiles] }, content: { type: "string" }, citations: { type: "array", minItems: 1, items: { type: "string", enum: [...citationNames] } }, rationale: { type: "string" } } } } } } as const; }
+function assertSyntacticallyAdmissible(path: string, content: string) {
+  if (!path.endsWith(".ts") && !path.endsWith(".tsx")) return;
+  const diagnostics = ts.transpileModule(content, { fileName: path, reportDiagnostics: true, compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.NodeNext, jsx: ts.JsxEmit.Preserve } }).diagnostics?.filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error) ?? [];
+  if (diagnostics.length === 0) return;
+  const detail = diagnostics.slice(0, 3).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")).join("; ");
+  throw new Error(`Provider proposal failed strict response contract: ${path} contains invalid TypeScript syntax (${detail}).`);
+}
 function latestValidationEvidence(task: ExecutionTask) {
   const latest = new Map<string, ExecutionTask["validations"][number]>();
   for (const validation of task.validations) latest.set(validation.tier, validation);
