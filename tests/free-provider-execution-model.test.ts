@@ -67,11 +67,11 @@ test("execution model sends Cohere a portable structured-output schema without w
       return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ summary: "Bounded change", operations: [] }), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
     } }) as unknown as ProviderAdapter }, () => now);
     const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["cohere"], approvedAt: now - 1, expiresAt: now + 60_000 };
-    const canonicalSchema = { type: "object", required: ["operations"], properties: { operations: { type: "array", minItems: 1, maxItems: 3, items: { type: "object", properties: { path: { type: "string", minLength: 1, maxLength: 500, pattern: "^[^/].*" } } } } } } as const;
+    const canonicalSchema = { type: "object", required: ["operations"], properties: { operations: { type: "array", minItems: 1, maxItems: 3, items: { type: "object", properties: { kind: { enum: ["create", "replace"] }, path: { type: "string", minLength: 1, maxLength: 500, pattern: "^[^/].*" } } } } } } as const;
 
     await model.run({ projectId, taskId, assignment: { providerId: "cohere", modelId: stored.modelId, deviceId: `provider:${stored.id}` }, role: "implementer", permit, system: "Return JSON.", instruction: "Propose bounded changes.", sources: [], responseSchema: canonicalSchema });
 
-    assert.deepEqual(observedSchema, { type: "object", required: ["operations"], properties: { operations: { type: "array", items: { type: "object", properties: { path: { type: "string" } } } } } });
+    assert.deepEqual(observedSchema, { type: "object", required: ["operations"], properties: { operations: { type: "array", items: { type: "object", properties: { kind: { enum: ["create", "replace"], type: "string" }, path: { type: "string" } } } } } });
     assert.equal(canonicalSchema.properties.operations.minItems, 1);
     assert.equal(canonicalSchema.properties.operations.items.properties.path.minLength, 1);
   } finally { await rm(root, { recursive: true, force: true }); }

@@ -111,5 +111,10 @@ function providerResponseSchema(providerId: string, schema: Readonly<Record<stri
 function stripUnsupportedSchemaKeywords(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stripUnsupportedSchemaKeywords);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !COHERE_UNSUPPORTED_SCHEMA_KEYWORDS.has(key)).map(([key, nested]) => [key, stripUnsupportedSchemaKeywords(nested)]));
+  const normalized = Object.fromEntries(Object.entries(value).filter(([key]) => !COHERE_UNSUPPORTED_SCHEMA_KEYWORDS.has(key)).map(([key, nested]) => [key, stripUnsupportedSchemaKeywords(nested)]));
+  if (!("type" in normalized) && Array.isArray(normalized.enum)) {
+    const types = [...new Set(normalized.enum.filter((item) => item !== null).map((item) => typeof item))];
+    if (types.length === 1 && ["string", "number", "boolean"].includes(types[0] ?? "")) normalized.type = types[0];
+  }
+  return normalized;
 }
