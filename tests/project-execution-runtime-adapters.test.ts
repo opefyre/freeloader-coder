@@ -117,6 +117,7 @@ test("scaffold implementation requires project-wide test discovery", async () =>
   assert.match(instruction, /must never name only tests\/scaffold\.test\.ts/);
   assert.match(instruction, /Every package imported by lint, compiler, test, or build configuration must be declared/);
   assert.match(instruction, /configuration APIs must match the declared package versions/);
+  assert.match(instruction, /\.pipeline\/, \.codkesh\/, and governed root Markdown documents/);
 });
 
 test("healing normalizes a grounded create proposal into a stale-safe replacement", async () => {

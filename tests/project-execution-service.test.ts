@@ -299,6 +299,7 @@ test("owner-authorized completed prerequisite repair preserves proof and reopens
     });
     assert.equal(repaired.status, "queued");
     assert.equal(repaired.commitDigest, null);
+    assert.equal(repaired.attempt, 0, "an explicitly reopened completed prerequisite starts a new bounded repair cycle");
     assert.equal(repaired.reviewAttempts?.at(-1)?.reviews.length, 2);
     assert.equal((await service.get(projectId))?.state, "running");
   } finally { await rm(root, { recursive: true, force: true }); }

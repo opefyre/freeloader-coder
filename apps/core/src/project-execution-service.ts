@@ -195,11 +195,12 @@ export class ProjectExecutionService {
         rationale: approval.rationale,
         decidedAt: now,
       };
+      const reopenedCompletedPrerequisite = validationDissent && Boolean(task.reviewAttempts?.at(-1)?.implementationEvidence.length && task.reviewAttempts.at(-1)?.validations.some((validation) => validation.tier === "integration" && validation.passed));
       const updated: ExecutionTask = {
         ...task,
         status: "queued",
         revision: task.revision + 1,
-        attempt: validationDissent ? task.attempt : task.attempt + 1,
+        attempt: reopenedCompletedPrerequisite ? 0 : validationDissent ? task.attempt : task.attempt + 1,
         assignment: null,
         lease: null,
         implementationEvidence: [],
@@ -251,7 +252,7 @@ export class ProjectExecutionService {
       }
       const tasks = record.tasks.map((candidate): ExecutionTask => {
         if (candidate.id === task.id) return {
-          ...candidate, status: "queued", revision: candidate.revision + 1, attempt: candidate.attempt + 1, assignment: null, lease: null,
+          ...candidate, status: "queued", revision: candidate.revision + 1, attempt: 0, assignment: null, lease: null,
           implementationEvidence: [], validations: [], reviews: [], reviewAttempts: [...(candidate.reviewAttempts ?? []), archived],
           commitDigest: null, integrationDigest: null, failureClass: "implementation",
           safeMessage: "The owner reopened this completed prerequisite after downstream deterministic evidence invalidated its toolchain contract.", updatedAt: now,
