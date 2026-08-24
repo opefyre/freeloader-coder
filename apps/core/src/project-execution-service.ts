@@ -195,12 +195,15 @@ export class ProjectExecutionService {
         rationale: approval.rationale,
         decidedAt: now,
       };
-      const reopenedCompletedPrerequisite = validationDissent && Boolean(task.reviewAttempts?.at(-1)?.implementationEvidence.length && task.reviewAttempts.at(-1)?.validations.some((validation) => validation.tier === "integration" && validation.passed));
       const updated: ExecutionTask = {
         ...task,
         status: "queued",
         revision: task.revision + 1,
-        attempt: reopenedCompletedPrerequisite ? 0 : validationDissent ? task.attempt : task.attempt + 1,
+        // An explicit owner authorization starts a new, independently audited repair
+        // cycle. Historical attempts remain immutable in reviewAttempts; carrying the
+        // old counter forward either denies the new authorization immediately or,
+        // with a sliding ceiling, permits an unbounded retry storm.
+        attempt: 0,
         assignment: null,
         lease: null,
         implementationEvidence: [],

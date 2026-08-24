@@ -77,6 +77,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
           ? "The package test script must discover the complete current and future test suite (for example tests/*.test.ts or an equivalent project-wide runner); it must never name only tests/scaffold.test.ts. Every package imported by lint, compiler, test, or build configuration must be declared in package.json, and configuration APIs must match the declared package versions. Formatter and lint scopes must exclude generated Codkesh governance/history artifacts (.pipeline/, .codkesh/, and governed root Markdown documents) so immutable project evidence cannot break source validation. Prefer the smallest internally consistent toolchain."
           : null,
         authorityRule: "Every operation path must exactly equal one allowedFiles entry. Create every task-owned test required by acceptance criteria. Do not propose package, lint, compiler, workflow, credential, or infrastructure files unless explicitly listed.",
+        toolchainCompatibilityRule: "Treat supplied package.json scripts and configuration as immutable execution contracts unless they are explicitly allowed files. Tests must use the runner invoked by the existing test script: when it runs node --test, import from node:test and node:assert/strict rather than vitest or jest; when it runs vitest, use vitest APIs. Never import a test framework that the configured command does not launch. Preserve module format, file extensions, and import conventions already demonstrated by passing project tests.",
         requiredCreatePaths: editableFiles.filter((path) => !sources.some((source) => source.path === path)),
         completenessRule: "Return exactly one create operation for every requiredCreatePaths entry. Omitting any required path invalidates the entire proposal; do not summarize or defer a required file.",
         citationRule: `Cite exact supplied source names. A new file must cite ${taskSourceName}; a replacement must also cite its observed source path.`,
@@ -128,7 +129,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
   }
 
   async classifyFailure(_projectId: string, _task: ExecutionTask, validation: WorkerValidation) { return validation.exitCode === 124 ? "environment" as const : "implementation" as const; }
-  async healingPolicy(_projectId: string, task: ExecutionTask) { return { maxAttempts: Math.min(10, task.attempt + 2), allowedFiles: task.allowedFiles, protectedPaths: [".git", ".env", "secrets", "credentials"], requiredChecks: task.validationProfiles, requiredReviewRoles: task.uiChanged ? ["functional" as const, "design" as const] : ["functional" as const, "security" as const], minimumGoldenScore: 90 }; }
+  async healingPolicy(_projectId: string, task: ExecutionTask) { return { maxAttempts: 3, allowedFiles: task.allowedFiles, protectedPaths: [".git", ".env", "secrets", "credentials"], requiredChecks: task.validationProfiles, requiredReviewRoles: task.uiChanged ? ["functional" as const, "design" as const] : ["functional" as const, "security" as const], minimumGoldenScore: 90 }; }
   async heal(projectId: string, task: ExecutionTask, attempt: number) { return this.implement(projectId, task, attempt); }
 
   async review(projectId: string, task: ExecutionTask): Promise<readonly QualityReview[]> {

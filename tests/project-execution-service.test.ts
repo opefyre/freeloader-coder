@@ -195,7 +195,7 @@ test("owner-authorized provider proposal repair is bounded and archives the fail
       rationale: "Retry the bounded provider proposal with exact immutable file authority.",
     });
     assert.equal(repaired.status, "queued");
-    assert.equal(repaired.attempt, 1);
+    assert.equal(repaired.attempt, 0);
     assert.equal(repaired.reviewAttempts?.length, 1);
     assert.deepEqual(repaired.reviewAttempts?.[0]?.reviews, []);
   } finally { await rm(root, { recursive: true, force: true }); }
@@ -235,7 +235,7 @@ test("owner-authorized deterministic validation repair preserves its bounded bud
       rationale: "The repaired prerequisite invalidated this deterministic failure; rerun every gate within the remaining bounded budget.",
     });
     assert.equal(repaired.status, "queued");
-    assert.equal(repaired.attempt, interrupted.attempt, "owner repair does not replenish the bounded automatic-healing budget");
+    assert.equal(repaired.attempt, 0, "owner repair starts a new bounded cycle while archived evidence preserves prior attempts");
     assert.equal(repaired.reviewAttempts?.at(-1)?.validations.some((validation) => !validation.passed), true);
     assert.equal(repaired.validations.length, 0);
     assert.equal(repaired.implementationEvidence.length, 0);

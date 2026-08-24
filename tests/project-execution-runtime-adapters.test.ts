@@ -21,9 +21,12 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
     run: async (input: any) => {
       calls.push(`model:${input.role}:${input.taskId}`);
       if (input.role === "implementer") {
+        const instruction = JSON.parse(input.instruction);
         assert.equal(input.sources.some((source: { name: string }) => source.name === `delivery-plan://${taskId}`), true);
         assert.deepEqual(input.responseSchema.properties.operations.items.properties.path.enum, ["src/workflow.ts"]);
         assert.deepEqual(input.responseSchema.properties.operations.items.properties.citations.items.enum, ["src/workflow.ts", `delivery-plan://${taskId}`]);
+        assert.match(instruction.toolchainCompatibilityRule, /when it runs node --test, import from node:test/);
+        assert.match(instruction.toolchainCompatibilityRule, /Never import a test framework that the configured command does not launch/);
         return { providerId: "groq", modelId: "coder", artifactDigest: "a".repeat(64), response: { summary: "Update feature", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Meet the approved behavior." }] } };
       }
       const instruction = JSON.parse(input.instruction);
@@ -55,9 +58,9 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
   );
   const task = executionTask();
   assert.equal((await adapters.candidates(projectId))[0]?.providerId, "groq");
-  assert.equal((await adapters.healingPolicy(projectId, task)).maxAttempts, 2);
-  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 7 })).maxAttempts, 9);
-  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 9 })).maxAttempts, 10);
+  assert.equal((await adapters.healingPolicy(projectId, task)).maxAttempts, 3);
+  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 7 })).maxAttempts, 3);
+  assert.equal((await adapters.healingPolicy(projectId, { ...task, attempt: 9 })).maxAttempts, 3);
   const implementation = await adapters.implement(projectId, task, 0);
   assert.deepEqual(implementation.changedFiles, ["src/workflow.ts"]);
   assert.equal((await adapters.validate(projectId, task, "fast")).passed, true);
