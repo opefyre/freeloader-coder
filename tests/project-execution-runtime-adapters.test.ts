@@ -27,6 +27,7 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
         assert.deepEqual(input.responseSchema.properties.operations.items.properties.citations.items.enum, ["src/workflow.ts", `delivery-plan://${taskId}`]);
         assert.match(instruction.toolchainCompatibilityRule, /when it runs node --test, import from node:test/);
         assert.match(instruction.toolchainCompatibilityRule, /Never import a test framework that the configured command does not launch/);
+        assert.match(instruction.toolchainCompatibilityRule, /must omit the \.ts suffix/);
         assert.match(instruction.toolchainCompatibilityRule, /A \.ts file cannot contain JSX syntax/);
         return { providerId: "groq", modelId: "coder", artifactDigest: "a".repeat(64), response: { summary: "Update feature", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Meet the approved behavior." }] } };
       }

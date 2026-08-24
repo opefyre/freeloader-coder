@@ -56,6 +56,27 @@ test("execution model clamps admission and dispatch to the verified provider out
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("execution model sends Cohere a portable structured-output schema without weakening the canonical contract", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-model-cohere-schema-"));
+  try {
+    let observedSchema: Record<string, unknown> | undefined;
+    const stored = connection({ id: "connection-cohere-schema", providerId: "cohere", modelId: "command-a-03-2025", apiBaseUrl: "https://api.cohere.ai/compatibility/v1", contextWindowTokens: 256_000, maxOutputTokens: 8_192, quota: { ...connection().quota, tokensPerMinute: null, tokensPerDay: null } });
+    const repository = { list: async () => [stored], read: async (id: string) => id === stored.id ? stored : null };
+    const model = new FreeProviderExecutionModel(root, repository, { read: async () => "safe-test-credential" }, { adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
+      observedSchema = request.responseSchema;
+      return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify({ summary: "Bounded change", operations: [] }), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
+    } }) as unknown as ProviderAdapter }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["cohere"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const canonicalSchema = { type: "object", required: ["operations"], properties: { operations: { type: "array", minItems: 1, maxItems: 3, items: { type: "object", properties: { path: { type: "string", minLength: 1, maxLength: 500, pattern: "^[^/].*" } } } } } } as const;
+
+    await model.run({ projectId, taskId, assignment: { providerId: "cohere", modelId: stored.modelId, deviceId: `provider:${stored.id}` }, role: "implementer", permit, system: "Return JSON.", instruction: "Propose bounded changes.", sources: [], responseSchema: canonicalSchema });
+
+    assert.deepEqual(observedSchema, { type: "object", required: ["operations"], properties: { operations: { type: "array", items: { type: "object", properties: { path: { type: "string" } } } } } });
+    assert.equal(canonicalSchema.properties.operations.minItems, 1);
+    assert.equal(canonicalSchema.properties.operations.items.properties.path.minLength, 1);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("execution model automatically refreshes expired free-provider evidence before assignment", async () => {
   const root = await mkdtemp(join(tmpdir(), "execution-model-refresh-"));
   try {

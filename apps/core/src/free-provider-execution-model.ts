@@ -77,7 +77,7 @@ export class FreeProviderExecutionModel {
         if (candidate.providerConnectionId !== connection.id || candidate.providerId !== input.assignment.providerId || candidate.modelId !== input.assignment.modelId || candidate.paid || candidate.billingMode !== "free_tier") throw failure("assignment-mismatch", 403);
         const adapter = this.adapters.adapter(candidate.providerId); const secret = await this.vault.read(connection.credentialReference);
         if (!adapter || !secret) throw failure("provider-unavailable", 503);
-        const response = await adapter.chat({ secret }, { requestId: `execution-${requestDigest.slice(0, 24)}`, modelId: candidate.modelId, messages: [{ role: "system", content: input.system }, { role: "user", content: `${input.instruction}\n\nBOUNDED SOURCES:\n${payload}` }], maxOutputTokens: Math.min(candidate.maxOutputTokens, input.maxOutputTokens ?? 16_384), temperature: 0, responseSchema: input.responseSchema, tools: [], timeoutMs: 180_000 });
+        const response = await adapter.chat({ secret }, { requestId: `execution-${requestDigest.slice(0, 24)}`, modelId: candidate.modelId, messages: [{ role: "system", content: input.system }, { role: "user", content: `${input.instruction}\n\nBOUNDED SOURCES:\n${payload}` }], maxOutputTokens: Math.min(candidate.maxOutputTokens, input.maxOutputTokens ?? 16_384), temperature: 0, responseSchema: providerResponseSchema(candidate.providerId, input.responseSchema), tools: [], timeoutMs: 180_000 });
         if (response.finishReason !== "stop" || response.toolCalls.length || response.verified || SENSITIVE.test(response.content)) throw failure("malformed-response", 400);
         JSON.parse(response.content);
         const artifactDigest = await writePrivateProposalArtifact({ directory, response: response.content });
@@ -102,3 +102,14 @@ export class FreeProviderExecutionModel {
 export class FreeProviderExecutionError extends Error { constructor(readonly code: string, readonly retryAt: number | null, message: string) { super(message); } }
 function failure(code: string, status: number) { return Object.assign(new Error(code), { code, status }); }
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
+
+const COHERE_UNSUPPORTED_SCHEMA_KEYWORDS = new Set(["minItems", "maxItems", "minLength", "maxLength", "minimum", "maximum", "pattern"]);
+function providerResponseSchema(providerId: string, schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  if (providerId !== "cohere") return schema;
+  return stripUnsupportedSchemaKeywords(schema) as Readonly<Record<string, unknown>>;
+}
+function stripUnsupportedSchemaKeywords(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUnsupportedSchemaKeywords);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !COHERE_UNSUPPORTED_SCHEMA_KEYWORDS.has(key)).map(([key, nested]) => [key, stripUnsupportedSchemaKeywords(nested)]));
+}
