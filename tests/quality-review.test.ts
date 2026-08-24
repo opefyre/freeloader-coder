@@ -34,6 +34,22 @@ test("critical evidence-backed dissent blocks readiness", () => {
   assert.equal(result.dissent, true);
 });
 
+test("a contradictory pass carrying a major finding cannot pass the gate", () => {
+  const result = evaluateQualityQuorum({
+    uiChanged: true, implementerProviderId: "cloudflare", deterministicValidationPassed: true,
+    reviews: [reviews[0]!, {
+      ...reviews[1]!, verdict: "pass",
+      findings: [{
+        id: "missing-crud", severity: "major", evidenceRef: "src/features/decisions.ts",
+        confidence: 0.96, acceptanceCriterion: "Owner can complete every CRUD operation.",
+        recommendedRepair: "Implement and wire the missing operations.",
+      }],
+    }],
+  });
+  assert.equal(result.verdict, "fail");
+  assert.equal(result.ready, false);
+});
+
 test("provider agreement cannot override deterministic failure", () => {
   const result = evaluateQualityQuorum({
     uiChanged: true, implementerProviderId: "cloudflare",

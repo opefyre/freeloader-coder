@@ -55,10 +55,10 @@ export function evaluateQualityQuorum(input: {
     })
   );
   const dissent = new Set(input.reviews.map((review) => review.verdict)).size > 1;
-  const critical = findings.some((finding) => finding.severity === "critical");
+  const blockingFinding = findings.some((finding) => finding.severity === "major" || finding.severity === "critical");
   const needsUser = input.reviews.some((review) => review.verdict === "needs_user");
   const failed = input.reviews.some((review) => review.verdict === "fail");
-  const verdict = needsUser ? "needs_user" : critical || failed ? "fail" : "pass";
+  const verdict = needsUser ? "needs_user" : blockingFinding || failed ? "fail" : "pass";
   return {
     ready: input.deterministicValidationPassed && verdict === "pass",
     verdict: input.deterministicValidationPassed ? verdict : "fail",
