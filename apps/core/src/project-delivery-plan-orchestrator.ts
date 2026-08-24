@@ -8,6 +8,7 @@ import type { SolutionDocument } from "../../../packages/orchestration/src/solut
 import type { SolutionContent } from "../../../packages/orchestration/src/solution-design.js";
 import { assertDeliveryPlanningEligible } from "../../../packages/orchestration/src/eligibility-gate.js";
 import { FreeProviderSolutionUnavailableError } from "./free-provider-solution-model.js";
+import { assertOwnerFacingUiDeliveryValidation } from "./project-delivery-authority.js";
 
 export class ProjectDeliveryPlanOrchestrator {
   constructor(
@@ -49,6 +50,7 @@ export class ProjectDeliveryPlanOrchestrator {
     if (plan.contextDigest !== context.digest || plan.solutionDigest !== solution.digest) throw new Error("Delivery plan is not bound to the approved evidence.");
     if (lifecycle.assessment?.classification === "new_product") assertNewProductBootstrap(plan);
     if (plan.items.some((item) => item.type === "subtask" && (item.allowedFiles.length === 0 || item.validationProfiles.length === 0))) throw new Error("Delivery plan subtasks require explicit file and validation authority.");
+    assertOwnerFacingUiDeliveryValidation(plan);
     const candidate = { name: "Candidate delivery plan", content: boundedJson(plan) };
     const machineFacts = { name: "Machine-verified plan facts", content: boundedJson(machineVerifiedPlanFacts(plan)) };
     const [deliveryEvidence, technicalEvidence] = await Promise.all([

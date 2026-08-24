@@ -125,6 +125,8 @@ export class ProjectDeliveryPlanCoordinator {
         error instanceof JiraDeliveryNeedsUserError ||
         error instanceof FreeProviderSolutionUnavailableError
           ? error.message
+          : isActionableDeliveryError(error)
+            ? error.message
           : "Delivery planning stopped safely. Review the approved solution and provider evidence before retrying.";
       await this.#set({
         schemaVersion: 1,
@@ -179,6 +181,8 @@ export class ProjectDeliveryPlanCoordinator {
     }
   }
 }
+
+function isActionableDeliveryError(error: unknown): error is Error & { code: string } { return error instanceof Error && typeof (error as Error & { code?: unknown }).code === "string"; }
 
 async function atomicWrite(path: string, content: string) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
