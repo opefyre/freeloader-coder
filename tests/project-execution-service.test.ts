@@ -181,6 +181,26 @@ test("owner-authorized dissent repair preserves rejected evidence and reruns eve
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("owner can repair a contradictory pass review that contains a blocking finding", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-blocking-pass-repair-"));
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(projectId, taskId, lease.leaseId, "worker-a", evidence);
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "fast", commandLabel: "typecheck", passed: true, exitCode: 0, evidenceDigest: evidence });
+    await service.recordValidation(projectId, taskId, lease.leaseId, "worker-a", { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: evidence });
+    const contradictory = { ...review("design-reviewer", "cloudflare", "design"), findings: [{ id: "missing-pagination", severity: "major" as const, evidenceRef: evidence, confidence: 0.95, acceptanceCriterion: "Large result sets remain navigable.", recommendedRepair: "Add accessible pagination after the threshold." }] };
+    const dissent = await service.recordReviews(projectId, taskId, lease.leaseId, "worker-a", [review("functional-reviewer", "gemini", "functional"), contradictory]);
+
+    assert.equal(dissent.status, "quarantined");
+    const repaired = await service.authorizeReviewRepair(projectId, taskId, { approvalId: "approval_22222222222222222222", expectedRevision: dissent.revision, rationale: "Repair the blocking finding and rerun every delivery gate." });
+    assert.equal(repaired.status, "queued");
+    assert.match(repaired.reviewAttempts?.at(-1)?.reviews[1]?.findings[0] ?? "", /^major:/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("owner-authorized provider proposal repair is bounded and archives the failed attempt", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-proposal-repair-"));
   try {

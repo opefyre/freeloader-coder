@@ -22,7 +22,7 @@ import { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
 import { ProjectDeliveryPlanOrchestrator } from "./project-delivery-plan-orchestrator.js";
 import { ProjectDeliveryPlanCoordinator } from "./project-delivery-plan-coordinator.js";
 import { JiraDeliveryService } from "./jira-delivery-service.js";
-import { ProjectExecutionService } from "./project-execution-service.js";
+import { hasBlockingReviewDissent, ProjectExecutionService } from "./project-execution-service.js";
 import { ProjectExecutionJiraObserver } from "./project-execution-jira-observer.js";
 import { ProjectExecutionCoordinator } from "./project-execution-coordinator.js";
 import { ProjectExecutionWorker } from "./project-execution-worker.js";
@@ -605,7 +605,7 @@ const controlPlane = createControlPlaneServer({
             await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
           }
         }
-      } else if (task && ["needs_user", "quarantined"].includes(task.status) && (task.reviews.some((review) => review.verdict !== "pass") || (task.status === "needs_user" && task.reviews.length > 0 && (task.failureClass === "implementation" || task.safeMessage.includes("Post-integration validation") || task.safeMessage === "Execution needs attention: Commit changes do not match exact file authority.")) || (task.status === "needs_user" && task.implementationEvidence.length === 0 && /(?:Provider proposal (?:exceeded grounded file authority|conflicts with observed file state|omitted required task files)|Command failed:[\s\S]{0,600}\bprettier --write\b)/.test(task.safeMessage)))) {
+      } else if (task && ["needs_user", "quarantined"].includes(task.status) && (hasBlockingReviewDissent(task.reviews) || (task.status === "needs_user" && task.reviews.length > 0 && (task.failureClass === "implementation" || task.safeMessage.includes("Post-integration validation") || task.safeMessage === "Execution needs attention: Commit changes do not match exact file authority.")) || (task.status === "needs_user" && task.implementationEvidence.length === 0 && /(?:Provider proposal (?:exceeded grounded file authority|conflicts with observed file state|omitted required task files)|Command failed:[\s\S]{0,600}\bprettier --write\b)/.test(task.safeMessage)))) {
         const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
         await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
       } else {
