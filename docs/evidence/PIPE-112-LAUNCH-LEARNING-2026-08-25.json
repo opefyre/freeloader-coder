@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "public-preview-2026-08-25",
+  "reviewedAt": "2026-08-25T11:05:00.000Z",
+  "metrics": [
+    {
+      "schemaVersion": 1,
+      "id": "github-unique-visitors",
+      "label": "Unique repository visitors",
+      "unit": "count",
+      "baseline": 1,
+      "target": 10,
+      "current": 1,
+      "owner": "product owner",
+      "cohort": "GitHub traffic aggregate for the current 14-day window",
+      "source": "opt_in_telemetry",
+      "containsPromptContent": false,
+      "containsSourceCode": false,
+      "reviewCadence": "weekly"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "github-unique-cloners",
+      "label": "Unique repository cloners",
+      "unit": "count",
+      "baseline": 69,
+      "target": 75,
+      "current": 69,
+      "owner": "product owner",
+      "cohort": "GitHub traffic aggregate for the current 14-day window; operator and automation activity cannot be excluded",
+      "source": "opt_in_telemetry",
+      "containsPromptContent": false,
+      "containsSourceCode": false,
+      "reviewCadence": "weekly"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "public-release-checks",
+      "label": "Passing public release checks",
+      "unit": "count",
+      "baseline": 7,
+      "target": 7,
+      "current": 7,
+      "owner": "release owner",
+      "cohort": "Canonical site, immutable deployment, robots, sitemap, source, security, and feedback endpoints",
+      "source": "local_event",
+      "containsPromptContent": false,
+      "containsSourceCode": false,
+      "reviewCadence": "release"
+    },
+    {
+      "schemaVersion": 1,
+      "id": "support-reports",
+      "label": "Open support reports",
+      "unit": "count",
+      "baseline": 0,
+      "target": 0,
+      "current": 0,
+      "owner": "support owner",
+      "cohort": "Public GitHub issues",
+      "source": "support",
+      "containsPromptContent": false,
+      "containsSourceCode": false,
+      "reviewCadence": "weekly"
+    }
+  ],
+  "decision": "insufficient_evidence",
+  "rationale": "The public release and source links are healthy, but aggregate repository traffic cannot distinguish genuine users from operator or automation activity. No activation or retention claim is justified yet.",
+  "ownedExperiments": [
+    {
+      "id": "external-owner-journey-01",
+      "owner": "product owner",
+      "hypothesis": "A GitHub-capable first-time user can clone Codkesh and reach one validated preview without developer assistance.",
+      "successSignal": "One consented external session reaches review-ready and records time-to-preview plus trust feedback without prompts or source code.",
+      "reviewAt": "2026-09-01T11:00:00.000Z"
+    }
+  ]
+}

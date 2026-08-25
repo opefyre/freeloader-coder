@@ -27,3 +27,17 @@ Every “change” or “retire” decision must create an owned experiment with
 hypothesis, success signal, review date, and rollback. “Keep” still requires a
 future review date.
 
+## First public evidence window — 2026-08-25
+
+The canonical Cloudflare Pages release and every public source, security, and
+feedback link passed external checks. GitHub's privacy-safe 14-day aggregates
+reported 16 views from 1 unique visitor and 136 clones from 69 unique cloners.
+Those figures include operator and automation activity and therefore do **not**
+prove activation, retention, or adoption.
+
+Decision: **insufficient evidence**. The owned next experiment is one consented
+external owner journey, due for review on 2026-09-01. Success requires reaching
+`review_ready` while recording only time-to-preview and structured trust
+feedback—never prompts, source code, attachments, credentials, full paths, or
+personal identifiers. The schema-validated review is stored in
+`docs/evidence/PIPE-112-LAUNCH-LEARNING-2026-08-25.json`.

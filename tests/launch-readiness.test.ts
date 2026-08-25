@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -6,6 +7,13 @@ import {
   assessLearningReview,
   launchReadinessSchema,
 } from "../packages/releases/src/launch-readiness.js";
+
+const firstPublicReview = JSON.parse(
+  await readFile(
+    "docs/evidence/PIPE-112-LAUNCH-LEARNING-2026-08-25.json",
+    "utf8"
+  )
+);
 
 const positioning = {
   schemaVersion: 1,
@@ -156,6 +164,26 @@ test("change decision without an owned experiment is not actionable", () => {
     ownedExperiments: [],
   });
   assert.equal(result.actionable, false);
+});
+
+test("first public review records honest baselines and an owned next experiment", () => {
+  const result = assessLearningReview(firstPublicReview);
+
+  assert.equal(result.actionable, true);
+  assert.equal(result.privacySafe, true);
+  assert.deepEqual(result.missingBaselines, []);
+  assert.deepEqual(result.missingCurrentValues, []);
+  assert.equal(firstPublicReview.decision, "insufficient_evidence");
+  assert.equal(firstPublicReview.ownedExperiments.length, 1);
+  assert.match(firstPublicReview.rationale, /cannot distinguish genuine users/i);
+  assert.ok(
+    firstPublicReview.metrics.every(
+      (metric: {
+        containsPromptContent: boolean;
+        containsSourceCode: boolean;
+      }) => !metric.containsPromptContent && !metric.containsSourceCode
+    )
+  );
 });
 
 function gate(
