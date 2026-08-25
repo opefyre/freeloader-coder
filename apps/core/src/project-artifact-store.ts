@@ -328,6 +328,17 @@ export class ProjectArtifactStore {
   }
 }
 
+export function validateProjectArtifactBody(kind: ProjectArtifactKind, candidate: string): {
+  readonly body: string;
+  readonly bodyDigest: string;
+} {
+  const body = normalizeBody(candidate);
+  rejectSensitiveContent(body);
+  validateArtifactReferences(kind, body);
+  validateArtifactStructure(kind, body);
+  return { body, bodyDigest: digest(body) };
+}
+
 export class ProjectArtifactError extends Error {
   constructor(readonly code: "artifact-conflict" | "artifact-corrupt" | "artifact-unsafe" | "sensitive-content" | "artifact-lock-timeout", message: string) {
     super(message);

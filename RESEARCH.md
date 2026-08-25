@@ -1,4 +1,4 @@
-<!-- codkesh-artifact:{"schemaVersion":1,"kind":"research","revision":6,"updatedAt":"2026-08-15T14:26:32.117Z","producer":"codkesh:solution-research","bodyDigest":"348f4faffd310f4f1c257351335ee8f961b6b120fd9bec046f5de8ec1bc70f29","approvedDigest":null,"supersedesDigest":"348f4faffd310f4f1c257351335ee8f961b6b120fd9bec046f5de8ec1bc70f29","confidence":"unknown","approvalState":"not_required","citations":[]} -->
+<!-- codkesh-artifact:{"schemaVersion":1,"kind":"research","revision":7,"updatedAt":"2026-08-25T11:53:03.005Z","producer":"codkesh:identity-refresh","bodyDigest":"5509bd477df5a8195e2c49162fbbf6e7c69db0fd41dae88a4067978a5832b1a7","approvedDigest":null,"supersedesDigest":"348f4faffd310f4f1c257351335ee8f961b6b120fd9bec046f5de8ec1bc70f29","confidence":"unknown","approvalState":"not_required","citations":[]} -->
 # Research
 
 ## Grounding
@@ -21,12 +21,12 @@ _No source contradictions detected._
 
 ### Evidence gaps
 
-- **market** — What is the broader market size, trend, and competitive landscape for Pipeline Studio? — insufficient evidence. Impact: Cannot assess market positioning or total addressable market without external market data.
+- **market** — What is the broader market size, trend, and competitive landscape for Codkesh? — insufficient evidence. Impact: Cannot assess market positioning or total addressable market without external market data.
 - **competitor features** — What specific features do direct competitors in the coding pipeline space provide? — insufficient evidence. Impact: Lacks detailed feature matrix of competitive alternatives.
 - **competitor pricing** — How do competing coding pipeline or workspace solutions price their products? — insufficient evidence. Impact: Unable to benchmark pricing strategy against current market standards.
 - **public reviews** — What are the common pain points and feedback reported by users in public reviews of similar tools? — insufficient evidence. Impact: Lacks customer sentiment analysis and validated user feedback on existing workflows.
 - **audience** — What are the specific user personas and roles targeted by this workspace? — insufficient evidence. Impact: Audience definition is limited to general developers without granular role breakdown.
-- **problem** — What specific workflow friction or inefficiencies prompt users to adopt Pipeline Studio? — insufficient evidence. Impact: Problem statement is broad, making it difficult to measure quantitative value proposition.
+- **problem** — What specific workflow friction or inefficiencies prompt users to adopt Codkesh? — insufficient evidence. Impact: Problem statement is broad, making it difficult to measure quantitative value proposition.
 - **product** — What verified evidence is available for product? — insufficient evidence. Impact: No source-bound product claim passed independent citation verification.
 
 ## Technical and delivery analysis

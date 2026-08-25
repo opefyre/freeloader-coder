@@ -1,4 +1,4 @@
-<!-- codkesh-artifact:{"schemaVersion":1,"kind":"context","revision":2,"updatedAt":"2026-08-12T10:07:40.717Z","producer":"codkesh:context-discovery","bodyDigest":"88c0f0c915c50ba59db9a6b366541f110ce4453bef5441547aa93cbba77c7785","approvedDigest":null,"supersedesDigest":"26fc1734a2f92238b0d775940f4937e3dd640324b2527b32154fe93b3b5199f2","confidence":"unknown","approvalState":"not_required","citations":[]} -->
+<!-- codkesh-artifact:{"schemaVersion":1,"kind":"context","revision":3,"updatedAt":"2026-08-25T11:53:02.954Z","producer":"codkesh:identity-refresh","bodyDigest":"152a353fde6d2936a80ced701f9c807829797905346c3eb834b05dbc73a6d95c","approvedDigest":null,"supersedesDigest":"88c0f0c915c50ba59db9a6b366541f110ce4453bef5441547aa93cbba77c7785","confidence":"unknown","approvalState":"not_required","citations":[]} -->
 # Project context
 
 Generated: 2026-08-12T10:07:40.716Z
@@ -47,7 +47,7 @@ Review the attached evidence and design the product described by it.
 
 ## Features and workflows observed
 
-- Pipeline Studio — `README.md`
+- Codkesh — `README.md`
 - Current phase — `README.md`
 - Clone and run — `README.md`
 

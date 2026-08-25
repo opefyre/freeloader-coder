@@ -41,3 +41,15 @@ external owner journey, due for review on 2026-09-01. Success requires reaching
 feedback—never prompts, source code, attachments, credentials, full paths, or
 personal identifiers. The schema-validated review is stored in
 `docs/evidence/PIPE-112-LAUNCH-LEARNING-2026-08-25.json`.
+
+## Local contract certification — 2026-08-25
+
+The zero-cost synthetic certification passed all eleven required stages for the
+owner MVP, new-product, and existing-product journeys. It recorded zero paid
+calls and zero external effects. The schema-validated receipt is
+`docs/evidence/PIPE-622-OWNER-JOURNEY-CERTIFICATION.json`.
+
+This does not satisfy the external-owner experiment. It proves that the local
+contract can reach durable completion without exposing project material; live
+provider availability, human comprehension, time-to-preview, and trust still
+require the consented journey scheduled above.

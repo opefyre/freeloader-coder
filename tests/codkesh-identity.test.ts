@@ -2,11 +2,17 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { ProjectArtifactStore } from "../apps/core/src/project-artifact-store.js";
+
 const ownerFacingFiles = [
   "README.md",
   "CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md",
   "THIRD_PARTY_NOTICES.md",
+  "CONTEXT.md",
+  "RESEARCH.md",
+  "PRODUCT.md",
+  "DESIGN.md",
   "apps/oauth-broker/src/index.ts",
   "apps/core/src/control-plane.ts",
   "apps/core/src/control-plane-main.ts",
@@ -46,6 +52,16 @@ test("owner-facing product surfaces use one Codkesh identity and canonical sourc
   const readme = await readFile("README.md", "utf8");
   assert.match(readme, /^# Codkesh$/m);
   assert.match(readme, /github\.com\/opefyre\/freeloader-coder\.git codkesh/);
+});
+
+test("current branded governed artifacts retain valid signed metadata", async () => {
+  const store = new ProjectArtifactStore();
+  for (const kind of ["context", "research", "product", "design"] as const) {
+    const artifact = await store.read(process.cwd(), kind);
+    assert.match(artifact.metadata.bodyDigest, /^[a-f0-9]{64}$/);
+    assert.equal(artifact.metadata.producer, "codkesh:identity-refresh");
+    assert.doesNotMatch(artifact.body, /Pipeline Studio/);
+  }
 });
 
 test("compatibility identifiers remain stable while new Git attribution uses Codkesh", async () => {

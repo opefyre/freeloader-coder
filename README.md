@@ -181,6 +181,24 @@ adjacent-product boundaries, safe failure/recovery behavior, release gates,
 support coverage, and privacy-safe learning scorecard. It creates no public
 deployment, campaign, analytics transmission, or provider request.
 
+## Local certification
+
+Run `npm run certify:owner-journey` to exercise the complete zero-cost synthetic
+owner journey for both a new and an existing project. The command fails if
+intake, governed artifacts, approval, Jira-backed planning, isolated delivery,
+validation, independent review, integration, or durable completion is missing.
+It writes a schema-validated receipt containing only stage names, digests,
+timing, and explicit limitations; prompts, source code, attachments,
+credentials, absolute paths, personal identifiers, and private Jira content are
+excluded. This certification proves the local product contract, not external
+adoption or live provider availability.
+
+`npm run artifacts:identity:preview` shows a mutation-free governed-artifact
+identity plan. `npm run artifacts:identity:apply` applies the same explicit
+replacement through digest-bound writes with history preservation. Changed
+owner-approved artifacts become pending again instead of inheriting stale
+approval.
+
 ## Non-negotiable product promises
 
 - Local-first canonical state and recoverable work.

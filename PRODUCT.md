@@ -1,7 +1,7 @@
-<!-- codkesh-artifact:{"schemaVersion":1,"kind":"product","revision":2,"updatedAt":"2026-08-15T14:26:45.436Z","producer":"codkesh:solution-design","bodyDigest":"1cfc70d85430169638442de2b1d7b748a4c2508a6bb11f3267b967e08bcd11fc","approvedDigest":null,"supersedesDigest":"4f8f6822af55ab4cadd5cd93f8218c0f7c968922c8b3c3626419dff6b13ebf59","confidence":"unknown","approvalState":"pending","citations":[]} -->
-# Product — Pipeline Studio Product Design Specification
+<!-- codkesh-artifact:{"schemaVersion":1,"kind":"product","revision":3,"updatedAt":"2026-08-25T11:53:03.035Z","producer":"codkesh:identity-refresh","bodyDigest":"10a995e6e9235b2be8138f5ef6423dd1be764b26874aac44041b44d252805b68","approvedDigest":null,"supersedesDigest":"1cfc70d85430169638442de2b1d7b748a4c2508a6bb11f3267b967e08bcd11fc","confidence":"unknown","approvalState":"pending","citations":[]} -->
+# Product — Codkesh Product Design Specification
 
-Design specification for Pipeline Studio based strictly on available repository context and identified evidence gaps.
+Design specification for Codkesh based strictly on available repository context and identified evidence gaps.
 
 ## Evidence baseline
 
@@ -14,7 +14,7 @@ Design specification for Pipeline Studio based strictly on available repository 
 
 ## User experience
 
-- Provide a Pipeline Studio interface and workflow as referenced in repository documentation within local://CONTEXT.md.
+- Provide a Codkesh interface and workflow as referenced in repository documentation within local://CONTEXT.md.
 
 ## Rollout
 
