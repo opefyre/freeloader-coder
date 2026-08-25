@@ -6,6 +6,7 @@ import { ArrowSquareOut } from "@phosphor-icons/react/ArrowSquareOut";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
+import { ownerProjectGuidance } from "../../../../../packages/runtime/src/owner-project-guidance.js";
 import type { LocalRequest } from "../../../../../packages/runtime/src/local-requests.js";
 import type {
   OwnerAnswer,
@@ -373,20 +374,34 @@ export function ProjectActivityDashboard(props: {
                   solutionItems.some((item) => item.projectId === project.id) ||
                   actionItems.some((item) => item.projectId === project.id),
               )
-              .map((project) => (
+              .map((project) => {
+                const guidance = ownerProjectGuidance(project);
+                return (
                 <section
                   key={project.id}
                   aria-labelledby={`actions-${project.id}`}
                 >
-                  <div className="mb-3 flex items-center gap-2">
-                    <h2 id={`actions-${project.id}`} className="font-semibold">
-                      {project.displayName}
-                    </h2>
-                    <Badge>
-                      {(project.lifecycleStage ?? "intake").replaceAll(
-                        "_",
-                        " ",
-                      )}
+                  <div className="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
+                    <div>
+                      <h2
+                        id={`actions-${project.id}`}
+                        className="font-semibold"
+                      >
+                        {project.displayName}
+                      </h2>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Current stage · {guidance.stageLabel}
+                      </p>
+                    </div>
+                    <Badge
+                      tone={
+                        guidance.ownerState === "action_required" ||
+                        guidance.ownerState === "attention"
+                          ? "caution"
+                          : "neutral"
+                      }
+                    >
+                      {guidance.ownerStateLabel}
                     </Badge>
                   </div>
                   <div className="grid gap-3">
@@ -563,7 +578,8 @@ export function ProjectActivityDashboard(props: {
                       ))}
                   </div>
                 </section>
-              ))}
+                );
+              })}
           </div>
         )
       ) : (

@@ -1,0 +1,37 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { ownerProjectGuidance, ownerProjectGuidanceSchema } from "../packages/runtime/src/owner-project-guidance.js";
+import type { LocalProjectSnapshot } from "../packages/runtime/src/local-projects.js";
+
+const stages = ["intake", "context_review", "clarification", "solution_design", "awaiting_design_approval", "backlog_design", "backlog_qa", "delivery", "blocked", "complete", "cancelled"] as const;
+
+test("every lifecycle stage has one complete owner command model", () => {
+  for (const stage of stages) {
+    const result = ownerProjectGuidance(project(stage));
+    assert.equal(result.lifecycleStage, stage);
+    assert.ok(result.stageLabel.length > 0);
+    assert.ok(result.primaryAction.label.length > 0);
+    assert.ok(result.approvalBoundary.length > 0);
+    assert.ok(result.downstreamEffect.length > 0);
+    assert.ok(result.recovery.length > 0);
+    assert.equal(result.automaticSpendLimitUsd, 0);
+    ownerProjectGuidanceSchema.parse(result);
+  }
+});
+
+test("owner-required, autonomous, terminal, warning, and failed states stay honest", () => {
+  assert.equal(ownerProjectGuidance(project("clarification")).primaryAction.destination, "actions");
+  assert.equal(ownerProjectGuidance(project("awaiting_design_approval")).ownerState, "action_required");
+  assert.equal(ownerProjectGuidance(project("delivery")).ownerState, "autonomous");
+  assert.equal(ownerProjectGuidance(project("complete")).ownerState, "complete");
+  assert.equal(ownerProjectGuidance({ ...project("delivery"), state: "warning", warnings: ["Provider evidence is stale."] }).recovery, "Provider evidence is stale.");
+  const failed = ownerProjectGuidance({ ...project("delivery"), state: "failed", warnings: ["Preserved receipt is invalid."] });
+  assert.equal(failed.stageLabel, "Recovery required");
+  assert.equal(failed.primaryAction.destination, "actions");
+  assert.match(failed.approvalBoundary, /No action is authorized/);
+});
+
+function project(lifecycleStage: LocalProjectSnapshot["lifecycleStage"]): LocalProjectSnapshot {
+  return { schemaVersion: 1, id: "project_1234567890abcdef", displayName: "Example", lifecycleStage, state: "ready", observedAt: 1, validForMs: 1_000, facts: [], inferences: [], decisions: [], warnings: [] };
+}

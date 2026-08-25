@@ -33,12 +33,14 @@ import { X } from "@phosphor-icons/react/X";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { controlCenterMetric } from "../../../fixtures/control-center-metrics.js";
+import type { LocalProjectSnapshot } from "../../../packages/runtime/src/local-projects.js";
 import {
   approvalFacts,
   contentPatternExamples,
 } from "../../../packages/ui/src/content.js";
 import { Badge } from "./components/ui/badge.js";
 import { PipelineMark } from "./components/brand/pipeline-mark.js";
+import { ProjectStageCommand } from "./components/projects/project-stage-command.js";
 import { ControlCenter } from "./components/control-center/control-center.js";
 import {
   DemoDataDisclosure,
@@ -1510,6 +1512,8 @@ function ProjectsWorkspace({
     "overview",
   );
   const [projectName, setProjectName] = useState("");
+  const [selectedProject, setSelectedProject] =
+    useState<LocalProjectSnapshot | null>(null);
   useEffect(() => {
     const sync = () =>
       setSelectedProjectId(projectIdFromLocation(window.location) ?? "");
@@ -1519,17 +1523,21 @@ function ProjectsWorkspace({
   useEffect(() => {
     if (!selectedProjectId) {
       setProjectName("");
+      setSelectedProject(null);
       return;
     }
     void loadLocalProjects({ endpoint })
-      .then((collection) =>
-        setProjectName(
-          collection.projects.find(
-            (project) => project.id === selectedProjectId,
-          )?.displayName ?? "Project",
-        ),
-      )
-      .catch(() => setProjectName("Project"));
+      .then((collection) => {
+        const project = collection.projects.find(
+          (candidate) => candidate.id === selectedProjectId,
+        );
+        setProjectName(project?.displayName ?? "Project");
+        setSelectedProject(project ?? null);
+      })
+      .catch(() => {
+        setProjectName("Project");
+        setSelectedProject(null);
+      });
   }, [endpoint, selectedProjectId]);
   const openProject = (projectId: string) => {
     window.history.pushState({}, "", projectRoute(projectId));
@@ -1570,6 +1578,19 @@ function ProjectsWorkspace({
           </h1>
         </div>
       </div>
+      {selectedProject && (
+        <ProjectStageCommand
+          project={selectedProject}
+          activate={(destination) => {
+            if (destination === "actions") {
+              navigate("activity");
+              return;
+            }
+            setSection(destination);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
+      )}
       <Tabs
         value={section}
         onValueChange={(value) => setSection(value as typeof section)}

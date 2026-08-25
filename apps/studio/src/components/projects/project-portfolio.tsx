@@ -2,10 +2,10 @@ import { ArrowClockwise } from "@phosphor-icons/react/ArrowClockwise";
 import { ArrowRight } from "@phosphor-icons/react/ArrowRight";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { Plus } from "@phosphor-icons/react/Plus";
-import { Warning } from "@phosphor-icons/react/Warning";
 import { useCallback, useEffect, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
+import { ownerProjectGuidance } from "../../../../../packages/runtime/src/owner-project-guidance.js";
 import { listLocalProjects } from "../../local-project-client.js";
 import { Button } from "../ui/button.js";
 
@@ -58,11 +58,12 @@ export function ProjectPortfolio(props: {
         <div className="grid gap-2 sm:grid-cols-2">
           {projects.map((project) => {
             const attention = needsAttention(project);
-            const update = project.latestUpdate?.summary ?? (project.lifecycleStage ?? "intake").replaceAll("_", " ");
+            const guidance = ownerProjectGuidance(project);
+            const update = project.latestUpdate?.summary ?? guidance.outcome;
             return (
               <button key={project.id} type="button" onClick={() => props.openProject(project.id)} className="group flex min-h-36 w-full flex-col rounded-3xl bg-muted/45 p-4 text-left outline-none transition duration-200 hover:-translate-y-0.5 hover:bg-muted/70 hover:shadow-lg hover:shadow-black/5 focus-visible:ring-3 focus-visible:ring-ring/30">
-                <span className="flex w-full items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-background text-muted-foreground transition-transform group-hover:scale-105"><FolderOpen size={18} weight="duotone" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{project.displayName}</strong><span className="mt-1 block truncate text-xs capitalize text-muted-foreground">{update}</span></span>{attention ? <Warning className="shrink-0 text-amber-500" aria-label="Needs attention" /> : <ArrowRight className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />}</span>
-                <span className="mt-auto flex w-full items-end justify-between gap-3 pt-5"><span className="min-w-0 flex-1">{project.progress ? <><span className="mb-1.5 flex justify-between text-[11px] text-muted-foreground"><span>{project.progress.percent}%</span><span>{project.progress.completed}/{project.progress.total}</span></span><span className="block h-1.5 overflow-hidden rounded-full bg-background"><span className="block h-full rounded-full bg-primary transition-[width]" style={{ width: `${project.progress.percent}%` }} /></span></> : <span className="text-xs capitalize text-muted-foreground">{(project.lifecycleStage ?? "intake").replaceAll("_", " ")}</span>}</span><span className="shrink-0 text-xs text-muted-foreground">{project.latestUpdate ? relativeTime(project.latestUpdate.occurredAt) : ""}</span></span>
+                <span className="flex w-full items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-background text-muted-foreground transition-transform group-hover:scale-105"><FolderOpen size={18} weight="duotone" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{project.displayName}</strong><span className="mt-1 block text-xs font-medium text-foreground">{guidance.stageLabel}</span><span className="mt-1 line-clamp-2 text-xs text-muted-foreground">{update}</span></span>{attention ? <span className="shrink-0 text-[11px] font-semibold text-amber-500">Needs attention</span> : <ArrowRight className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />}</span>
+                <span className="mt-auto flex w-full items-end justify-between gap-3 pt-5"><span className="min-w-0 flex-1">{project.progress ? <><span className="mb-1.5 flex justify-between text-[11px] text-muted-foreground"><span>{project.progress.percent}%</span><span>{project.progress.completed}/{project.progress.total}</span></span><span className="block h-1.5 overflow-hidden rounded-full bg-background"><span className="block h-full rounded-full bg-primary transition-[width]" style={{ width: `${project.progress.percent}%` }} /></span></> : <span className="text-xs font-medium text-primary">{guidance.primaryAction.label}</span>}</span><span className="shrink-0 text-xs text-muted-foreground">{project.latestUpdate ? relativeTime(project.latestUpdate.occurredAt) : "Open project"}</span></span>
               </button>
             );
           })}
