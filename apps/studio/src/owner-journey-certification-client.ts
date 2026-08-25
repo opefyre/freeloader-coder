@@ -5,12 +5,18 @@ import {
   ownerJourneyCertificationRunResponseSchema,
   ownerJourneyCertificationSnapshotSchema,
   ownerJourneyTrustSnapshotSchema,
+  ownerPilotCollectionSchema,
+  ownerPilotReviewSchema,
+  ownerPilotSessionSchema,
   type ExternalLearningCollection,
   type ExternalLearningSession,
   type OwnerJourneyCertificationPreview,
   type OwnerJourneyCertificationRunResponse,
   type OwnerJourneyCertificationSnapshot,
   type OwnerJourneyTrustSnapshot,
+  type OwnerPilotCollection,
+  type OwnerPilotReview,
+  type OwnerPilotSession,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 
 const MAX_BYTES = 300_000;
@@ -30,12 +36,21 @@ export async function getOwnerJourneyTrust(
   signal?: AbortSignal,
 ): Promise<OwnerJourneyTrustSnapshot> {
   return ownerJourneyTrustSnapshotSchema.parse(
-    await request(new URL("/api/v1/owner-journey-trust", loopback(endpoint)), { method: "GET", ...(signal ? { signal } : {}) }),
+    await request(new URL("/api/v1/owner-journey-trust", loopback(endpoint)), {
+      method: "GET",
+      ...(signal ? { signal } : {}),
+    }),
   );
 }
-export async function tickOwnerJourneyTrust(endpoint: string, idempotencyKey: string): Promise<OwnerJourneyTrustSnapshot> {
+export async function tickOwnerJourneyTrust(
+  endpoint: string,
+  idempotencyKey: string,
+): Promise<OwnerJourneyTrustSnapshot> {
   return ownerJourneyTrustSnapshotSchema.parse(
-    await request(new URL("/api/v1/owner-journey-trust/tick", loopback(endpoint)), { method: "POST", headers: { "Idempotency-Key": idempotencyKey } }),
+    await request(
+      new URL("/api/v1/owner-journey-trust/tick", loopback(endpoint)),
+      { method: "POST", headers: { "Idempotency-Key": idempotencyKey } },
+    ),
   );
 }
 export async function previewOwnerJourneyCertification(
@@ -110,6 +125,72 @@ export async function withdrawExternalOwnerLearning(
         `/api/v1/external-owner-learning/${id}/withdraw`,
         loopback(endpoint),
       ),
+      json({ expectedRevision }),
+    ),
+  );
+}
+export async function listOwnerPilot(
+  endpoint: string,
+): Promise<OwnerPilotCollection> {
+  return ownerPilotCollectionSchema.parse(
+    await request(new URL("/api/v1/owner-pilot", loopback(endpoint)), {
+      method: "GET",
+    }),
+  );
+}
+export async function getOwnerPilotReview(
+  endpoint: string,
+): Promise<OwnerPilotReview> {
+  return ownerPilotReviewSchema.parse(
+    await request(new URL("/api/v1/owner-pilot/review", loopback(endpoint)), {
+      method: "GET",
+    }),
+  );
+}
+export async function createOwnerPilot(
+  endpoint: string,
+  input: unknown,
+  idempotencyKey: string,
+): Promise<OwnerPilotSession> {
+  return ownerPilotSessionSchema.parse(
+    await request(
+      new URL("/api/v1/owner-pilot", loopback(endpoint)),
+      json(input, idempotencyKey),
+    ),
+  );
+}
+export async function advanceOwnerPilot(
+  endpoint: string,
+  id: string,
+  input: unknown,
+): Promise<OwnerPilotSession> {
+  return ownerPilotSessionSchema.parse(
+    await request(
+      new URL(`/api/v1/owner-pilot/${id}/advance`, loopback(endpoint)),
+      json(input),
+    ),
+  );
+}
+export async function completeOwnerPilot(
+  endpoint: string,
+  id: string,
+  input: unknown,
+): Promise<OwnerPilotSession> {
+  return ownerPilotSessionSchema.parse(
+    await request(
+      new URL(`/api/v1/owner-pilot/${id}/complete`, loopback(endpoint)),
+      json(input),
+    ),
+  );
+}
+export async function withdrawOwnerPilot(
+  endpoint: string,
+  id: string,
+  expectedRevision: number,
+): Promise<OwnerPilotSession> {
+  return ownerPilotSessionSchema.parse(
+    await request(
+      new URL(`/api/v1/owner-pilot/${id}/withdraw`, loopback(endpoint)),
       json({ expectedRevision }),
     ),
   );

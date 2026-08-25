@@ -1,24 +1,28 @@
 import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
 import { Flask } from "@phosphor-icons/react/Flask";
 import { Warning } from "@phosphor-icons/react/Warning";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type {
-  ExternalLearningSession,
   OwnerJourneyCertificationSnapshot,
   OwnerJourneyTrustSnapshot,
+  OwnerPilotReview,
+  OwnerPilotSession,
 } from "../../../../../packages/runtime/src/owner-journey-certification.js";
 import {
-  completeExternalOwnerLearning,
-  createExternalOwnerLearning,
+  advanceOwnerPilot,
+  completeOwnerPilot,
+  createOwnerPilot,
+  getOwnerPilotReview,
   getOwnerJourneyCertification,
   getOwnerJourneyTrust,
-  listExternalOwnerLearning,
+  listOwnerPilot,
   previewOwnerJourneyCertification,
   runOwnerJourneyCertification,
   tickOwnerJourneyTrust,
-  withdrawExternalOwnerLearning,
+  withdrawOwnerPilot,
 } from "../../owner-journey-certification-client.js";
+import { listLocalProjects } from "../../local-project-client.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
 import {
@@ -36,26 +40,29 @@ export function OwnerJourneyCertificationCard({
 }) {
   const [snapshot, setSnapshot] =
     useState<OwnerJourneyCertificationSnapshot | null>(null);
-  const [sessions, setSessions] = useState<readonly ExternalLearningSession[]>(
-    [],
-  );
+  const [sessions, setSessions] = useState<readonly OwnerPilotSession[]>([]);
+  const [review, setReview] = useState<OwnerPilotReview | null>(null);
   const [trust, setTrust] = useState<OwnerJourneyTrustSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [showLearning, setShowLearning] = useState(false);
   const refresh = useCallback(async () => {
     try {
-      const [certification, learning, trustSnapshot] = await Promise.all([
-        getOwnerJourneyCertification(endpoint),
-        listExternalOwnerLearning(endpoint),
-        getOwnerJourneyTrust(endpoint),
-      ]);
+      const [certification, pilot, trustSnapshot, pilotReview] =
+        await Promise.all([
+          getOwnerJourneyCertification(endpoint),
+          listOwnerPilot(endpoint),
+          getOwnerJourneyTrust(endpoint),
+          getOwnerPilotReview(endpoint),
+        ]);
       setSnapshot(certification);
-      setSessions(learning.sessions);
+      setSessions(pilot.sessions);
       setTrust(trustSnapshot);
+      setReview(pilotReview);
     } catch {
       setSnapshot(null);
       setTrust(null);
+      setReview(null);
     }
   }, [endpoint]);
   useEffect(() => {
@@ -85,13 +92,22 @@ export function OwnerJourneyCertificationCard({
     setBusy(true);
     setNotice("Refreshing local trust evidence…");
     try {
-      const result = await tickOwnerJourneyTrust(endpoint, `trust.ui.${Date.now()}`);
+      const result = await tickOwnerJourneyTrust(
+        endpoint,
+        `trust.ui.${Date.now()}`,
+      );
       setTrust(result);
       await refresh();
       setNotice("Trust evidence is current.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Trust evidence did not refresh.");
-    } finally { setBusy(false); }
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Trust evidence did not refresh.",
+      );
+    } finally {
+      setBusy(false);
+    }
   }
   const passed = snapshot?.state === "passed";
   const stages = snapshot?.lastPassedReceipt?.stages ?? [];
@@ -156,26 +172,75 @@ export function OwnerJourneyCertificationCard({
               }
             />
             <Fact label="Real sessions" value={String(completedLearning)} />
-            <Fact label="Pilot readiness" value={trust ? readinessLabel(trust.readiness.state) : "Checking…"} />
+            <Fact
+              label="Pilot readiness"
+              value={
+                trust ? readinessLabel(trust.readiness.state) : "Checking…"
+              }
+            />
           </div>
         )}
         {trust && (
-          <section aria-labelledby="pilot-readiness-title" className="rounded-[1.5rem] bg-muted/45 p-4">
+          <section
+            aria-labelledby="pilot-readiness-title"
+            className="rounded-[1.5rem] bg-muted/45 p-4"
+          >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 id="pilot-readiness-title" className="font-semibold">{trust.readiness.title}</h3>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">{trust.readiness.reason}</p>
+                <h3 id="pilot-readiness-title" className="font-semibold">
+                  {trust.readiness.title}
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {trust.readiness.reason}
+                </p>
               </div>
-              <Badge tone={trust.readiness.state === "review_ready" ? "positive" : "neutral"}>{readinessLabel(trust.readiness.state)}</Badge>
+              <Badge
+                tone={
+                  trust.readiness.state === "review_ready"
+                    ? "positive"
+                    : "neutral"
+                }
+              >
+                {readinessLabel(trust.readiness.state)}
+              </Badge>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Fact label="Next local check" value={new Date(trust.freshness.nextCheckAt).toLocaleDateString([], { dateStyle: "medium" })} />
-              <Fact label="Median to preview" value={trust.learning.medianTimeToPreviewSeconds === null ? "Not enough data" : `${Math.round(trust.learning.medianTimeToPreviewSeconds / 60)} min`} />
-              <Fact label="Trust 4–5" value={trust.learning.trustAtLeastFourPercent === null ? "Not enough data" : `${trust.learning.trustAtLeastFourPercent}%`} />
+              <Fact
+                label="Next local check"
+                value={new Date(trust.freshness.nextCheckAt).toLocaleDateString(
+                  [],
+                  { dateStyle: "medium" },
+                )}
+              />
+              <Fact
+                label="Median to preview"
+                value={
+                  trust.learning.medianTimeToPreviewSeconds === null
+                    ? "Not enough data"
+                    : `${Math.round(trust.learning.medianTimeToPreviewSeconds / 60)} min`
+                }
+              />
+              <Fact
+                label="Trust 4–5"
+                value={
+                  trust.learning.trustAtLeastFourPercent === null
+                    ? "Not enough data"
+                    : `${trust.learning.trustAtLeastFourPercent}%`
+                }
+              />
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">Anonymous aggregates only. At least 3 completed sessions are required.</p>
-              <Button variant="secondary" onClick={() => void refreshTrust()} disabled={busy}>Refresh evidence</Button>
+              <p className="text-xs text-muted-foreground">
+                Anonymous aggregates only. At least 3 completed sessions are
+                required.
+              </p>
+              <Button
+                variant="secondary"
+                onClick={() => void refreshTrust()}
+                disabled={busy}
+              >
+                Refresh evidence
+              </Button>
             </div>
           </section>
         )}
@@ -218,9 +283,10 @@ export function OwnerJourneyCertificationCard({
           </Button>
         </div>
         {showLearning && (
-          <LearningCapture
+          <PilotCapture
             endpoint={endpoint}
             sessions={sessions}
+            review={review}
             saved={async (message) => {
               await refresh();
               setNotice(message);
@@ -231,19 +297,21 @@ export function OwnerJourneyCertificationCard({
     </Card>
   );
 }
-function LearningCapture({
+function PilotCapture({
   endpoint,
   sessions,
+  review,
   saved,
 }: {
   endpoint: string;
-  sessions: readonly ExternalLearningSession[];
+  sessions: readonly OwnerPilotSession[];
+  review: OwnerPilotReview | null;
   saved: (message: string) => Promise<void>;
 }) {
-  const alias = useMemo(
-    () => `participant-${crypto.randomUUID().slice(0, 8)}`,
-    [],
-  );
+  const [projects, setProjects] = useState<
+    readonly { id: string; name: string }[]
+  >([]);
+  const [projectId, setProjectId] = useState("");
   const [scenario, setScenario] = useState<
     "new_product" | "existing_product" | "major_feature"
   >("new_product");
@@ -251,19 +319,31 @@ function LearningCapture({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [rating, setRating] = useState(4);
-  const [timeToPreview, setTimeToPreview] = useState(10);
   const [note, setNote] = useState("");
-  const draft = sessions.find((session) => session.status === "draft");
+  const [frictions, setFrictions] = useState<OwnerPilotSession["frictions"]>([
+    "none",
+  ]);
+  const active = sessions.find((session) => session.status === "active");
+  useEffect(() => {
+    void listLocalProjects({ endpoint }).then((value) => {
+      const available = value.projects.map((project) => ({
+        id: project.id,
+        name: project.displayName,
+      }));
+      setProjects(available);
+      setProjectId((current) => current || available[0]?.id || "");
+    });
+  }, [endpoint]);
   async function create() {
     setBusy(true);
     setError("");
     try {
-      await createExternalOwnerLearning(
+      await createOwnerPilot(
         endpoint,
-        { participantAlias: alias, scenario, consent, startedAt: Date.now() },
-        `learning.ui.${Date.now()}`,
+        { projectId, scenario, consent, startedAt: Date.now() },
+        `pilot.ui.${Date.now()}`,
       );
-      await saved("Consented learning draft stored locally.");
+      await saved("Consented pilot session started locally.");
     } catch (value) {
       setError(
         value instanceof Error
@@ -274,20 +354,55 @@ function LearningCapture({
       setBusy(false);
     }
   }
-  async function complete() {
-    if (!draft) return;
+  async function advance() {
+    if (!active) return;
+    const next = (
+      {
+        session_started: "context_ready",
+        context_ready: "solution_approved",
+        solution_approved: "first_preview",
+      } as const
+    )[
+      active.milestones.at(-1)!.name as
+        "session_started" | "context_ready" | "solution_approved"
+    ];
+    if (!next) return;
     setBusy(true);
     setError("");
     try {
-      await completeExternalOwnerLearning(endpoint, draft.id, {
-        expectedRevision: draft.revision,
+      await advanceOwnerPilot(endpoint, active.id, {
+        expectedRevision: active.revision,
+        milestone: next,
+        at: Date.now(),
+      });
+      await saved(
+        next === "first_preview"
+          ? "First preview recorded."
+          : "Pilot milestone recorded.",
+      );
+    } catch (value) {
+      setError(
+        value instanceof Error
+          ? value.message
+          : "Pilot milestone was not saved.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function complete() {
+    if (!active) return;
+    setBusy(true);
+    setError("");
+    try {
+      await completeOwnerPilot(endpoint, active.id, {
+        expectedRevision: active.revision,
         completedAt: Date.now(),
-        timeToPreviewSeconds: timeToPreview * 60,
         trustRating: rating,
-        frictions: ["none"],
+        frictions,
         note,
       });
-      await saved("Consented learning session completed locally.");
+      await saved("Consented pilot session completed locally.");
     } catch (value) {
       setError(
         value instanceof Error
@@ -299,11 +414,11 @@ function LearningCapture({
     }
   }
   async function withdraw() {
-    if (!draft) return;
+    if (!active) return;
     setBusy(true);
     setError("");
     try {
-      await withdrawExternalOwnerLearning(endpoint, draft.id, draft.revision);
+      await withdrawOwnerPilot(endpoint, active.id, active.revision);
       await saved("Consent withdrawn. The local session is no longer active.");
     } catch (value) {
       setError(
@@ -327,46 +442,97 @@ function LearningCapture({
         The participant stays anonymous. Prompts, files, names, email, and
         project content are excluded.
       </p>
-      {draft ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-xs font-medium">
-            Minutes to preview
-            <input
-              type="number"
-              min={1}
-              max={1440}
-              value={timeToPreview}
-              onChange={(event) => setTimeToPreview(Number(event.target.value))}
-              className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-            />
-          </label>
-          <label className="text-xs font-medium">
-            Trust rating
-            <select
-              value={rating}
-              onChange={(event) => setRating(Number(event.target.value))}
-              className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-            >
-              {[1, 2, 3, 4, 5].map((value) => (
-                <option key={value} value={value}>
-                  {value} of 5
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="sm:col-span-2 text-xs font-medium">
-            Optional sanitized note
-            <textarea
-              value={note}
-              maxLength={400}
-              onChange={(event) => setNote(event.target.value)}
-              className="mt-2 min-h-20 w-full resize-y rounded-2xl bg-background p-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-            />
-          </label>
-          <div className="sm:col-span-2 flex gap-2">
-            <Button onClick={() => void complete()} disabled={busy}>
-              Complete session
+      {active ? (
+        <div className="mt-4 space-y-4">
+          <div className="grid gap-2 sm:grid-cols-4">
+            {["Started", "Context", "Approved", "Preview"].map(
+              (milestone, index) => (
+                <Fact
+                  key={milestone}
+                  label={`Step ${index + 1}`}
+                  value={
+                    active.milestones.length > index ? milestone : "Waiting"
+                  }
+                />
+              ),
+            )}
+          </div>
+          {active.previewAt === null ? (
+            <Button onClick={() => void advance()} disabled={busy}>
+              {busy ? "Saving…" : nextMilestoneLabel(active)}
             </Button>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-medium">
+                Trust rating
+                <select
+                  value={rating}
+                  onChange={(event) => setRating(Number(event.target.value))}
+                  className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                >
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <option key={value} value={value}>
+                      {value} of 5
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <fieldset className="text-xs font-medium">
+                <legend>Friction</legend>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(
+                    [
+                      "setup",
+                      "navigation",
+                      "trust",
+                      "clarity",
+                      "speed",
+                      "approval",
+                      "none",
+                    ] as const
+                  ).map((value) => (
+                    <label
+                      key={value}
+                      className="flex items-center gap-2 rounded-2xl bg-background px-3 py-2"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={frictions.includes(value)}
+                        onChange={() =>
+                          setFrictions((current) =>
+                            toggleFriction(current, value),
+                          )
+                        }
+                      />
+                      {label(value)}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="sm:col-span-2 text-xs font-medium">
+                Optional sanitized note
+                <textarea
+                  value={note}
+                  maxLength={400}
+                  onChange={(event) => setNote(event.target.value)}
+                  className="mt-2 min-h-20 w-full resize-y rounded-2xl bg-background p-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                />
+              </label>
+              <div className="sm:col-span-2 flex gap-2">
+                <Button onClick={() => void complete()} disabled={busy}>
+                  Complete session
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => void withdraw()}
+                  disabled={busy}
+                >
+                  Withdraw consent
+                </Button>
+              </div>
+            </div>
+          )}
+          {active.previewAt === null && (
             <Button
               variant="ghost"
               onClick={() => void withdraw()}
@@ -374,10 +540,24 @@ function LearningCapture({
             >
               Withdraw consent
             </Button>
-          </div>
+          )}
         </div>
       ) : (
         <>
+          <label className="mt-4 block text-xs font-medium">
+            Project
+            <select
+              value={projectId}
+              onChange={(event) => setProjectId(event.target.value)}
+              className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+            >
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="mt-4 block text-xs font-medium">
             Scenario
             <select
@@ -410,14 +590,77 @@ function LearningCapture({
           <Button
             className="mt-4"
             onClick={() => void create()}
-            disabled={!consent || busy}
+            disabled={!consent || !projectId || busy}
           >
             {busy ? "Starting…" : "Start session"}
           </Button>
         </>
       )}
+      {error && (
+        <p role="alert" className="mt-3 text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      {review && (
+        <div className="mt-5 rounded-2xl bg-background p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <strong className="text-sm">{review.title}</strong>
+            <Badge
+              tone={review.state === "review_ready" ? "positive" : "neutral"}
+            >
+              {label(review.state)}
+            </Badge>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            {review.reason}
+          </p>
+          {review.improvements.length > 0 && (
+            <ul
+              className="mt-3 space-y-2"
+              aria-label="Evidence-backed improvements"
+            >
+              {review.improvements.map((improvement) => (
+                <li
+                  key={improvement.id}
+                  className="rounded-2xl bg-muted/55 px-3 py-3 text-xs"
+                >
+                  <strong>{improvement.title}</strong>
+                  <span className="ml-2 text-muted-foreground">
+                    {improvement.evidenceCount} sessions ·{" "}
+                    {improvement.priority}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   );
+}
+
+function nextMilestoneLabel(session: OwnerPilotSession) {
+  return (
+    {
+      session_started: "Mark context ready",
+      context_ready: "Mark solution approved",
+      solution_approved: "Record first preview",
+    } as const
+  )[
+    session.milestones.at(-1)!.name as
+      "session_started" | "context_ready" | "solution_approved"
+  ];
+}
+
+function toggleFriction(
+  current: OwnerPilotSession["frictions"],
+  value: OwnerPilotSession["frictions"][number],
+): OwnerPilotSession["frictions"] {
+  if (value === "none") return ["none"];
+  const withoutNone = current.filter((item) => item !== "none");
+  return withoutNone.includes(value)
+    ? withoutNone.filter((item) => item !== value)
+    : [...withoutNone, value];
 }
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -434,11 +677,15 @@ function label(value: string) {
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
-function readinessLabel(value: OwnerJourneyTrustSnapshot["readiness"]["state"]) {
-  return ({
-    certification_needed: "Check needed",
-    learning_needed: "Learning",
-    review_ready: "Review ready",
-    thresholds_not_met: "Improve",
-  } as const)[value];
+function readinessLabel(
+  value: OwnerJourneyTrustSnapshot["readiness"]["state"],
+) {
+  return (
+    {
+      certification_needed: "Check needed",
+      learning_needed: "Learning",
+      review_ready: "Review ready",
+      thresholds_not_met: "Improve",
+    } as const
+  )[value];
 }

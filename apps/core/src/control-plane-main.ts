@@ -60,6 +60,7 @@ import { LocalAttentionService } from "./attention-center.js";
 import { OwnerJourneyCertificationService } from "./owner-journey-certification-service.js";
 import { ExternalOwnerLearningService } from "./external-owner-learning-service.js";
 import { OwnerJourneyTrustService } from "./owner-journey-trust-service.js";
+import { OwnerPilotService } from "./owner-pilot-service.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
@@ -90,10 +91,22 @@ const ownerJourneyCertification = new OwnerJourneyCertificationService(
   stateDirectory,
 );
 const externalOwnerLearning = new ExternalOwnerLearningService(stateDirectory);
+const ownerPilot = new OwnerPilotService(stateDirectory);
 const ownerJourneyTrust = new OwnerJourneyTrustService(
   stateDirectory,
   ownerJourneyCertification,
-  externalOwnerLearning,
+  {
+    list: async () => {
+      const [legacy, pilot] = await Promise.all([
+        externalOwnerLearning.list(),
+        ownerPilot.learningCollection(),
+      ]);
+      return {
+        ...legacy,
+        sessions: [...legacy.sessions, ...pilot.sessions].slice(-50),
+      };
+    },
+  },
 );
 const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
@@ -715,6 +728,15 @@ const controlPlane = createControlPlaneServer({
   ownerJourneyTrust: {
     snapshot: () => ownerJourneyTrust.snapshot(),
     tick: () => ownerJourneyTrust.tick(),
+  },
+  ownerPilot: {
+    list: () => ownerPilot.list(),
+    create: (input, idempotencyKey) => ownerPilot.create(input, idempotencyKey),
+    advance: (id, input) => ownerPilot.advance(id, input),
+    complete: (id, input) => ownerPilot.complete(id, input),
+    withdraw: (id, expectedRevision) =>
+      ownerPilot.withdraw(id, expectedRevision),
+    review: async () => ownerPilot.review(await ownerJourneyTrust.snapshot()),
   },
   autonomy: {
     snapshot: () => autonomy.snapshot(),

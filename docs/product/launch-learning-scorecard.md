@@ -56,11 +56,12 @@ require the consented journey scheduled above.
 
 Codkesh now exposes this distinction in Action Center. The local certification
 can be run and inspected there, while the separately consented learning flow
-records only an anonymous alias, scenario class, timestamps, time-to-preview,
-structured trust/friction feedback, and a digest. Draft, completed, and
-withdrawn states remain local. Synthetic certification cannot be promoted into
-external evidence, and a single completed learning session cannot be described
-as adoption, retention, or market validation.
+records only an opaque project identifier, scenario class, ordered milestone
+timestamps, structured trust/friction feedback, and a digest. Active,
+completed, and withdrawn states remain local and survive restart. Withdrawal
+clears the note and feedback. Synthetic certification cannot be promoted into
+external evidence, and a single completed session cannot be described as
+adoption, retention, or market validation.
 
 ## Automatic trust freshness and pilot-readiness policy
 
@@ -78,3 +79,10 @@ The initial review thresholds are 70% completion, a median preview time of at
 most 30 minutes, and at least 67% of ratings at four or five. Passing these
 thresholds means “ready for owner review,” not adoption, product-market fit, or
 public-launch approval.
+
+The evidence review is deterministic and aggregate-only. It ranks bounded
+friction categories and creates an improvement candidate only when the same
+category appears in at least two completed sessions. Each candidate carries an
+evidence count, digest, priority, size, recommendation, and acceptance
+criteria. Raw notes, project content, participant identity, credentials, and
+attachments are never included in the review or a future Jira handoff.

@@ -196,11 +196,13 @@ adoption or live provider availability.
 The same check is available in **Action Center → Owner-journey check**. It
 shows the eleven bounded stages, keeps the last passing receipt when a later
 run fails, and never adds another primary navigation page. Action Center also
-supports a consented external-owner learning record. That record uses an
-anonymous generated alias and structured timing/trust fields; it excludes
-prompts, project files, names, email, credentials, attachments, private Jira
-content, and provider output. A draft can be completed or withdrawn locally.
-One session is learning evidence, never an adoption claim.
+supports a consented, project-bound owner pilot. The guided session records
+only the scenario and ordered milestones—start, context ready, solution
+approval, first preview, and completion—plus bounded trust/friction feedback.
+It excludes prompts, project files, names, email, credentials, attachments,
+private Jira content, and provider output. An active session survives restart
+and can be withdrawn locally; withdrawal removes its note and structured
+feedback. One session is learning evidence, never an adoption claim.
 
 Codkesh evaluates this trust evidence automatically at startup and once per
 hour without keeping the process alive. A passing local receipt is current for
@@ -208,10 +210,12 @@ seven days; due work is coalesced into one zero-cost run, while failures retain
 the last pass and wait six hours before retrying. Action Center shows the next
 check and an explicit manual refresh. Completed consented sessions are reduced
 to counts, completion rate, median time-to-preview, trust distribution, and
-friction frequencies. Drafts and withdrawals are excluded, and aliases and
-notes never leave the private session store. Pilot readiness requires current
-certification and at least three completed sessions; it is a review gate, not
-an adoption or market-validation claim.
+friction frequencies. Active and withdrawn sessions are excluded, and notes
+never enter the aggregate review. Pilot readiness requires current
+certification and at least three completed sessions. Repeated friction from at
+least two sessions becomes a deterministic, evidence-linked improvement
+candidate; it remains a review input, not an adoption or market-validation
+claim.
 
 `npm run artifacts:identity:preview` shows a mutation-free governed-artifact
 identity plan. `npm run artifacts:identity:apply` applies the same explicit
