@@ -53,3 +53,11 @@ This does not satisfy the external-owner experiment. It proves that the local
 contract can reach durable completion without exposing project material; live
 provider availability, human comprehension, time-to-preview, and trust still
 require the consented journey scheduled above.
+
+Codkesh now exposes this distinction in Action Center. The local certification
+can be run and inspected there, while the separately consented learning flow
+records only an anonymous alias, scenario class, timestamps, time-to-preview,
+structured trust/friction feedback, and a digest. Draft, completed, and
+withdrawn states remain local. Synthetic certification cannot be promoted into
+external evidence, and a single completed learning session cannot be described
+as adoption, retention, or market validation.

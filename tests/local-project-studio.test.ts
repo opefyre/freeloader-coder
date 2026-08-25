@@ -58,8 +58,14 @@ test("opening a portfolio project enters the dedicated project workspace", async
   ]);
   assert.match(portfolio, /openProject: \(projectId: string\) => void/);
   assert.match(app, /projectRoute\(projectId\)/);
-  assert.match(app, /ProjectSettingsPanel endpoint=\{endpoint\} projectId=\{selectedProjectId\}/);
-  assert.match(app, /ProjectActivityDashboard endpoint=\{endpoint\} mode="analytics" projectId=\{selectedProjectId\}/);
+  assert.match(
+    app,
+    /ProjectSettingsPanel\s+endpoint=\{endpoint\}\s+projectId=\{selectedProjectId\}/,
+  );
+  assert.match(
+    app,
+    /ProjectActivityDashboard\s+endpoint=\{endpoint\}\s+mode="analytics"\s+projectId=\{selectedProjectId\}/,
+  );
   assert.match(app, /aria-label="All projects"/);
   assert.match(panel, /initialProjectId\?: string/);
   assert.doesNotMatch(app, /function BuildWorkspace[\s\S]*\/activity\?project=/);

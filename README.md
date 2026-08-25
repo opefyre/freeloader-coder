@@ -193,6 +193,15 @@ credentials, absolute paths, personal identifiers, and private Jira content are
 excluded. This certification proves the local product contract, not external
 adoption or live provider availability.
 
+The same check is available in **Action Center → Owner-journey check**. It
+shows the eleven bounded stages, keeps the last passing receipt when a later
+run fails, and never adds another primary navigation page. Action Center also
+supports a consented external-owner learning record. That record uses an
+anonymous generated alias and structured timing/trust fields; it excludes
+prompts, project files, names, email, credentials, attachments, private Jira
+content, and provider output. A draft can be completed or withdrawn locally.
+One session is learning evidence, never an adoption claim.
+
 `npm run artifacts:identity:preview` shows a mutation-free governed-artifact
 identity plan. `npm run artifacts:identity:apply` applies the same explicit
 replacement through digest-bound writes with history preservation. Changed

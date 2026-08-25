@@ -12,7 +12,10 @@ test("workspace exposes exactly four primary owner destinations", async () => {
   ]) {
     assert.match(await readFile("apps/studio/src/routing.ts", "utf8"), new RegExp(label));
   }
-  assert.match(source, /primaryStudioViews = \["overview", "projects", "activity", "settings"\]/);
+  assert.match(
+    source,
+    /primaryStudioViews\s*=\s*\[\s*"overview",\s*"projects",\s*"activity",\s*"settings",?\s*\]/,
+  );
   assert.match(source, /aria-current=/);
   assert.match(source, /window\.history\[replace \? "replaceState" : "pushState"\]/);
   assert.match(source, /window\.addEventListener\("popstate"/);
@@ -50,7 +53,10 @@ test("workspace provides dedicated start, projects, action, and settings surface
     assert.match(shellContract, new RegExp(title));
   }
   assert.match(source, /onClick=\{\(\) => navigate\(item\.id\)\}/);
-  assert.match(source, /ProjectActivityDashboard endpoint=\{endpoint\} mode="actions"/);
+  assert.match(
+    source,
+    /ProjectActivityDashboard\s+endpoint=\{endpoint\}\s+mode="actions"/,
+  );
   assert.doesNotMatch(source, /TabsTrigger value="analytics"/);
 });
 
@@ -60,7 +66,10 @@ test("projects provide real overview, resources, and project-scoped progress", a
   assert.match(source, /TabsTrigger value="overview">Overview/);
   assert.match(source, /TabsTrigger value="resources">Resources/);
   assert.match(source, /TabsTrigger value="progress">Progress/);
-  assert.match(source, /ProjectActivityDashboard endpoint=\{endpoint\} mode="analytics" projectId=\{selectedProjectId\}/);
+  assert.match(
+    source,
+    /ProjectActivityDashboard\s+endpoint=\{endpoint\}\s+mode="analytics"\s+projectId=\{selectedProjectId\}/,
+  );
   assert.match(settings, /setLocalProjectResources/);
   assert.match(settings, /listIntegrationConnections/);
   assert.match(settings, /expectedRevision: project\.resourceRevision/);
@@ -114,7 +123,10 @@ test("workspace exposes an interactive denial-of-wallet proof instead of a cost 
   assert.match(workspace, /Denial of wallet/);
   assert.match(workspace, /Maximum automatic spend/);
   assert.match(workspace, /data-cost-details/);
-  assert.match(workspace, /Paid mode requires a separate connection approval/);
+  assert.match(
+    workspace,
+    /Paid mode requires a separate connection\s+approval/,
+  );
   assert.match(fixture, /paidRoutesProduced: 0/);
   assert.match(fixture, /Billing-enabled projects denied/);
   assert.match(fixture, /lifecycle: "retired"/);

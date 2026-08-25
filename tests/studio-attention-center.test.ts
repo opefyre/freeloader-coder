@@ -12,8 +12,8 @@ test("Attention Center has a stable route, lazy workspace, and live global bell"
   assert.match(app, /AttentionCenter = lazy/);
   assert.match(app, /AttentionBell = lazy/);
   assert.match(app, /view === "attention"/);
-  assert.match(app, /<AttentionBell endpoint=\{controlPlane\.endpoint\}/);
-  assert.match(app, /<AttentionCenter endpoint=\{controlPlaneEndpoint\}/);
+  assert.match(app, /<AttentionBell\s+endpoint=\{controlPlane\.endpoint\}/);
+  assert.match(app, /<AttentionCenter\s+endpoint=\{controlPlaneEndpoint\}/);
 });
 
 test("Attention Center exposes truthful badge, popover, lanes, filters, details, acknowledgement, snooze, and quiet hours", () => {

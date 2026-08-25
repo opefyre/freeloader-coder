@@ -57,7 +57,12 @@ import {
   CardHeader,
   CardTitle,
 } from "./components/ui/card.js";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "./components/ui/tabs.js";
 import { cn } from "./lib/utils.js";
 import {
   costSafetySummary,
@@ -99,130 +104,153 @@ import {
 } from "./routing.js";
 
 const ConversationWorkbench = lazy(() =>
-  import("./components/conversation/conversation-workbench.js").then((module) => ({
-    default: module.ConversationWorkbench,
-  }))
+  import("./components/conversation/conversation-workbench.js").then(
+    (module) => ({
+      default: module.ConversationWorkbench,
+    }),
+  ),
 );
 const LocalRequestPanel = lazy(() =>
   import("./components/conversation/local-request-panel.js").then((module) => ({
     default: module.LocalRequestPanel,
-  }))
+  })),
 );
 const AutonomousWorkCenter = lazy(() =>
-  import("./components/orchestration/autonomous-work-center.js").then((module) => ({
-    default: module.AutonomousWorkCenter,
-  }))
+  import("./components/orchestration/autonomous-work-center.js").then(
+    (module) => ({
+      default: module.AutonomousWorkCenter,
+    }),
+  ),
 );
 const ActivityExplorer = lazy(() =>
   import("./components/activity/activity-explorer.js").then((module) => ({
     default: module.ActivityExplorer,
-  }))
+  })),
 );
 const ProjectActivityDashboard = lazy(() =>
-  import("./components/activity/project-activity-dashboard.js").then((module) => ({
-    default: module.ProjectActivityDashboard,
-  }))
+  import("./components/activity/project-activity-dashboard.js").then(
+    (module) => ({
+      default: module.ProjectActivityDashboard,
+    }),
+  ),
+);
+const OwnerJourneyCertificationCard = lazy(() =>
+  import("./components/activity/owner-journey-certification-card.js").then(
+    (module) => ({
+      default: module.OwnerJourneyCertificationCard,
+    }),
+  ),
 );
 const DecisionInbox = lazy(() =>
   import("./components/decisions/decision-inbox.js").then((module) => ({
     default: module.DecisionInbox,
-  }))
+  })),
 );
 const AttentionCenter = lazy(() =>
   import("./components/attention/attention-center.js").then((module) => ({
     default: module.AttentionCenter,
-  }))
+  })),
 );
 const AttentionBell = lazy(() =>
   import("./components/attention/attention-center.js").then((module) => ({
     default: module.AttentionBell,
-  }))
+  })),
 );
 const GlobalCommandCenter = lazy(() =>
   import("./components/search/global-command-center.js").then((module) => ({
     default: module.GlobalCommandCenter,
-  }))
+  })),
 );
 const HelpCenter = lazy(() =>
   import("./components/help/help-center.js").then((module) => ({
     default: module.HelpCenter,
-  }))
+  })),
 );
 const LaunchCenter = lazy(() =>
   import("./components/launch/launch-center.js").then((module) => ({
     default: module.LaunchCenter,
-  }))
+  })),
 );
 const IntegrationWorkbench = lazy(() =>
-  import("./components/integrations/integration-workbench.js").then((module) => ({
-    default: module.IntegrationWorkbench,
-  }))
+  import("./components/integrations/integration-workbench.js").then(
+    (module) => ({
+      default: module.IntegrationWorkbench,
+    }),
+  ),
 );
 const EvidenceCenter = lazy(() =>
   import("./components/quality/evidence-center.js").then((module) => ({
     default: module.EvidenceCenter,
-  }))
+  })),
 );
 const AccessibilityCenter = lazy(() =>
   import("./components/quality/accessibility-center.js").then((module) => ({
     default: module.AccessibilityCenter,
-  }))
+  })),
 );
 const ReleaseCenter = lazy(() =>
   import("./components/releases/release-center.js").then((module) => ({
     default: module.ReleaseCenter,
-  }))
+  })),
 );
 const TrustCenter = lazy(() =>
   import("./components/governance/trust-center.js").then((module) => ({
     default: module.TrustCenter,
-  }))
+  })),
 );
 const ResilienceCenter = lazy(() =>
   import("./components/resilience/resilience-center.js").then((module) => ({
     default: module.ResilienceCenter,
-  }))
+  })),
 );
 const ProviderConnectionWizard = lazy(() =>
-  import("./components/providers/provider-connection-wizard-v2.js").then((module) => ({
-    default: module.ProviderConnectionWizard,
-  }))
+  import("./components/providers/provider-connection-wizard-v2.js").then(
+    (module) => ({
+      default: module.ProviderConnectionWizard,
+    }),
+  ),
 );
 const ConnectionCatalog = lazy(() =>
   import("./components/settings/connection-catalog.js").then((module) => ({
     default: module.ConnectionCatalog,
-  }))
+  })),
 );
 const ExpandedProviderMesh = lazy(() =>
   import("./components/providers/expanded-provider-mesh.js").then((module) => ({
     default: module.ExpandedProviderMesh,
-  }))
+  })),
 );
 const OptionalProviderCenter = lazy(() =>
-  import("./components/providers/optional-provider-center.js").then((module) => ({
-    default: module.OptionalProviderCenter,
-  }))
+  import("./components/providers/optional-provider-center.js").then(
+    (module) => ({
+      default: module.OptionalProviderCenter,
+    }),
+  ),
 );
 const RuntimeSetupPanel = lazy(() =>
   import("./components/runtime/runtime-setup-panel.js").then((module) => ({
     default: module.RuntimeSetupPanel,
-  }))
+  })),
 );
 const LocalProjectsPanel = lazy(() =>
   import("./components/projects/local-projects-panel.js").then((module) => ({
     default: module.LocalProjectsPanel,
-  }))
+  })),
 );
 const ProjectPortfolio = lazy(() =>
   import("./components/projects/project-portfolio.js").then((module) => ({
     default: module.ProjectPortfolio,
-  }))
+  })),
 );
 const ProjectArtifactWorkspace = lazy(() =>
-  import("./components/projects/project-artifact-workspace.js").then((module) => ({ default: module.ProjectArtifactWorkspace }))
+  import("./components/projects/project-artifact-workspace.js").then(
+    (module) => ({ default: module.ProjectArtifactWorkspace }),
+  ),
 );
 const ProjectSettingsPanel = lazy(() =>
-  import("./components/projects/project-resource-settings-v2.js").then((module) => ({ default: module.ProjectResourceSettings }))
+  import("./components/projects/project-resource-settings-v2.js").then(
+    (module) => ({ default: module.ProjectResourceSettings }),
+  ),
 );
 
 const workspaceIcons: Record<StudioView, typeof Gauge> = {
@@ -244,22 +272,28 @@ const workspaceIcons: Record<StudioView, typeof Gauge> = {
   settings: Gear,
 };
 
-const primaryStudioViews = ["overview", "projects", "activity", "settings"] as const satisfies readonly StudioView[];
+const primaryStudioViews = [
+  "overview",
+  "projects",
+  "activity",
+  "settings",
+] as const satisfies readonly StudioView[];
 
-const navItems = primaryStudioViews
-  .map((id) => ({
-    id,
-    ...workspaceDefinitions[id],
-    icon: workspaceIcons[id],
-    count: undefined,
-  }));
+const navItems = primaryStudioViews.map((id) => ({
+  id,
+  ...workspaceDefinitions[id],
+  icon: workspaceIcons[id],
+  count: undefined,
+}));
 
 function initialView(): StudioView {
   return viewFromLocation(window.location);
 }
 
 function primarySurface(view: StudioView): (typeof primaryStudioViews)[number] {
-  if (["work", "decisions", "attention", "activity", "evidence"].includes(view)) {
+  if (
+    ["work", "decisions", "attention", "activity", "evidence"].includes(view)
+  ) {
     return "activity";
   }
   if (view === "projects") return "projects";
@@ -283,7 +317,11 @@ function primarySurface(view: StudioView): (typeof primaryStudioViews)[number] {
 const stages = [
   { label: "Readiness", note: "Goal and repository understood", state: "done" },
   { label: "Breakdown", note: "6 scoped tasks created", state: "done" },
-  { label: "Implementation", note: "Plans, approvals, errors", state: "active" },
+  {
+    label: "Implementation",
+    note: "Plans, approvals, errors",
+    state: "active",
+  },
   { label: "Validation", note: "Type, lint, build and UI", state: "next" },
   { label: "Review", note: "Two independent reviewers", state: "next" },
 ] as const;
@@ -313,7 +351,7 @@ function App() {
   const [activeView, setActiveView] = useState<StudioView>(initialView);
   const [commandOpen, setCommandOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState(
-    providerTelemetry[0]?.providerId ?? ""
+    providerTelemetry[0]?.providerId ?? "",
   );
   const [selectedConnection, setSelectedConnection] = useState("nvidia-nim");
   const [costOpen, setCostOpen] = useState(false);
@@ -323,18 +361,22 @@ function App() {
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState(false);
   const selected = providerTelemetry.find(
-    (provider) => provider.providerId === selectedProvider
+    (provider) => provider.providerId === selectedProvider,
   );
   const maxProviderCalls = Math.max(
     1,
-    ...providerTelemetry.map((provider) => provider.successfulCalls + provider.failedCalls)
+    ...providerTelemetry.map(
+      (provider) => provider.successfulCalls + provider.failedCalls,
+    ),
   );
   const successRate = useMemo(() => {
     const total = providerTelemetry.reduce(
       (sum, provider) => sum + provider.successfulCalls + provider.failedCalls,
-      0
+      0,
     );
-    return total === 0 ? 0 : Math.round((successfulProviderCalls / total) * 100);
+    return total === 0
+      ? 0
+      : Math.round((successfulProviderCalls / total) * 100);
   }, []);
   const activeCopy = workspaceDefinition(activeView);
   const activePrimarySurface = primarySurface(activeView);
@@ -355,14 +397,18 @@ function App() {
     const canonical = canonicalStudioUrl(url, view);
     setActiveView(view);
     setCommandOpen(false);
-    window.history.pushState({}, "", `${canonical.pathname}${canonical.search}`);
+    window.history.pushState(
+      {},
+      "",
+      `${canonical.pathname}${canonical.search}`,
+    );
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   useEffect(() => {
     const canonicalUrl = canonicalStudioUrl(
       new URL(window.location.href),
-      initialView()
+      initialView(),
     );
     if (canonicalUrl.href !== window.location.href) {
       window.history.replaceState({}, "", canonicalUrl);
@@ -406,11 +452,13 @@ function App() {
               key={item.id}
               type="button"
               onClick={() => navigate(item.id)}
-              aria-current={activePrimarySurface === item.id ? "page" : undefined}
+              aria-current={
+                activePrimarySurface === item.id ? "page" : undefined
+              }
               className={cn(
                 "flex h-10 w-full items-center gap-3 rounded-2xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                 activePrimarySurface === item.id &&
-                  "bg-sidebar-accent text-sidebar-accent-foreground"
+                  "bg-sidebar-accent text-sidebar-accent-foreground",
               )}
             >
               <item.icon
@@ -424,7 +472,6 @@ function App() {
             </button>
           ))}
         </nav>
-
       </aside>
 
       <main id="workspace" className="min-w-0">
@@ -453,447 +500,596 @@ function App() {
               )}
             </Button>
             <ThemeControl mode={theme.mode} setMode={theme.setMode} />
-            <Suspense fallback={null}><AttentionBell endpoint={controlPlane.endpoint} openCenter={() => navigate("activity")} activate={activateSearchResult} /></Suspense>
+            <Suspense fallback={null}>
+              <AttentionBell
+                endpoint={controlPlane.endpoint}
+                openCenter={() => navigate("activity")}
+                activate={activateSearchResult}
+              />
+            </Suspense>
           </div>
         </header>
 
         <div className="mx-auto max-w-5xl px-4 pb-28 sm:px-7 lg:px-9 lg:pb-12">
-          {activeView !== "overview" && !(activeView === "projects" && projectIdFromLocation(window.location)) && <div className="flex flex-col gap-4 pb-6 pt-4 sm:pt-7 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <FolderOpen size={15} />
-                {activeCopy.eyebrow}
+          {activeView !== "overview" &&
+            !(
+              activeView === "projects" &&
+              projectIdFromLocation(window.location)
+            ) && (
+              <div className="flex flex-col gap-4 pb-6 pt-4 sm:pt-7 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <FolderOpen size={15} />
+                    {activeCopy.eyebrow}
+                  </div>
+                  <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
+                    {activeCopy.title}
+                  </h1>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {activeCopy.description}
+                  </p>
+                </div>
+                {!primaryStudioViews.includes(
+                  activeView as (typeof primaryStudioViews)[number],
+                ) && (
+                  <div className="flex flex-wrap gap-2">
+                    {activeView !== "work" &&
+                      activeView !== "decisions" &&
+                      activeView !== "activity" &&
+                      activeView !== "settings" && (
+                        <Button variant="secondary">
+                          <Pause />
+                          Pause after step
+                        </Button>
+                      )}
+                    <Button onClick={() => navigate("overview")}>
+                      <ChatCircleDots weight="fill" />
+                      Build
+                    </Button>
+                  </div>
+                )}
               </div>
-              <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
-                {activeCopy.title}
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {activeCopy.description}
-              </p>
-            </div>
-            {!primaryStudioViews.includes(activeView as (typeof primaryStudioViews)[number]) && <div className="flex flex-wrap gap-2">
-              {activeView !== "work" && activeView !== "decisions" && activeView !== "activity" && activeView !== "settings" && (
-                <Button variant="secondary">
-                  <Pause />
-                  Pause after step
-                </Button>
-              )}
-              <Button onClick={() => navigate("overview")}>
-                <ChatCircleDots weight="fill" />
-                Build
-              </Button>
-            </div>}
-          </div>}
+            )}
 
           {activeView === "overview" ? (
             <>
-          <BuildWorkspace navigate={navigate} endpoint={controlPlane.endpoint} />
-          <div className="hidden" aria-hidden="true">
-          <section className="metric-grid grid gap-3" aria-label="Pipeline summary">
-            <Metric
-              icon={Lightning}
-              metric={summaryMetrics.active}
-              note="Implementation · 68%"
-              tone="text-primary"
-            />
-            <Metric
-              icon={ListChecks}
-              metric={summaryMetrics.queue}
-              note="3 ready · 5 dependent"
-              tone="text-chart-3"
-            />
-            <Metric
-              icon={CheckCircle}
-              metric={summaryMetrics.verified}
-              note="All checks passed"
-              tone="text-emerald-300"
-            />
-            <Metric
-              icon={Warning}
-              metric={summaryMetrics.needsYou}
-              note="Non-blocking"
-              tone="text-amber-300"
-            />
-          </section>
+              <BuildWorkspace
+                navigate={navigate}
+                endpoint={controlPlane.endpoint}
+              />
+              <div className="hidden" aria-hidden="true">
+                <section
+                  className="metric-grid grid gap-3"
+                  aria-label="Pipeline summary"
+                >
+                  <Metric
+                    icon={Lightning}
+                    metric={summaryMetrics.active}
+                    note="Implementation · 68%"
+                    tone="text-primary"
+                  />
+                  <Metric
+                    icon={ListChecks}
+                    metric={summaryMetrics.queue}
+                    note="3 ready · 5 dependent"
+                    tone="text-chart-3"
+                  />
+                  <Metric
+                    icon={CheckCircle}
+                    metric={summaryMetrics.verified}
+                    note="All checks passed"
+                    tone="text-emerald-300"
+                  />
+                  <Metric
+                    icon={Warning}
+                    metric={summaryMetrics.needsYou}
+                    note="Non-blocking"
+                    tone="text-amber-300"
+                  />
+                </section>
 
-          <Tabs defaultValue="overview" className="mt-7">
-            <TabsList aria-label="Control center views">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="providers">Providers</TabsTrigger>
-              <TabsTrigger value="evidence">Evidence</TabsTrigger>
-            </TabsList>
+                <Tabs defaultValue="overview" className="mt-7">
+                  <TabsList aria-label="Control center views">
+                    <TabsTrigger value="overview">Overview</TabsTrigger>
+                    <TabsTrigger value="providers">Providers</TabsTrigger>
+                    <TabsTrigger value="evidence">Evidence</TabsTrigger>
+                  </TabsList>
 
-            <TabsContent value="overview">
-              <div className="dashboard-grid grid gap-4">
-                <div className="space-y-4">
-                  <Card>
-                    <CardHeader className="flex flex-row items-start justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Badge tone="active">
-                            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-                            Working now
-                          </Badge>
-                          <span className="text-xs font-medium text-muted-foreground">PIPE-34</span>
-                        </div>
-                        <CardTitle className="mt-4 text-xl">
-                          Build reusable trust language
-                        </CardTitle>
-                        <CardDescription>
-                          The Studio is standardizing how plans, approvals, failures, and evidence are explained.
-                        </CardDescription>
-                      </div>
-                      <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
-                        <Code size={23} weight="duotone" />
-                      </span>
-                    </CardHeader>
-                    <CardContent className="mt-6">
-                      <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full w-[35%] rounded-full bg-primary" />
-                      </div>
-                      <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                        <span>Implementation</span>
-                        <span>35%</span>
-                      </div>
-                      <div className="mt-7 grid gap-1 sm:grid-cols-5">
-                        {stages.map((stage, index) => (
-                          <div
-                            key={stage.label}
-                            className={cn(
-                              "relative rounded-2xl p-3",
-                              stage.state === "active"
-                                ? "bg-primary/10"
-                                : stage.state === "done"
-                                  ? "bg-emerald-400/[.06]"
-                                  : "bg-muted/55"
-                            )}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={cn(
-                                  "grid size-5 place-items-center rounded-full text-[10px]",
-                                  stage.state === "done" && "bg-emerald-400/20 text-emerald-300",
-                                  stage.state === "active" && "bg-primary/20 text-primary",
-                                  stage.state === "next" && "bg-background text-muted-foreground"
-                                )}
-                              >
-                                {stage.state === "done" ? <Check weight="bold" /> : index + 1}
-                              </span>
-                              <span className="text-xs font-semibold">{stage.label}</span>
-                            </div>
-                            <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
-                              {stage.note}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-6 flex flex-wrap items-center gap-3">
-                        <Button size="sm" onClick={() => navigate("work")}>
-                          Open task
-                          <ArrowRight />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => navigate("evidence")}
-                        >
-                          <GitBranch />
-                          View local diff
-                        </Button>
-                        <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <ClockCountdown />
-                          Updated 2m ago
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card id="providers">
-                    <CardHeader className="flex flex-row items-center justify-between">
-                      <div>
-                        <CardTitle>Provider execution</CardTitle>
-                        <CardDescription>Successful calls across every configured free route.</CardDescription>
-                      </div>
-                      <Badge tone="positive">{successfulProviderCalls} successful</Badge>
-                    </CardHeader>
-                    <CardContent className="mt-6">
-                      <div className="space-y-3">
-                        {providerTelemetry.map((provider) => {
-                          const total = provider.successfulCalls + provider.failedCalls;
-                          return (
-                            <button
-                              key={provider.providerId}
-                              type="button"
-                              data-provider-id={provider.providerId}
-                              aria-pressed={selectedProvider === provider.providerId}
-                              onClick={() => setSelectedProvider(provider.providerId)}
-                              className={cn(
-                                "grid w-full grid-cols-[7rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-muted/70 focus-visible:ring-3 focus-visible:ring-ring/30 sm:grid-cols-[8rem_minmax(0,1fr)_4rem]",
-                                selectedProvider === provider.providerId && "bg-muted"
-                              )}
-                            >
-                              <span className="truncate text-sm font-medium capitalize">
-                                {provider.providerId}
-                              </span>
-                              <span className="h-2 overflow-hidden rounded-full bg-background">
-                                <span
-                                  className={cn(
-                                    "block h-full rounded-full",
-                                    providerColor[provider.providerId] ?? "bg-primary"
-                                  )}
-                                  style={{ width: `${Math.max(6, (total / maxProviderCalls) * 100)}%` }}
-                                />
-                              </span>
-                              <span className="text-right text-xs text-muted-foreground">
-                                {provider.successfulCalls}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {selected && (
-                        <div className="mt-5 grid gap-3 rounded-3xl bg-muted/55 p-4 sm:grid-cols-3">
-                          <ProviderFact label="Model" value={selected.modelId} />
-                          <ProviderFact
-                            label="Health"
-                            value={selected.health.replace("_", " ")}
-                          />
-                          <ProviderFact
-                            label="Requests today"
-                            value={String(selected.requestsToday)}
-                          />
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="space-y-4">
-                  <Card>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <Badge tone="caution">Needs you</Badge>
-                        <span className="grid size-9 place-items-center rounded-2xl bg-amber-400/10 text-amber-300">
-                          <Warning size={18} weight="duotone" />
-                        </span>
-                      </div>
-                      <CardTitle className="mt-5 text-lg">Choose the public product name</CardTitle>
-                      <CardDescription>
-                        Work can continue safely. This only affects the next public release.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="mt-5">
-                      <div className="space-y-2">
-                        <Choice
-                          label="Codkesh"
-                          note="Clear and credible"
-                          selected={productChoice === "Codkesh"}
-                          onSelect={setProductChoice}
-                        />
-                        <Choice
-                          label="Pipeline OS"
-                          note="Matches the repository"
-                          selected={productChoice === "Pipeline OS"}
-                          onSelect={setProductChoice}
-                        />
-                      </div>
-                      {productChoice && (
-                        <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-300">
-                          Demo choice recorded locally. No project data was changed.
-                        </p>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-3 px-2"
-                        onClick={() => navigate("evidence")}
-                      >
-                        Review with context
-                        <ArrowRight />
-                      </Button>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                      <div>
-                        <CardTitle>Reliability</CardTitle>
-                        <CardDescription>Last 24 hours · demo evidence</CardDescription>
-                      </div>
-                      <ChartDonut className="text-primary" size={22} weight="duotone" />
-                    </CardHeader>
-                    <CardContent className="mt-5">
-                      <div className="flex items-center gap-6">
-                        <div
-                          className="grid size-28 shrink-0 place-items-center rounded-full"
-                          style={{
-                            background: `conic-gradient(var(--chart-1) ${successRate}%, var(--muted) 0)`,
-                          }}
-                        >
-                          <div className="grid size-20 place-items-center rounded-full bg-card text-center">
+                  <TabsContent value="overview">
+                    <div className="dashboard-grid grid gap-4">
+                      <div className="space-y-4">
+                        <Card>
+                          <CardHeader className="flex flex-row items-start justify-between gap-4">
                             <div>
-                              <strong className="block text-2xl">{successRate}%</strong>
-                              <span className="text-[10px] text-muted-foreground">success</span>
+                              <div className="flex items-center gap-2">
+                                <Badge tone="active">
+                                  <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+                                  Working now
+                                </Badge>
+                                <span className="text-xs font-medium text-muted-foreground">
+                                  PIPE-34
+                                </span>
+                              </div>
+                              <CardTitle className="mt-4 text-xl">
+                                Build reusable trust language
+                              </CardTitle>
+                              <CardDescription>
+                                The Studio is standardizing how plans,
+                                approvals, failures, and evidence are explained.
+                              </CardDescription>
                             </div>
+                            <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+                              <Code size={23} weight="duotone" />
+                            </span>
+                          </CardHeader>
+                          <CardContent className="mt-6">
+                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                              <div className="h-full w-[35%] rounded-full bg-primary" />
+                            </div>
+                            <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                              <span>Implementation</span>
+                              <span>35%</span>
+                            </div>
+                            <div className="mt-7 grid gap-1 sm:grid-cols-5">
+                              {stages.map((stage, index) => (
+                                <div
+                                  key={stage.label}
+                                  className={cn(
+                                    "relative rounded-2xl p-3",
+                                    stage.state === "active"
+                                      ? "bg-primary/10"
+                                      : stage.state === "done"
+                                        ? "bg-emerald-400/[.06]"
+                                        : "bg-muted/55",
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={cn(
+                                        "grid size-5 place-items-center rounded-full text-[10px]",
+                                        stage.state === "done" &&
+                                          "bg-emerald-400/20 text-emerald-300",
+                                        stage.state === "active" &&
+                                          "bg-primary/20 text-primary",
+                                        stage.state === "next" &&
+                                          "bg-background text-muted-foreground",
+                                      )}
+                                    >
+                                      {stage.state === "done" ? (
+                                        <Check weight="bold" />
+                                      ) : (
+                                        index + 1
+                                      )}
+                                    </span>
+                                    <span className="text-xs font-semibold">
+                                      {stage.label}
+                                    </span>
+                                  </div>
+                                  <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                                    {stage.note}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-6 flex flex-wrap items-center gap-3">
+                              <Button
+                                size="sm"
+                                onClick={() => navigate("work")}
+                              >
+                                Open task
+                                <ArrowRight />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => navigate("evidence")}
+                              >
+                                <GitBranch />
+                                View local diff
+                              </Button>
+                              <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <ClockCountdown />
+                                Updated 2m ago
+                              </span>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card id="providers">
+                          <CardHeader className="flex flex-row items-center justify-between">
+                            <div>
+                              <CardTitle>Provider execution</CardTitle>
+                              <CardDescription>
+                                Successful calls across every configured free
+                                route.
+                              </CardDescription>
+                            </div>
+                            <Badge tone="positive">
+                              {successfulProviderCalls} successful
+                            </Badge>
+                          </CardHeader>
+                          <CardContent className="mt-6">
+                            <div className="space-y-3">
+                              {providerTelemetry.map((provider) => {
+                                const total =
+                                  provider.successfulCalls +
+                                  provider.failedCalls;
+                                return (
+                                  <button
+                                    key={provider.providerId}
+                                    type="button"
+                                    data-provider-id={provider.providerId}
+                                    aria-pressed={
+                                      selectedProvider === provider.providerId
+                                    }
+                                    onClick={() =>
+                                      setSelectedProvider(provider.providerId)
+                                    }
+                                    className={cn(
+                                      "grid w-full grid-cols-[7rem_minmax(0,1fr)_3rem] items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-muted/70 focus-visible:ring-3 focus-visible:ring-ring/30 sm:grid-cols-[8rem_minmax(0,1fr)_4rem]",
+                                      selectedProvider ===
+                                        provider.providerId && "bg-muted",
+                                    )}
+                                  >
+                                    <span className="truncate text-sm font-medium capitalize">
+                                      {provider.providerId}
+                                    </span>
+                                    <span className="h-2 overflow-hidden rounded-full bg-background">
+                                      <span
+                                        className={cn(
+                                          "block h-full rounded-full",
+                                          providerColor[provider.providerId] ??
+                                            "bg-primary",
+                                        )}
+                                        style={{
+                                          width: `${Math.max(6, (total / maxProviderCalls) * 100)}%`,
+                                        }}
+                                      />
+                                    </span>
+                                    <span className="text-right text-xs text-muted-foreground">
+                                      {provider.successfulCalls}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {selected && (
+                              <div className="mt-5 grid gap-3 rounded-3xl bg-muted/55 p-4 sm:grid-cols-3">
+                                <ProviderFact
+                                  label="Model"
+                                  value={selected.modelId}
+                                />
+                                <ProviderFact
+                                  label="Health"
+                                  value={selected.health.replace("_", " ")}
+                                />
+                                <ProviderFact
+                                  label="Requests today"
+                                  value={String(selected.requestsToday)}
+                                />
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      <div className="space-y-4">
+                        <Card>
+                          <CardHeader>
+                            <div className="flex items-center justify-between">
+                              <Badge tone="caution">Needs you</Badge>
+                              <span className="grid size-9 place-items-center rounded-2xl bg-amber-400/10 text-amber-300">
+                                <Warning size={18} weight="duotone" />
+                              </span>
+                            </div>
+                            <CardTitle className="mt-5 text-lg">
+                              Choose the public product name
+                            </CardTitle>
+                            <CardDescription>
+                              Work can continue safely. This only affects the
+                              next public release.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="mt-5">
+                            <div className="space-y-2">
+                              <Choice
+                                label="Codkesh"
+                                note="Clear and credible"
+                                selected={productChoice === "Codkesh"}
+                                onSelect={setProductChoice}
+                              />
+                              <Choice
+                                label="Pipeline OS"
+                                note="Matches the repository"
+                                selected={productChoice === "Pipeline OS"}
+                                onSelect={setProductChoice}
+                              />
+                            </div>
+                            {productChoice && (
+                              <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-300">
+                                Demo choice recorded locally. No project data
+                                was changed.
+                              </p>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="mt-3 px-2"
+                              onClick={() => navigate("evidence")}
+                            >
+                              Review with context
+                              <ArrowRight />
+                            </Button>
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader className="flex flex-row items-center justify-between">
+                            <div>
+                              <CardTitle>Reliability</CardTitle>
+                              <CardDescription>
+                                Last 24 hours · demo evidence
+                              </CardDescription>
+                            </div>
+                            <ChartDonut
+                              className="text-primary"
+                              size={22}
+                              weight="duotone"
+                            />
+                          </CardHeader>
+                          <CardContent className="mt-5">
+                            <div className="flex items-center gap-6">
+                              <div
+                                className="grid size-28 shrink-0 place-items-center rounded-full"
+                                style={{
+                                  background: `conic-gradient(var(--chart-1) ${successRate}%, var(--muted) 0)`,
+                                }}
+                              >
+                                <div className="grid size-20 place-items-center rounded-full bg-card text-center">
+                                  <div>
+                                    <strong className="block text-2xl">
+                                      {successRate}%
+                                    </strong>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      success
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="min-w-0 flex-1 space-y-3">
+                                <ReliabilityFact
+                                  label="Retries healed"
+                                  value="3"
+                                />
+                                <ReliabilityFact
+                                  label="QA disagreements"
+                                  value="0"
+                                />
+                                <ReliabilityFact
+                                  label="Quarantined"
+                                  value="0"
+                                />
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card>
+                          <CardHeader className="flex flex-row items-center justify-between">
+                            <div>
+                              <CardTitle>Denial of wallet</CardTitle>
+                              <CardDescription>
+                                Automatic spend is hard-limited.
+                              </CardDescription>
+                            </div>
+                            <ShieldCheck
+                              size={23}
+                              className="text-emerald-300"
+                              weight="duotone"
+                            />
+                          </CardHeader>
+                          <CardContent className="mt-5">
+                            <div className="flex items-end justify-between">
+                              <div>
+                                <span className="text-xs text-muted-foreground">
+                                  Maximum automatic spend
+                                </span>
+                                <strong className="mt-1 block text-3xl tracking-tight">
+                                  {costSafetySummary.hardCeiling}
+                                </strong>
+                              </div>
+                              <Badge tone="positive">
+                                {costSafetySummary.mode}
+                              </Badge>
+                            </div>
+                            <button
+                              type="button"
+                              data-cost-details
+                              aria-expanded={costOpen}
+                              onClick={() => setCostOpen((open) => !open)}
+                              className="mt-5 flex w-full items-center justify-between rounded-2xl bg-muted px-4 py-3 text-left text-xs font-semibold outline-none hover:bg-muted/80 focus-visible:ring-3 focus-visible:ring-ring/30"
+                            >
+                              {costOpen ? "Hide safeguards" : "Show safeguards"}
+                              <CaretDown
+                                className={cn(
+                                  "transition-transform",
+                                  costOpen && "rotate-180",
+                                )}
+                              />
+                            </button>
+                            {costOpen && (
+                              <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
+                                {costSafetySummary.safeguards.map(
+                                  (safeguard) => (
+                                    <li
+                                      key={safeguard}
+                                      className="flex items-center gap-2"
+                                    >
+                                      <Check
+                                        className="text-emerald-300"
+                                        weight="bold"
+                                      />
+                                      {safeguard}
+                                    </li>
+                                  ),
+                                )}
+                                <li>
+                                  Paid mode requires a separate connection
+                                  approval.
+                                </li>
+                              </ul>
+                            )}
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+
+                    <Card className="mt-4" id="conversation">
+                      <CardContent className="py-5 sm:py-6">
+                        <div className="flex gap-3">
+                          <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/12 text-primary">
+                            <Sparkle size={18} weight="fill" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <strong className="text-sm">
+                                Pipeline assistant
+                              </strong>
+                              <Badge>Grounded in this project</Badge>
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Ask for a change, inspect a blocker, or tell the
+                              pipeline what to build next.
+                            </p>
+                            <form
+                              className="mt-4 flex items-end gap-2 rounded-3xl bg-muted p-2 pl-4"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                if (message.trim()) {
+                                  setSent(true);
+                                  setMessage("");
+                                }
+                              }}
+                            >
+                              <label
+                                className="sr-only"
+                                htmlFor="pipeline-message"
+                              >
+                                Message the pipeline
+                              </label>
+                              <textarea
+                                id="pipeline-message"
+                                value={message}
+                                onChange={(event) => {
+                                  setMessage(event.target.value);
+                                  setSent(false);
+                                }}
+                                rows={1}
+                                placeholder="Ask the pipeline…"
+                                className="max-h-32 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+                              />
+                              <Button
+                                size="icon"
+                                type="submit"
+                                aria-label="Send message"
+                              >
+                                <PaperPlaneTilt weight="fill" />
+                              </Button>
+                            </form>
+                            {sent && (
+                              <p className="mt-2 text-xs text-emerald-300">
+                                Demo message received locally. No task was
+                                created.
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="min-w-0 flex-1 space-y-3">
-                          <ReliabilityFact label="Retries healed" value="3" />
-                          <ReliabilityFact label="QA disagreements" value="0" />
-                          <ReliabilityFact label="Quarantined" value="0" />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
 
-                  <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                      <div>
-                        <CardTitle>Denial of wallet</CardTitle>
-                        <CardDescription>Automatic spend is hard-limited.</CardDescription>
-                      </div>
-                      <ShieldCheck size={23} className="text-emerald-300" weight="duotone" />
-                    </CardHeader>
-                    <CardContent className="mt-5">
-                      <div className="flex items-end justify-between">
-                        <div>
-                          <span className="text-xs text-muted-foreground">Maximum automatic spend</span>
-                          <strong className="mt-1 block text-3xl tracking-tight">
-                            {costSafetySummary.hardCeiling}
-                          </strong>
-                        </div>
-                        <Badge tone="positive">{costSafetySummary.mode}</Badge>
-                      </div>
-                      <button
-                        type="button"
-                        data-cost-details
-                        aria-expanded={costOpen}
-                        onClick={() => setCostOpen((open) => !open)}
-                        className="mt-5 flex w-full items-center justify-between rounded-2xl bg-muted px-4 py-3 text-left text-xs font-semibold outline-none hover:bg-muted/80 focus-visible:ring-3 focus-visible:ring-ring/30"
-                      >
-                        {costOpen ? "Hide safeguards" : "Show safeguards"}
-                        <CaretDown className={cn("transition-transform", costOpen && "rotate-180")} />
-                      </button>
-                      {costOpen && (
-                        <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
-                          {costSafetySummary.safeguards.map((safeguard) => (
-                            <li key={safeguard} className="flex items-center gap-2">
-                              <Check className="text-emerald-300" weight="bold" />
-                              {safeguard}
-                            </li>
-                          ))}
-                          <li>Paid mode requires a separate connection approval.</li>
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
+                  <TabsContent value="providers">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Provider mesh · demo evidence</CardTitle>
+                        <CardDescription>
+                          Routing evidence, health, and usage from configured
+                          free-tier providers.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="mt-6 grid gap-3 md:grid-cols-2">
+                        {providerTelemetry.map((provider) => (
+                          <button
+                            key={provider.providerId}
+                            type="button"
+                            data-provider-id={provider.providerId}
+                            onClick={() =>
+                              setSelectedProvider(provider.providerId)
+                            }
+                            className="rounded-3xl bg-muted/60 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
+                          >
+                            <div className="flex items-center justify-between">
+                              <strong className="capitalize">
+                                {provider.providerId}
+                              </strong>
+                              <Badge
+                                tone={
+                                  provider.health === "ready"
+                                    ? "positive"
+                                    : "caution"
+                                }
+                              >
+                                {provider.health.replace("_", " ")}
+                              </Badge>
+                            </div>
+                            <p className="mt-2 truncate text-xs text-muted-foreground">
+                              {provider.modelId}
+                            </p>
+                            <div className="mt-5 flex gap-5 text-sm">
+                              <span>
+                                <b>{provider.successfulCalls}</b> successful
+                              </span>
+                              <span>
+                                <b>{provider.failedCalls}</b> failed
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
 
-              <Card className="mt-4" id="conversation">
-                <CardContent className="py-5 sm:py-6">
-                  <div className="flex gap-3">
-                    <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/12 text-primary">
-                      <Sparkle size={18} weight="fill" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <strong className="text-sm">Pipeline assistant</strong>
-                        <Badge>Grounded in this project</Badge>
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Ask for a change, inspect a blocker, or tell the pipeline what to build next.
-                      </p>
-                      <form
-                        className="mt-4 flex items-end gap-2 rounded-3xl bg-muted p-2 pl-4"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          if (message.trim()) {
-                            setSent(true);
-                            setMessage("");
+                  <TabsContent value="evidence">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Trusted evidence</CardTitle>
+                        <CardDescription>
+                          Claims shown here are explicitly scoped to demo
+                          fixture data.
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="mt-6 grid gap-3 sm:grid-cols-3">
+                        <Evidence
+                          label="Selected route"
+                          value={
+                            routeEvidenceSummary.selectedProviderId ?? "None"
                           }
-                        }}
-                      >
-                        <label className="sr-only" htmlFor="pipeline-message">
-                          Message the pipeline
-                        </label>
-                        <textarea
-                          id="pipeline-message"
-                          value={message}
-                          onChange={(event) => {
-                            setMessage(event.target.value);
-                            setSent(false);
-                          }}
-                          rows={1}
-                          placeholder="Ask the pipeline…"
-                          className="max-h-32 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
                         />
-                        <Button size="icon" type="submit" aria-label="Send message">
-                          <PaperPlaneTilt weight="fill" />
-                        </Button>
-                      </form>
-                      {sent && (
-                        <p className="mt-2 text-xs text-emerald-300">
-                          Demo message received locally. No task was created.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="providers">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Provider mesh · demo evidence</CardTitle>
-                  <CardDescription>
-                    Routing evidence, health, and usage from configured free-tier providers.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="mt-6 grid gap-3 md:grid-cols-2">
-                  {providerTelemetry.map((provider) => (
-                    <button
-                      key={provider.providerId}
-                      type="button"
-                      data-provider-id={provider.providerId}
-                      onClick={() => setSelectedProvider(provider.providerId)}
-                      className="rounded-3xl bg-muted/60 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
-                    >
-                      <div className="flex items-center justify-between">
-                        <strong className="capitalize">{provider.providerId}</strong>
-                        <Badge tone={provider.health === "ready" ? "positive" : "caution"}>
-                          {provider.health.replace("_", " ")}
-                        </Badge>
-                      </div>
-                      <p className="mt-2 truncate text-xs text-muted-foreground">{provider.modelId}</p>
-                      <div className="mt-5 flex gap-5 text-sm">
-                        <span><b>{provider.successfulCalls}</b> successful</span>
-                        <span><b>{provider.failedCalls}</b> failed</span>
-                      </div>
-                    </button>
-                  ))}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="evidence">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Trusted evidence</CardTitle>
-                  <CardDescription>
-                    Claims shown here are explicitly scoped to demo fixture data.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="mt-6 grid gap-3 sm:grid-cols-3">
-                  <Evidence label="Selected route" value={routeEvidenceSummary.selectedProviderId ?? "None"} />
-                  <Evidence label="Paid routes produced" value={String(costSafetySummary.paidRoutesProduced)} />
-                  <Evidence label="Eligible providers" value={String(routeEvidenceSummary.eligibleProviderIds.length)} />
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-          </div>
+                        <Evidence
+                          label="Paid routes produced"
+                          value={String(costSafetySummary.paidRoutesProduced)}
+                        />
+                        <Evidence
+                          label="Eligible providers"
+                          value={String(
+                            routeEvidenceSummary.eligibleProviderIds.length,
+                          )}
+                        />
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+              </div>
             </>
           ) : (
             <RouteBoundary
@@ -934,7 +1130,7 @@ function App() {
             aria-current={activePrimarySurface === item.id ? "page" : undefined}
             className={cn(
               "flex min-h-13 min-w-[4.25rem] flex-1 flex-col items-center justify-center gap-1 rounded-2xl px-1 text-[10px] font-medium text-muted-foreground",
-              activePrimarySurface === item.id && "bg-primary/12 text-primary"
+              activePrimarySurface === item.id && "bg-primary/12 text-primary",
             )}
           >
             <item.icon
@@ -997,7 +1193,9 @@ function WorkspaceSurface({
   navigate: (view: StudioView) => void;
 }) {
   if (view === "projects") {
-    return <ProjectsWorkspace endpoint={controlPlaneEndpoint} navigate={navigate} />;
+    return (
+      <ProjectsWorkspace endpoint={controlPlaneEndpoint} navigate={navigate} />
+    );
   }
 
   if (view === "conversation") {
@@ -1008,7 +1206,8 @@ function WorkspaceSurface({
           <div className="flex flex-wrap items-center gap-2">
             <Badge>Guided interaction preview</Badge>
             <span className="text-xs text-muted-foreground">
-              Explore advanced conversation controls without creating active work.
+              Explore advanced conversation controls without creating active
+              work.
             </span>
           </div>
         </div>
@@ -1027,7 +1226,9 @@ function WorkspaceSurface({
   }
 
   if (view === "activity") {
-    return <ActivityWorkspace endpoint={controlPlaneEndpoint} navigate={navigate} />;
+    return (
+      <ActivityWorkspace endpoint={controlPlaneEndpoint} navigate={navigate} />
+    );
   }
 
   if (view === "decisions") {
@@ -1035,10 +1236,15 @@ function WorkspaceSurface({
   }
 
   if (view === "attention") {
-    return <AttentionCenter endpoint={controlPlaneEndpoint} activate={(path) => {
-      const url = new URL(path, window.location.origin);
-      navigate(viewFromLocation(url));
-    }} />;
+    return (
+      <AttentionCenter
+        endpoint={controlPlaneEndpoint}
+        activate={(path) => {
+          const url = new URL(path, window.location.origin);
+          navigate(viewFromLocation(url));
+        }}
+      />
+    );
   }
 
   if (view === "integrations") {
@@ -1047,7 +1253,7 @@ function WorkspaceSurface({
 
   if (view === "providers") {
     const selected = providerTelemetry.find(
-      (provider) => provider.providerId === selectedProvider
+      (provider) => provider.providerId === selectedProvider,
     );
     return (
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -1058,7 +1264,8 @@ function WorkspaceSurface({
             <div>
               <CardTitle>Capacity scheduler</CardTitle>
               <CardDescription>
-                Dispatches only when a free provider has safe capacity. Waiting work sleeps until its next eligible window.
+                Dispatches only when a free provider has safe capacity. Waiting
+                work sleeps until its next eligible window.
               </CardDescription>
             </div>
             <Badge tone="positive">No spin retries</Badge>
@@ -1069,11 +1276,16 @@ function WorkspaceSurface({
                 <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   Dispatching now
                 </span>
-                <strong className="text-2xl">{providerQueueSnapshot.dispatches.length}</strong>
+                <strong className="text-2xl">
+                  {providerQueueSnapshot.dispatches.length}
+                </strong>
               </div>
               <div className="mt-5 space-y-3">
                 {providerQueueSnapshot.dispatches.map((dispatch) => (
-                  <div key={dispatch.taskId} className="flex items-center justify-between gap-4 text-sm">
+                  <div
+                    key={dispatch.taskId}
+                    className="flex items-center justify-between gap-4 text-sm"
+                  >
                     <span className="font-semibold">{dispatch.taskId}</span>
                     <span className="truncate text-xs text-muted-foreground">
                       {dispatch.providerId} · {dispatch.modelId}
@@ -1087,15 +1299,23 @@ function WorkspaceSurface({
                 <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   Scheduled waits
                 </span>
-                <strong className="text-2xl">{providerQueueSnapshot.scheduled.length}</strong>
+                <strong className="text-2xl">
+                  {providerQueueSnapshot.scheduled.length}
+                </strong>
               </div>
               <div className="mt-5 space-y-3">
                 {providerQueueSnapshot.scheduled.map((entry) => (
-                  <div key={entry.taskId} className="flex items-center justify-between gap-4 text-sm">
+                  <div
+                    key={entry.taskId}
+                    className="flex items-center justify-between gap-4 text-sm"
+                  >
                     <span className="font-semibold">{entry.taskId}</span>
                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <ClockCountdown />
-                      {formatWakeTime(entry.retryAt, providerQueueSnapshot.generatedAt)}
+                      {formatWakeTime(
+                        entry.retryAt,
+                        providerQueueSnapshot.generatedAt,
+                      )}
                     </span>
                   </div>
                 ))}
@@ -1108,8 +1328,12 @@ function WorkspaceSurface({
               <div className="mt-5 space-y-4">
                 {providerQueueSnapshot.protectedCapacity.map((entry) => (
                   <div key={entry.providerId}>
-                    <strong className="text-sm capitalize">{entry.providerId}</strong>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{entry.label}</p>
+                    <strong className="text-sm capitalize">
+                      {entry.providerId}
+                    </strong>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {entry.label}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -1121,7 +1345,8 @@ function WorkspaceSurface({
             <div>
               <CardTitle>Provider mesh</CardTitle>
               <CardDescription>
-                Successful calls, failures, and free-capacity routing from demo evidence.
+                Successful calls, failures, and free-capacity routing from demo
+                evidence.
               </CardDescription>
             </div>
             <Badge tone="positive">{successfulProviderCalls} successful</Badge>
@@ -1136,12 +1361,15 @@ function WorkspaceSurface({
                 onClick={() => setSelectedProvider(provider.providerId)}
                 className={cn(
                   "rounded-3xl bg-muted/50 p-5 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
-                  selectedProvider === provider.providerId && "bg-primary/[.09]"
+                  selectedProvider === provider.providerId &&
+                    "bg-primary/[.09]",
                 )}
               >
                 <div className="flex items-center justify-between">
                   <strong className="capitalize">{provider.providerId}</strong>
-                  <Badge tone={provider.health === "ready" ? "positive" : "caution"}>
+                  <Badge
+                    tone={provider.health === "ready" ? "positive" : "caution"}
+                  >
                     {provider.health.replace("_", " ")}
                   </Badge>
                 </div>
@@ -1169,15 +1397,29 @@ function WorkspaceSurface({
               <CardDescription>Selected provider evidence.</CardDescription>
             </CardHeader>
             <CardContent className="mt-5 space-y-4">
-              <SourceRow label="Model" value={selected?.modelId ?? "Unavailable"} state="Observed" />
-              <SourceRow label="Health" value={selected?.health.replace("_", " ") ?? "Unknown"} state="Live" />
-              <SourceRow label="Requests today" value={String(selected?.requestsToday ?? 0)} state="Scoped" />
+              <SourceRow
+                label="Model"
+                value={selected?.modelId ?? "Unavailable"}
+                state="Observed"
+              />
+              <SourceRow
+                label="Health"
+                value={selected?.health.replace("_", " ") ?? "Unknown"}
+                state="Live"
+              />
+              <SourceRow
+                label="Requests today"
+                value={String(selected?.requestsToday ?? 0)}
+                state="Scoped"
+              />
             </CardContent>
           </Card>
           <Card>
             <CardHeader>
               <CardTitle>Routing policy</CardTitle>
-              <CardDescription>External free routes first; local fallback last.</CardDescription>
+              <CardDescription>
+                External free routes first; local fallback last.
+              </CardDescription>
             </CardHeader>
             <CardContent className="mt-5">
               <div className="rounded-2xl bg-emerald-400/[.07] p-4 text-sm">
@@ -1185,7 +1427,8 @@ function WorkspaceSurface({
                   Paid routes denied
                 </strong>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Unknown-cost models and billing-enabled projects are ineligible.
+                  Unknown-cost models and billing-enabled projects are
+                  ineligible.
                 </p>
               </div>
             </CardContent>
@@ -1229,27 +1472,64 @@ function WorkspaceSurface({
   );
 }
 
-function BuildWorkspace({ navigate, endpoint }: { navigate: (view: StudioView) => void; endpoint: string }) {
+function BuildWorkspace({
+  navigate,
+  endpoint,
+}: {
+  navigate: (view: StudioView) => void;
+  endpoint: string;
+}) {
   return (
     <div className="mx-auto max-w-3xl space-y-8 py-8 sm:py-14">
-      <div className="text-center"><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">What do you want to build?</h1></div>
-      <LocalRequestPanel key="new-project" mode="compose" minimal navigate={navigate} />
+      <div className="text-center">
+        <h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-5xl">
+          What do you want to build?
+        </h1>
+      </div>
+      <LocalRequestPanel
+        key="new-project"
+        mode="compose"
+        minimal
+        navigate={navigate}
+      />
     </div>
   );
 }
 
-function ProjectsWorkspace({ endpoint, navigate }: { endpoint: string; navigate: (view: StudioView) => void }) {
-  const [selectedProjectId, setSelectedProjectId] = useState(() => projectIdFromLocation(window.location) ?? "");
-  const [section, setSection] = useState<"overview" | "resources" | "progress">("overview");
+function ProjectsWorkspace({
+  endpoint,
+  navigate,
+}: {
+  endpoint: string;
+  navigate: (view: StudioView) => void;
+}) {
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    () => projectIdFromLocation(window.location) ?? "",
+  );
+  const [section, setSection] = useState<"overview" | "resources" | "progress">(
+    "overview",
+  );
   const [projectName, setProjectName] = useState("");
   useEffect(() => {
-    const sync = () => setSelectedProjectId(projectIdFromLocation(window.location) ?? "");
+    const sync = () =>
+      setSelectedProjectId(projectIdFromLocation(window.location) ?? "");
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, []);
   useEffect(() => {
-    if (!selectedProjectId) { setProjectName(""); return; }
-    void loadLocalProjects({ endpoint }).then((collection) => setProjectName(collection.projects.find((project) => project.id === selectedProjectId)?.displayName ?? "Project")).catch(() => setProjectName("Project"));
+    if (!selectedProjectId) {
+      setProjectName("");
+      return;
+    }
+    void loadLocalProjects({ endpoint })
+      .then((collection) =>
+        setProjectName(
+          collection.projects.find(
+            (project) => project.id === selectedProjectId,
+          )?.displayName ?? "Project",
+        ),
+      )
+      .catch(() => setProjectName("Project"));
   }, [endpoint, selectedProjectId]);
   const openProject = (projectId: string) => {
     window.history.pushState({}, "", projectRoute(projectId));
@@ -1261,20 +1541,66 @@ function ProjectsWorkspace({ endpoint, navigate }: { endpoint: string; navigate:
     window.history.pushState({}, "", "/projects");
     setSelectedProjectId("");
   };
-  if (!selectedProjectId) return <div className="mx-auto max-w-3xl py-3"><ProjectPortfolio openProject={openProject} startProject={() => navigate("overview")} /></div>;
-  return <div className="space-y-5 pt-4 sm:pt-7">
-    <div className="flex items-start gap-3"><Button variant="ghost" size="icon" onClick={closeProject} aria-label="All projects"><ArrowRight className="rotate-180" /></Button><div className="min-w-0"><span className="text-xs font-medium text-muted-foreground">Project</span><h1 className="mt-1 truncate text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">{projectName || "Project"}</h1></div></div>
-    <Tabs value={section} onValueChange={(value) => setSection(value as typeof section)}>
-      <TabsList aria-label="Project sections">
-        <TabsTrigger value="overview">Overview</TabsTrigger>
-        <TabsTrigger value="resources">Resources</TabsTrigger>
-        <TabsTrigger value="progress">Progress</TabsTrigger>
-      </TabsList>
-      <TabsContent value="overview"><ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId} /></TabsContent>
-      <TabsContent value="resources"><ProjectSettingsPanel endpoint={endpoint} projectId={selectedProjectId} /></TabsContent>
-      <TabsContent value="progress"><ProjectActivityDashboard endpoint={endpoint} mode="analytics" projectId={selectedProjectId} /></TabsContent>
-    </Tabs>
-  </div>;
+  if (!selectedProjectId)
+    return (
+      <div className="mx-auto max-w-3xl py-3">
+        <ProjectPortfolio
+          openProject={openProject}
+          startProject={() => navigate("overview")}
+        />
+      </div>
+    );
+  return (
+    <div className="space-y-5 pt-4 sm:pt-7">
+      <div className="flex items-start gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={closeProject}
+          aria-label="All projects"
+        >
+          <ArrowRight className="rotate-180" />
+        </Button>
+        <div className="min-w-0">
+          <span className="text-xs font-medium text-muted-foreground">
+            Project
+          </span>
+          <h1 className="mt-1 truncate text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">
+            {projectName || "Project"}
+          </h1>
+        </div>
+      </div>
+      <Tabs
+        value={section}
+        onValueChange={(value) => setSection(value as typeof section)}
+      >
+        <TabsList aria-label="Project sections">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="resources">Resources</TabsTrigger>
+          <TabsTrigger value="progress">Progress</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
+          <ProjectArtifactWorkspace
+            endpoint={endpoint}
+            projectId={selectedProjectId}
+          />
+        </TabsContent>
+        <TabsContent value="resources">
+          <ProjectSettingsPanel
+            endpoint={endpoint}
+            projectId={selectedProjectId}
+          />
+        </TabsContent>
+        <TabsContent value="progress">
+          <ProjectActivityDashboard
+            endpoint={endpoint}
+            mode="analytics"
+            projectId={selectedProjectId}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
 }
 
 function ActivityWorkspace({
@@ -1284,30 +1610,45 @@ function ActivityWorkspace({
   endpoint: string;
   navigate: (view: StudioView) => void;
 }) {
-  return <ProjectActivityDashboard endpoint={endpoint} mode="actions" />;
+  return (
+    <div className="space-y-4">
+      <OwnerJourneyCertificationCard endpoint={endpoint} />
+      <ProjectActivityDashboard endpoint={endpoint} mode="actions" />
+    </div>
+  );
 }
 
 function OnboardingWorkspace() {
-  const [onboardingStage, setOnboardingStage] = useState<OnboardingStage>("select");
+  const [onboardingStage, setOnboardingStage] =
+    useState<OnboardingStage>("select");
   const [entryMethod, setEntryMethod] = useState<"local" | "github">("local");
-  const [githubUrl, setGithubUrl] = useState("https://github.com/opefyre/freeloader-coder");
+  const [githubUrl, setGithubUrl] = useState(
+    "https://github.com/opefyre/freeloader-coder",
+  );
   const [notice, setNotice] = useState(
-    "Nothing has been read or changed. Choose how to add the project."
+    "Nothing has been read or changed. Choose how to add the project.",
   );
   const [decision, setDecision] = useState<"keep" | "restore" | null>(null);
   const progress = onboardingProgress(onboardingStage);
-  const currentIndex = onboardingStages.findIndex((stage) => stage.id === onboardingStage);
+  const currentIndex = onboardingStages.findIndex(
+    (stage) => stage.id === onboardingStage,
+  );
 
   const advance = () => {
     const next = nextOnboardingStage(onboardingStage);
     setOnboardingStage(next);
-    setNotice({
-      analyze: "Repository access confirmed. Analysis is deterministic and excludes likely secrets.",
-      plan: "Project understanding is ready. Review the recommended first task before anything changes.",
-      preview: "The demo preview is validated and attached to a restorable checkpoint.",
-      decision: "Validation is complete. Choose whether to keep or restore the checkpoint.",
-      select: "Choose how to add the project."
-    }[next]);
+    setNotice(
+      {
+        analyze:
+          "Repository access confirmed. Analysis is deterministic and excludes likely secrets.",
+        plan: "Project understanding is ready. Review the recommended first task before anything changes.",
+        preview:
+          "The demo preview is validated and attached to a restorable checkpoint.",
+        decision:
+          "Validation is complete. Choose whether to keep or restore the checkpoint.",
+        select: "Choose how to add the project.",
+      }[next],
+    );
   };
 
   return (
@@ -1318,7 +1659,8 @@ function OnboardingWorkspace() {
         <div className="flex flex-wrap items-center gap-2">
           <Badge>Guided synthetic example</Badge>
           <span className="text-xs text-muted-foreground">
-            Explore the future execution journey without changing a real repository.
+            Explore the future execution journey without changing a real
+            repository.
           </span>
         </div>
       </div>
@@ -1327,11 +1669,16 @@ function OnboardingWorkspace() {
           <div>
             <div className="flex items-center gap-2">
               <Badge tone="active">First project</Badge>
-              <span className="text-xs font-medium text-muted-foreground">{progress}% complete</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                {progress}% complete
+              </span>
             </div>
-            <CardTitle className="mt-4 text-xl">From repository to verified preview</CardTitle>
+            <CardTitle className="mt-4 text-xl">
+              From repository to verified preview
+            </CardTitle>
             <CardDescription>
-              Five guided steps. Existing work stays untouched, and every change can be restored.
+              Five guided steps. Existing work stays untouched, and every change
+              can be restored.
             </CardDescription>
           </div>
           <div className="min-w-44">
@@ -1342,12 +1689,17 @@ function OnboardingWorkspace() {
               />
             </div>
             <p className="mt-2 text-right text-xs text-muted-foreground">
-              About {Math.max(1, starterPlan.expectedMinutes - currentIndex * 2)} minutes remaining
+              About{" "}
+              {Math.max(1, starterPlan.expectedMinutes - currentIndex * 2)}{" "}
+              minutes remaining
             </p>
           </div>
         </CardHeader>
         <CardContent className="mt-6">
-          <ol className="grid gap-2 sm:grid-cols-5" aria-label="Project onboarding progress">
+          <ol
+            className="grid gap-2 sm:grid-cols-5"
+            aria-label="Project onboarding progress"
+          >
             {onboardingStages.map((stage, index) => (
               <li
                 key={stage.id}
@@ -1358,7 +1710,7 @@ function OnboardingWorkspace() {
                     ? "bg-emerald-400/[.07]"
                     : stage.id === onboardingStage
                       ? "bg-primary/10"
-                      : "bg-muted/45"
+                      : "bg-muted/45",
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -1369,14 +1721,16 @@ function OnboardingWorkspace() {
                         ? "bg-emerald-400/20 text-emerald-700 dark:text-emerald-300"
                         : stage.id === onboardingStage
                           ? "bg-primary/20 text-primary"
-                          : "bg-background text-muted-foreground"
+                          : "bg-background text-muted-foreground",
                     )}
                   >
                     {index < currentIndex ? <Check weight="bold" /> : index + 1}
                   </span>
                   <strong className="text-xs">{stage.label}</strong>
                 </div>
-                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">{stage.note}</p>
+                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                  {stage.note}
+                </p>
               </li>
             ))}
           </ol>
@@ -1390,27 +1744,39 @@ function OnboardingWorkspace() {
               <CardHeader>
                 <CardTitle>Add the project you want to build</CardTitle>
                 <CardDescription>
-                  Local folders and GitHub clones become the same safe project record.
+                  Local folders and GitHub clones become the same safe project
+                  record.
                 </CardDescription>
               </CardHeader>
               <CardContent className="mt-6">
-                <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="Repository source">
+                <div
+                  className="grid gap-3 sm:grid-cols-2"
+                  role="group"
+                  aria-label="Repository source"
+                >
                   <button
                     type="button"
                     aria-pressed={entryMethod === "local"}
                     onClick={() => {
                       setEntryMethod("local");
-                      setNotice("Local folders are inspected read-only before registration.");
+                      setNotice(
+                        "Local folders are inspected read-only before registration.",
+                      );
                     }}
                     className={cn(
                       "rounded-3xl bg-muted/50 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
-                      entryMethod === "local" && "bg-primary/[.09]"
+                      entryMethod === "local" && "bg-primary/[.09]",
                     )}
                   >
-                    <FolderOpen size={24} className="text-primary" weight="duotone" />
+                    <FolderOpen
+                      size={24}
+                      className="text-primary"
+                      weight="duotone"
+                    />
                     <strong className="mt-5 block">Local folder</strong>
                     <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                      Register an existing repository without moving or overwriting files.
+                      Register an existing repository without moving or
+                      overwriting files.
                     </span>
                   </button>
                   <button
@@ -1418,14 +1784,20 @@ function OnboardingWorkspace() {
                     aria-pressed={entryMethod === "github"}
                     onClick={() => {
                       setEntryMethod("github");
-                      setNotice("Private repositories may ask you to connect GitHub, then Resume verification.");
+                      setNotice(
+                        "Private repositories may ask you to connect GitHub, then Resume verification.",
+                      );
                     }}
                     className={cn(
                       "rounded-3xl bg-muted/50 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
-                      entryMethod === "github" && "bg-primary/[.09]"
+                      entryMethod === "github" && "bg-primary/[.09]",
                     )}
                   >
-                    <GitBranch size={24} className="text-primary" weight="duotone" />
+                    <GitBranch
+                      size={24}
+                      className="text-primary"
+                      weight="duotone"
+                    />
                     <strong className="mt-5 block">Clone from GitHub</strong>
                     <span className="mt-1 block text-xs leading-5 text-muted-foreground">
                       Validate access and destination safety before cloning.
@@ -1438,13 +1810,16 @@ function OnboardingWorkspace() {
                       <div>
                         <strong className="text-sm">No folder selected</strong>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          The selected path stays local and is masked during screen sharing.
+                          The selected path stays local and is masked during
+                          screen sharing.
                         </p>
                       </div>
                       <Button
-                        onClick={() => setNotice(
-                          "Demo repository selected. No file has been opened or changed."
-                        )}
+                        onClick={() =>
+                          setNotice(
+                            "Demo repository selected. No file has been opened or changed.",
+                          )
+                        }
                       >
                         <FolderOpen weight="fill" />
                         Choose local folder
@@ -1453,7 +1828,10 @@ function OnboardingWorkspace() {
                   </div>
                 ) : (
                   <div className="mt-5">
-                    <label htmlFor="github-repository-url" className="text-xs font-semibold">
+                    <label
+                      htmlFor="github-repository-url"
+                      className="text-xs font-semibold"
+                    >
                       GitHub repository URL
                     </label>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -1466,9 +1844,11 @@ function OnboardingWorkspace() {
                       />
                       <Button
                         variant="secondary"
-                        onClick={() => setNotice(
-                          "Access can be verified. The destination will be checked before cloning."
-                        )}
+                        onClick={() =>
+                          setNotice(
+                            "Access can be verified. The destination will be checked before cloning.",
+                          )
+                        }
                       >
                         Verify access
                       </Button>
@@ -1476,7 +1856,11 @@ function OnboardingWorkspace() {
                     <button
                       type="button"
                       className="mt-3 text-xs font-semibold text-primary hover:underline"
-                      onClick={() => setNotice("Access verification resumed from the preserved checkpoint.")}
+                      onClick={() =>
+                        setNotice(
+                          "Access verification resumed from the preserved checkpoint.",
+                        )
+                      }
                     >
                       Resume verification
                     </button>
@@ -1497,7 +1881,9 @@ function OnboardingWorkspace() {
               <CardHeader className="flex flex-row items-start justify-between gap-4">
                 <div>
                   <Badge tone="positive">{detectedProject.state}</Badge>
-                  <CardTitle className="mt-4 text-xl">{detectedProject.name}</CardTitle>
+                  <CardTitle className="mt-4 text-xl">
+                    {detectedProject.name}
+                  </CardTitle>
                   <CardDescription>{detectedProject.summary}</CardDescription>
                 </div>
                 <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-emerald-400/10 text-emerald-700 dark:text-emerald-300">
@@ -1506,23 +1892,50 @@ function OnboardingWorkspace() {
               </CardHeader>
               <CardContent className="mt-6 space-y-5">
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <OnboardingFact label="Languages" value={detectedProject.languages.join(", ")} />
-                  <OnboardingFact label="Frameworks" value={detectedProject.frameworks.join(", ")} />
-                  <OnboardingFact label="Validation" value={detectedProject.commands.join(" · ")} />
+                  <OnboardingFact
+                    label="Languages"
+                    value={detectedProject.languages.join(", ")}
+                  />
+                  <OnboardingFact
+                    label="Frameworks"
+                    value={detectedProject.frameworks.join(", ")}
+                  />
+                  <OnboardingFact
+                    label="Validation"
+                    value={detectedProject.commands.join(" · ")}
+                  />
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  <GroundingGroup label="Verified facts" items={detectedProject.facts} />
-                  <GroundingGroup label="Inferences" items={detectedProject.inferences} />
-                  <GroundingGroup label="Assumptions" items={detectedProject.assumptions} />
-                  <GroundingGroup label="Your decisions" items={detectedProject.userDecisions} />
+                  <GroundingGroup
+                    label="Verified facts"
+                    items={detectedProject.facts}
+                  />
+                  <GroundingGroup
+                    label="Inferences"
+                    items={detectedProject.inferences}
+                  />
+                  <GroundingGroup
+                    label="Assumptions"
+                    items={detectedProject.assumptions}
+                  />
+                  <GroundingGroup
+                    label="Your decisions"
+                    items={detectedProject.userDecisions}
+                  />
                 </div>
                 <details className="rounded-2xl bg-muted/45 p-4">
                   <summary className="cursor-pointer text-xs font-semibold">
                     Advanced · citations and protected paths
                   </summary>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <OnboardingFact label="Cited sources" value="package.json · App.tsx · globals.css" />
-                    <OnboardingFact label="Never grounded" value={detectedProject.protectedPaths.join(" · ")} />
+                    <OnboardingFact
+                      label="Cited sources"
+                      value="package.json · App.tsx · globals.css"
+                    />
+                    <OnboardingFact
+                      label="Never grounded"
+                      value={detectedProject.protectedPaths.join(" · ")}
+                    />
                   </div>
                 </details>
                 <div className="flex justify-end">
@@ -1542,36 +1955,61 @@ function OnboardingWorkspace() {
                   <Badge tone="active">Recommended</Badge>
                   <Badge>{starterPlan.expectedMinutes} minute estimate</Badge>
                 </div>
-                <CardTitle className="mt-4 text-xl">{starterPlan.title}</CardTitle>
+                <CardTitle className="mt-4 text-xl">
+                  {starterPlan.title}
+                </CardTitle>
                 <CardDescription>{starterPlan.reason}</CardDescription>
               </CardHeader>
               <CardContent className="mt-6">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <PlanGroup label="What will happen" items={starterPlan.effects} />
-                  <PlanGroup label="What proves it worked" items={starterPlan.evidence} />
+                  <PlanGroup
+                    label="What will happen"
+                    items={starterPlan.effects}
+                  />
+                  <PlanGroup
+                    label="What proves it worked"
+                    items={starterPlan.evidence}
+                  />
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <OnboardingFact label="Model use" value={starterPlan.providerPosture} />
-                  <OnboardingFact label="This computer" value={starterPlan.localResources} />
+                  <OnboardingFact
+                    label="Model use"
+                    value={starterPlan.providerPosture}
+                  />
+                  <OnboardingFact
+                    label="This computer"
+                    value={starterPlan.localResources}
+                  />
                 </div>
                 <div className="mt-4 rounded-3xl bg-emerald-400/[.07] p-5">
                   <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                     <ShieldCheck weight="duotone" />
                     Safe undo
                   </div>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{starterPlan.undo}</p>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    {starterPlan.undo}
+                  </p>
                 </div>
                 <details className="mt-4 rounded-2xl bg-muted/45 p-4">
                   <summary className="cursor-pointer text-xs font-semibold">
                     Advanced · exact operations and limitations
                   </summary>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <PlanGroup label="Exact operations" items={starterPlan.advancedOperations} />
-                    <PlanGroup label="Limitations" items={starterPlan.limitations} />
+                    <PlanGroup
+                      label="Exact operations"
+                      items={starterPlan.advancedOperations}
+                    />
+                    <PlanGroup
+                      label="Limitations"
+                      items={starterPlan.limitations}
+                    />
                   </div>
                 </details>
                 <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <Button variant="secondary" onClick={() => setOnboardingStage("analyze")}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setOnboardingStage("analyze")}
+                  >
                     Review understanding
                   </Button>
                   <Button onClick={advance}>
@@ -1588,9 +2026,12 @@ function OnboardingWorkspace() {
               <CardHeader className="flex flex-row items-start justify-between gap-4">
                 <div>
                   <Badge tone="positive">Validated preview</Badge>
-                  <CardTitle className="mt-4 text-xl">Your first safe change is ready</CardTitle>
+                  <CardTitle className="mt-4 text-xl">
+                    Your first safe change is ready
+                  </CardTitle>
                   <CardDescription>
-                    This preview is evidence-backed and still isolated from your existing work.
+                    This preview is evidence-backed and still isolated from your
+                    existing work.
                   </CardDescription>
                 </div>
                 <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
@@ -1607,13 +2048,18 @@ function OnboardingWorkspace() {
                       Build freely. Keep control.
                     </h3>
                     <p className="mt-2 max-w-lg text-sm text-muted-foreground">
-                      A clearer heading, validated against the repository’s existing design system.
+                      A clearer heading, validated against the repository’s
+                      existing design system.
                     </p>
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {previewEvidence.map((item) => (
-                    <OnboardingFact key={item.label} label={item.label} value={item.value} />
+                    <OnboardingFact
+                      key={item.label}
+                      label={item.label}
+                      value={item.value}
+                    />
                   ))}
                 </div>
                 <div className="mt-6 flex justify-end">
@@ -1652,37 +2098,60 @@ function OnboardingWorkspace() {
                       type="button"
                       onClick={() => {
                         setDecision("keep");
-                        setNotice("The validated checkpoint was kept. No external publish occurred.");
+                        setNotice(
+                          "The validated checkpoint was kept. No external publish occurred.",
+                        );
                       }}
                       className="rounded-3xl bg-primary/10 p-5 text-left outline-none hover:bg-primary/15 focus-visible:ring-3 focus-visible:ring-ring/30"
                     >
-                      <CheckCircle size={24} className="text-primary" weight="duotone" />
+                      <CheckCircle
+                        size={24}
+                        className="text-primary"
+                        weight="duotone"
+                      />
                       <strong className="mt-5 block">Keep checkpoint</strong>
                       <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                        Preserve the validated local change as the new safe starting point.
+                        Preserve the validated local change as the new safe
+                        starting point.
                       </span>
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         setDecision("restore");
-                        setNotice("The exact previous state was restored. Unrelated work was preserved.");
+                        setNotice(
+                          "The exact previous state was restored. Unrelated work was preserved.",
+                        );
                       }}
                       className="rounded-3xl bg-muted/55 p-5 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
                     >
-                      <ShieldCheck size={24} className="text-primary" weight="duotone" />
-                      <strong className="mt-5 block">Restore previous state</strong>
+                      <ShieldCheck
+                        size={24}
+                        className="text-primary"
+                        weight="duotone"
+                      />
+                      <strong className="mt-5 block">
+                        Restore previous state
+                      </strong>
                       <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                        Remove only product-owned changes and return to the saved baseline.
+                        Remove only product-owned changes and return to the
+                        saved baseline.
                       </span>
                     </button>
                   </div>
                 ) : (
                   <div className="rounded-3xl bg-emerald-400/[.07] p-6 text-center">
-                    <CheckCircle size={34} className="mx-auto text-emerald-700 dark:text-emerald-300" weight="duotone" />
-                    <strong className="mt-4 block">Ready for your next request</strong>
+                    <CheckCircle
+                      size={34}
+                      className="mx-auto text-emerald-700 dark:text-emerald-300"
+                      weight="duotone"
+                    />
+                    <strong className="mt-4 block">
+                      Ready for your next request
+                    </strong>
                     <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-                      Codkesh now understands the project, its safeguards, and how to validate future work.
+                      Codkesh now understands the project, its safeguards, and
+                      how to validate future work.
                     </p>
                   </div>
                 )}
@@ -1695,13 +2164,31 @@ function OnboardingWorkspace() {
           <Card>
             <CardHeader>
               <CardTitle>Safety boundary</CardTitle>
-              <CardDescription>What remains true throughout setup.</CardDescription>
+              <CardDescription>
+                What remains true throughout setup.
+              </CardDescription>
             </CardHeader>
             <CardContent className="mt-5 space-y-3">
-              <SourceRow label="Existing files" value="Never overwritten" state="Protected" />
-              <SourceRow label="Likely secrets" value="Excluded" state="Protected" />
-              <SourceRow label="Automatic spend" value="$0.00" state="Enforced" />
-              <SourceRow label="Restore" value="Product files only" state="Ready" />
+              <SourceRow
+                label="Existing files"
+                value="Never overwritten"
+                state="Protected"
+              />
+              <SourceRow
+                label="Likely secrets"
+                value="Excluded"
+                state="Protected"
+              />
+              <SourceRow
+                label="Automatic spend"
+                value="$0.00"
+                state="Enforced"
+              />
+              <SourceRow
+                label="Restore"
+                value="Product files only"
+                state="Ready"
+              />
             </CardContent>
           </Card>
           <Card>
@@ -1718,7 +2205,8 @@ function OnboardingWorkspace() {
                   <Badge tone="positive">Restorable</Badge>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  Dirty and untracked user files remain outside the product checkpoint.
+                  Dirty and untracked user files remain outside the product
+                  checkpoint.
                 </p>
               </div>
             </CardContent>
@@ -1746,7 +2234,13 @@ function OnboardingFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function GroundingGroup({ label, items }: { label: string; items: readonly string[] }) {
+function GroundingGroup({
+  label,
+  items,
+}: {
+  label: string;
+  items: readonly string[];
+}) {
   return (
     <div className="rounded-3xl bg-muted/45 p-4">
       <strong className="text-xs">{label}</strong>
@@ -1762,13 +2256,22 @@ function GroundingGroup({ label, items }: { label: string; items: readonly strin
   );
 }
 
-function PlanGroup({ label, items }: { label: string; items: readonly string[] }) {
+function PlanGroup({
+  label,
+  items,
+}: {
+  label: string;
+  items: readonly string[];
+}) {
   return (
     <div className="rounded-3xl bg-muted/45 p-5">
       <strong className="text-xs">{label}</strong>
       <ol className="mt-4 space-y-3">
         {items.map((item, index) => (
-          <li key={item} className="flex gap-3 text-xs leading-5 text-muted-foreground">
+          <li
+            key={item}
+            className="flex gap-3 text-xs leading-5 text-muted-foreground"
+          >
             <span className="grid size-5 shrink-0 place-items-center rounded-full bg-background text-[10px] font-bold text-foreground">
               {index + 1}
             </span>
@@ -1790,32 +2293,49 @@ function SettingsWorkspace({
   setSelectedConnection: (provider: string) => void;
 }) {
   const [settingsSection, setSettingsSection] = useState("connections");
-  const [defaultAutonomy, setDefaultAutonomy] = useState(() => localStorage.getItem("pipeline-studio.default-autonomy") ?? "Balanced");
-  const [notifyAttention, setNotifyAttention] = useState(() => localStorage.getItem("pipeline-studio.notify-attention") !== "false");
-  const [runtimeCheck, setRuntimeCheck] = useState<"idle" | "checking" | "ready" | "unavailable">("idle");
-  const savePreferences = (autonomy: string, notifications = notifyAttention) => {
-    setDefaultAutonomy(autonomy); setNotifyAttention(notifications);
+  const [defaultAutonomy, setDefaultAutonomy] = useState(
+    () =>
+      localStorage.getItem("pipeline-studio.default-autonomy") ?? "Balanced",
+  );
+  const [notifyAttention, setNotifyAttention] = useState(
+    () => localStorage.getItem("pipeline-studio.notify-attention") !== "false",
+  );
+  const [runtimeCheck, setRuntimeCheck] = useState<
+    "idle" | "checking" | "ready" | "unavailable"
+  >("idle");
+  const savePreferences = (
+    autonomy: string,
+    notifications = notifyAttention,
+  ) => {
+    setDefaultAutonomy(autonomy);
+    setNotifyAttention(notifications);
     localStorage.setItem("pipeline-studio.default-autonomy", autonomy);
-    localStorage.setItem("pipeline-studio.notify-attention", String(notifications));
+    localStorage.setItem(
+      "pipeline-studio.notify-attention",
+      String(notifications),
+    );
   };
 
   return (
     <>
-    <Tabs value={settingsSection} onValueChange={setSettingsSection}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TabsList aria-label="Settings sections">
-          <TabsTrigger value="connections">Apps</TabsTrigger>
-          <TabsTrigger value="providers">AI</TabsTrigger>
-        </TabsList>
-      </div>
+      <Tabs value={settingsSection} onValueChange={setSettingsSection}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabsList aria-label="Settings sections">
+            <TabsTrigger value="connections">Apps</TabsTrigger>
+            <TabsTrigger value="providers">AI</TabsTrigger>
+          </TabsList>
+        </div>
 
-      <TabsContent value="connections">
-        <ConnectionCatalog endpoint={controlPlaneEndpoint} openProviders={() => setSettingsSection("providers")} />
-      </TabsContent>
-      <TabsContent value="providers">
-        <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
-      </TabsContent>
-    </Tabs>
+        <TabsContent value="connections">
+          <ConnectionCatalog
+            endpoint={controlPlaneEndpoint}
+            openProviders={() => setSettingsSection("providers")}
+          />
+        </TabsContent>
+        <TabsContent value="providers">
+          <ProviderConnectionWizard endpoint={controlPlaneEndpoint} />
+        </TabsContent>
+      </Tabs>
     </>
   );
 }
@@ -1830,7 +2350,7 @@ function PermissionFact({ label, value }: { label: string; value: string }) {
 }
 
 function permissionTone(
-  state: PermissionProfile["state"]
+  state: PermissionProfile["state"],
 ): "positive" | "caution" | "neutral" {
   if (state === "Active") return "positive";
   if (state === "Expires soon") return "caution";
@@ -1916,7 +2436,9 @@ function TaskRow({
         <ListChecks size={17} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="text-[10px] font-semibold text-muted-foreground">{id}</span>
+        <span className="text-[10px] font-semibold text-muted-foreground">
+          {id}
+        </span>
         <strong className="block truncate text-sm">{title}</strong>
       </span>
       <Badge tone={tone}>{state}</Badge>
@@ -1949,10 +2471,14 @@ function Checkpoint({
 }) {
   return (
     <div className="grid gap-3 rounded-3xl bg-muted/45 p-4 sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:items-center">
-      <span className="text-xs font-semibold text-muted-foreground">{time}</span>
+      <span className="text-xs font-semibold text-muted-foreground">
+        {time}
+      </span>
       <span>
         <strong className="block text-sm">{title}</strong>
-        <span className="mt-1 block text-xs leading-5 text-muted-foreground">{note}</span>
+        <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+          {note}
+        </span>
       </span>
       <Badge tone="positive">{status}</Badge>
     </div>
@@ -1974,15 +2500,25 @@ function Metric({
     metric.value === null
       ? "Unavailable"
       : `${metric.value} ${
-          metric.unit === "tasks" ? (metric.value === 1 ? "task" : "tasks") : metric.unit
+          metric.unit === "tasks"
+            ? metric.value === 1
+              ? "task"
+              : "tasks"
+            : metric.unit
         }`;
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <span className="text-xs font-medium text-muted-foreground">{metric.label}</span>
-          <strong className="mt-2 block text-xl font-semibold tracking-tight">{value}</strong>
-          <span className="mt-1 block text-xs text-muted-foreground">{note}</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            {metric.label}
+          </span>
+          <strong className="mt-2 block text-xl font-semibold tracking-tight">
+            {value}
+          </strong>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            {note}
+          </span>
           <span
             className="mt-2 block text-[10px] text-muted-foreground/75"
             title={`Source events: ${metric.provenance.eventTypes.join(", ")}`}
@@ -1991,7 +2527,12 @@ function Metric({
             {metric.provenance.observedAt?.slice(11, 16) ?? "never"} UTC
           </span>
         </div>
-        <span className={cn("grid size-10 place-items-center rounded-2xl bg-muted", tone)}>
+        <span
+          className={cn(
+            "grid size-10 place-items-center rounded-2xl bg-muted",
+            tone,
+          )}
+        >
           <Icon size={20} weight="duotone" />
         </span>
       </div>
@@ -2005,7 +2546,9 @@ function ProviderFact({ label, value }: { label: string; value: string }) {
       <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
-      <strong className="mt-1 block truncate text-xs capitalize">{value}</strong>
+      <strong className="mt-1 block truncate text-xs capitalize">
+        {value}
+      </strong>
     </div>
   );
 }
@@ -2028,13 +2571,13 @@ function Choice({
       onClick={() => onSelect(label)}
       className={cn(
         "flex w-full items-center gap-3 rounded-2xl bg-muted/65 p-3 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30",
-        selected && "bg-primary/10"
+        selected && "bg-primary/10",
       )}
     >
       <span
         className={cn(
           "grid size-4 place-items-center rounded-full bg-background ring-1 ring-foreground/15",
-          selected && "bg-primary text-primary-foreground ring-primary"
+          selected && "bg-primary text-primary-foreground ring-primary",
         )}
       >
         {selected && <Check size={10} weight="bold" />}
@@ -2072,7 +2615,8 @@ function VerifiedProviderCatalog() {
       <CardHeader>
         <CardTitle>Verified connection catalog</CardTitle>
         <CardDescription>
-          Officially checked free access. A provider remains inactive until its key and live account limits pass a canary.
+          Officially checked free access. A provider remains inactive until its
+          key and live account limits pass a canary.
         </CardDescription>
       </CardHeader>
       <CardContent className="mt-7 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -2084,7 +2628,9 @@ function VerifiedProviderCatalog() {
                 {provider.zeroCostEligible ? "Free eligible" : "Credit only"}
               </Badge>
             </div>
-            <p className="mt-2 truncate text-xs text-muted-foreground">{provider.modelId}</p>
+            <p className="mt-2 truncate text-xs text-muted-foreground">
+              {provider.modelId}
+            </p>
             <p className="mt-5 text-xs leading-5 text-muted-foreground">
               {provider.zeroCostEligible
                 ? "Connect a key, probe account limits, then admit to routing."
@@ -2117,10 +2663,15 @@ function VerifiedProviderCatalog() {
 }
 
 function formatWakeTime(retryAt: number, generatedAt: number): string {
-  const remainingSeconds = Math.max(0, Math.ceil((retryAt - generatedAt) / 1_000));
+  const remainingSeconds = Math.max(
+    0,
+    Math.ceil((retryAt - generatedAt) / 1_000),
+  );
   if (remainingSeconds < 60) return `in ${remainingSeconds}s`;
   const minutes = Math.ceil(remainingSeconds / 60);
-  return minutes < 60 ? `in ${minutes}m` : `at ${new Date(retryAt).toISOString().slice(11, 16)} UTC`;
+  return minutes < 60
+    ? `in ${minutes}m`
+    : `at ${new Date(retryAt).toISOString().slice(11, 16)} UTC`;
 }
 
 const themeOptions: readonly {
@@ -2156,10 +2707,13 @@ function ThemeControl({
           onClick={() => setMode(option.mode)}
           className={cn(
             "grid size-7 place-items-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
-            mode === option.mode && "bg-background text-foreground shadow-sm"
+            mode === option.mode && "bg-background text-foreground shadow-sm",
           )}
         >
-          <option.icon size={14} weight={mode === option.mode ? "fill" : "regular"} />
+          <option.icon
+            size={14}
+            weight={mode === option.mode ? "fill" : "regular"}
+          />
         </button>
       ))}
     </div>

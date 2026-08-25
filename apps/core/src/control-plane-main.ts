@@ -22,7 +22,11 @@ import { ProjectDeliveryPlanService } from "./project-delivery-plan-service.js";
 import { ProjectDeliveryPlanOrchestrator } from "./project-delivery-plan-orchestrator.js";
 import { ProjectDeliveryPlanCoordinator } from "./project-delivery-plan-coordinator.js";
 import { JiraDeliveryService } from "./jira-delivery-service.js";
-import { hasBlockingReviewDissent, isPreEvidenceExecutionDissent, ProjectExecutionService } from "./project-execution-service.js";
+import {
+  hasBlockingReviewDissent,
+  isPreEvidenceExecutionDissent,
+  ProjectExecutionService,
+} from "./project-execution-service.js";
 import { ProjectExecutionJiraObserver } from "./project-execution-jira-observer.js";
 import { ProjectExecutionCoordinator } from "./project-execution-coordinator.js";
 import { ProjectExecutionWorker } from "./project-execution-worker.js";
@@ -30,7 +34,10 @@ import { ProjectExecutionRuntimeAdapters } from "./project-execution-runtime-ada
 import { ProjectTaskWorkspaceService } from "./project-task-workspace.js";
 import { FreeProviderExecutionModel } from "./free-provider-execution-model.js";
 import { ProjectEgressPolicyService } from "./project-egress-policy-service.js";
-import { ProjectLifecycleService, ProjectLifecycleServiceError } from "./project-lifecycle-service.js";
+import {
+  ProjectLifecycleService,
+  ProjectLifecycleServiceError,
+} from "./project-lifecycle-service.js";
 import { ProjectLifecycleCoordinator } from "./project-lifecycle-coordinator.js";
 import { LocalRequestError, LocalRequestStore } from "./local-request-store.js";
 import { LocalProposalGenerator } from "./local-proposal-generator.js";
@@ -38,9 +45,7 @@ import { LocalSensitiveCommandRunner } from "./sensitive-command-runner.js";
 import { ProviderConnectionService } from "./provider-connection-service.js";
 import { JsonProviderConnectionRepository } from "../../../packages/storage/src/provider-connections.js";
 import { createOpenAiCompatibleAdapter } from "../../../packages/providers/src/openai-compatible.js";
-import {
-  createOperatingSystemCredentialBackend,
-} from "../../../packages/vault/src/backends.js";
+import { createOperatingSystemCredentialBackend } from "../../../packages/vault/src/backends.js";
 import { SqliteCredentialMetadataRepository } from "../../../packages/vault/src/repository.js";
 import {
   OperatingSystemCredentialVault,
@@ -52,6 +57,8 @@ import { buildActivitySnapshot } from "./activity-explorer.js";
 import { buildDecisionSnapshot } from "./decision-inbox.js";
 import { buildUniversalSearchSnapshot } from "./universal-search.js";
 import { LocalAttentionService } from "./attention-center.js";
+import { OwnerJourneyCertificationService } from "./owner-journey-certification-service.js";
+import { ExternalOwnerLearningService } from "./external-owner-learning-service.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
@@ -67,15 +74,21 @@ import { resolveChannelRelayRuntimeConfig } from "./channel-relay-runtime-config
 
 const host = parseHost(process.env.PIPELINE_STUDIO_CONTROL_HOST);
 const port = parsePort(process.env.PIPELINE_STUDIO_CONTROL_PORT);
-const allowedOrigins = parseOrigins(process.env.PIPELINE_STUDIO_ALLOWED_ORIGINS);
+const allowedOrigins = parseOrigins(
+  process.env.PIPELINE_STUDIO_ALLOWED_ORIGINS,
+);
 const stateDirectory = resolve(
-  process.env.PIPELINE_STUDIO_STATE_DIR ?? ".pipeline-studio"
+  process.env.PIPELINE_STUDIO_STATE_DIR ?? ".pipeline-studio",
 );
 await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
 const setupStatePath = resolve(stateDirectory, "setup-state.json");
 const instanceId = randomUUID();
 const startedAt = Date.now();
 const localProjects = new LocalProjectRegistry(stateDirectory);
+const ownerJourneyCertification = new OwnerJourneyCertificationService(
+  stateDirectory,
+);
+const externalOwnerLearning = new ExternalOwnerLearningService(stateDirectory);
 const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
 const projectDeliveryPlans = new ProjectDeliveryPlanService(localProjects);
@@ -93,10 +106,10 @@ const nativePicker = new NativePicker(
 const localRequests = new LocalRequestStore(
   stateDirectory,
   (projectId) => localProjects.has(projectId),
-  (projectId) => localProjects.canonicalRoot(projectId)
+  (projectId) => localProjects.canonicalRoot(projectId),
 );
 const providerConnections = new JsonProviderConnectionRepository(
-  resolve(stateDirectory, "provider-connections.json")
+  resolve(stateDirectory, "provider-connections.json"),
 );
 const credentialBackend = createOperatingSystemCredentialBackend({
   platform:
@@ -112,17 +125,25 @@ const credentialVault = new ProviderCredentialVaultBridge(
   new OperatingSystemCredentialVault(
     credentialBackend,
     new SqliteCredentialMetadataRepository(
-      resolve(stateDirectory, "credential-metadata.sqlite")
-    )
+      resolve(stateDirectory, "credential-metadata.sqlite"),
+    ),
   ),
-  Date.now
+  Date.now,
 );
-const integrationConnections = new IntegrationConnectionService(undefined, credentialVault);
+const integrationConnections = new IntegrationConnectionService(
+  undefined,
+  credentialVault,
+);
 const infrastructureDelivery = new InfrastructureDeliveryService(
   stateDirectory,
-  new Map([["Cloudflare", new CloudflarePagesInfrastructureAdapter(credentialVault)]])
+  new Map([
+    ["Cloudflare", new CloudflarePagesInfrastructureAdapter(credentialVault)],
+  ]),
 );
-const adapterCache = new Map<string, ReturnType<typeof createOpenAiCompatibleAdapter>>();
+const adapterCache = new Map<
+  string,
+  ReturnType<typeof createOpenAiCompatibleAdapter>
+>();
 const adapterRegistry = {
   adapter(providerId: string) {
     try {
@@ -131,7 +152,9 @@ const adapterRegistry = {
       const adapter = createOpenAiCompatibleAdapter({ providerId });
       adapterCache.set(providerId, adapter);
       return adapter;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   },
 };
 const proposalGenerator = new LocalProposalGenerator(
@@ -139,57 +162,135 @@ const proposalGenerator = new LocalProposalGenerator(
   localRequests,
   providerConnections,
   credentialVault,
-  adapterRegistry
+  adapterRegistry,
 );
 const providerConnectionService = new ProviderConnectionService(
   providerConnections,
   credentialVault,
-  adapterRegistry
+  adapterRegistry,
 );
-const intakeCapacity = new ProviderCapacityStore(resolve(stateDirectory, "provider-capacity.json"));
+const intakeCapacity = new ProviderCapacityStore(
+  resolve(stateDirectory, "provider-capacity.json"),
+);
 const intakeGateway = new AgentCanvasModelGateway(
   providerConnections,
   credentialVault,
   adapterRegistry,
   async () => {
     const connections = await providerConnections.list();
-    return intakeCapacity.snapshot(connections.map((connection) => connection.id), Date.now());
+    return intakeCapacity.snapshot(
+      connections.map((connection) => connection.id),
+      Date.now(),
+    );
   },
   Date.now,
   undefined,
-  async (attempt) => intakeCapacity.recordGatewayAttempt({ ...attempt, now: Date.now() })
+  async (attempt) =>
+    intakeCapacity.recordGatewayAttempt({ ...attempt, now: Date.now() }),
 );
 const projectIntake = new ProjectIntakeCoordinator(
   projectContexts,
   projectLifecycles,
   localProjects,
-  new FreeProviderProjectKindAssistant(intakeGateway)
+  new FreeProviderProjectKindAssistant(intakeGateway),
 );
-const projectEgress = new ProjectEgressPolicyService(stateDirectory, Date.now, async () => {
-  let collection = await providerConnectionService.list();
-  const stale = collection.connections.filter((provider) =>
-    provider.credentialState === "active" &&
-    (!provider.admission.admitted || provider.state === "stale")
-  );
-  for (const provider of stale) {
-    try { await providerConnectionService.reProbe(provider.id); }
-    catch { /* One unavailable free route must not prevent healthy routes. */ }
-  }
-  collection = await providerConnectionService.list();
-  return collection.connections
-    .filter((provider) => provider.state === "ready" && provider.admission.admitted && provider.cost.zeroCost && !provider.cost.billingEnabled)
-    .map((provider) => provider.providerId);
-});
-const solutionModel = new FreeProviderSolutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry, Date.now, providerConnectionService);
-const solutionCoordinator = new ProjectSolutionCoordinator(stateDirectory, new ProjectSolutionOrchestrator(projectLifecycles, projectSolutions, projectContexts, projectEgress, solutionModel));
-const jiraDelivery = new JiraDeliveryService(stateDirectory, localProjects, projectDeliveryPlans, projectLifecycles, credentialVault);
-const projectExecutions = new ProjectExecutionService(stateDirectory, projectDeliveryPlans, jiraDelivery, Date.now, projectLifecycles);
-const projectPortfolio = new ProjectPortfolioService(localProjects, projectLifecycles, projectExecutions, credentialVault);
-const projectExecutionJira = new ProjectExecutionJiraObserver(stateDirectory, projectExecutions, jiraDelivery, projectDeliveryPlans, credentialVault);
-const executionModel = new FreeProviderExecutionModel(stateDirectory, providerConnections, credentialVault, adapterRegistry, Date.now, providerConnectionService);
+const projectEgress = new ProjectEgressPolicyService(
+  stateDirectory,
+  Date.now,
+  async () => {
+    let collection = await providerConnectionService.list();
+    const stale = collection.connections.filter(
+      (provider) =>
+        provider.credentialState === "active" &&
+        (!provider.admission.admitted || provider.state === "stale"),
+    );
+    for (const provider of stale) {
+      try {
+        await providerConnectionService.reProbe(provider.id);
+      } catch {
+        /* One unavailable free route must not prevent healthy routes. */
+      }
+    }
+    collection = await providerConnectionService.list();
+    return collection.connections
+      .filter(
+        (provider) =>
+          provider.state === "ready" &&
+          provider.admission.admitted &&
+          provider.cost.zeroCost &&
+          !provider.cost.billingEnabled,
+      )
+      .map((provider) => provider.providerId);
+  },
+);
+const solutionModel = new FreeProviderSolutionModel(
+  stateDirectory,
+  providerConnections,
+  credentialVault,
+  adapterRegistry,
+  Date.now,
+  providerConnectionService,
+);
+const solutionCoordinator = new ProjectSolutionCoordinator(
+  stateDirectory,
+  new ProjectSolutionOrchestrator(
+    projectLifecycles,
+    projectSolutions,
+    projectContexts,
+    projectEgress,
+    solutionModel,
+  ),
+);
+const jiraDelivery = new JiraDeliveryService(
+  stateDirectory,
+  localProjects,
+  projectDeliveryPlans,
+  projectLifecycles,
+  credentialVault,
+);
+const projectExecutions = new ProjectExecutionService(
+  stateDirectory,
+  projectDeliveryPlans,
+  jiraDelivery,
+  Date.now,
+  projectLifecycles,
+);
+const projectPortfolio = new ProjectPortfolioService(
+  localProjects,
+  projectLifecycles,
+  projectExecutions,
+  credentialVault,
+);
+const projectExecutionJira = new ProjectExecutionJiraObserver(
+  stateDirectory,
+  projectExecutions,
+  jiraDelivery,
+  projectDeliveryPlans,
+  credentialVault,
+);
+const executionModel = new FreeProviderExecutionModel(
+  stateDirectory,
+  providerConnections,
+  credentialVault,
+  adapterRegistry,
+  Date.now,
+  providerConnectionService,
+);
 const executionWorkspaces = new ProjectTaskWorkspaceService(stateDirectory);
-const executionAdapters = new ProjectExecutionRuntimeAdapters(localProjects, projectDeliveryPlans, projectContexts, projectEgress, executionModel, executionWorkspaces, projectExecutionJira);
-const executionWorker = new ProjectExecutionWorker(projectExecutions, executionAdapters, `controller-${instanceId}`);
+const executionAdapters = new ProjectExecutionRuntimeAdapters(
+  localProjects,
+  projectDeliveryPlans,
+  projectContexts,
+  projectEgress,
+  executionModel,
+  executionWorkspaces,
+  projectExecutionJira,
+);
+const executionWorker = new ProjectExecutionWorker(
+  projectExecutions,
+  executionAdapters,
+  `controller-${instanceId}`,
+);
 const executionCoordinator = new ProjectExecutionCoordinator(
   stateDirectory,
   projectExecutions,
@@ -199,7 +300,7 @@ const executionCoordinator = new ProjectExecutionCoordinator(
   async (projectId) => {
     await projectLifecycles.completeDelivery(projectId);
     await projectExecutionJira.synchronize(projectId);
-  }
+  },
 );
 const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
   stateDirectory,
@@ -209,7 +310,7 @@ const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
     projectContexts,
     projectSolutions,
     projectEgress,
-    solutionModel
+    solutionModel,
   ),
   Date.now,
   async (projectId) => {
@@ -217,13 +318,16 @@ const deliveryPlanCoordinator = new ProjectDeliveryPlanCoordinator(
     await projectExecutions.initialize(projectId);
     await projectExecutionJira.synchronize(projectId);
     await executionCoordinator.schedule(projectId);
-  }
+  },
 );
 const wakeQueuedProjectExecutions = async () => {
   const projects = await localProjects.list();
   for (const project of projects.projects) {
     const execution = await projectExecutions.get(project.id);
-    if (execution?.state === "running" && execution.tasks.some((task) => task.status === "queued")) {
+    if (
+      execution?.state === "running" &&
+      execution.tasks.some((task) => task.status === "queued")
+    ) {
       await executionCoordinator.schedule(project.id);
     }
   }
@@ -232,33 +336,55 @@ const lifecycleCoordinator = new ProjectLifecycleCoordinator(
   stateDirectory,
   projectLifecycles,
   {
-    solution: (projectId) => solutionCoordinator.schedule(projectId, { forceRegenerate: true }),
+    solution: (projectId) =>
+      solutionCoordinator.schedule(projectId, { forceRegenerate: true }),
     deliveryPlan: (projectId) => deliveryPlanCoordinator.schedule(projectId),
     execution: async (projectId) => executionCoordinator.schedule(projectId),
   },
-  `control-plane-${instanceId}`
+  `control-plane-${instanceId}`,
 );
-const telegramOwnerChannel = new TelegramOwnerChannelService(stateDirectory, localProjects, {
-  list: () => projectLifecycles.list(),
-  get: (projectId) => projectLifecycles.get(projectId),
-  answer: async (projectId, input, idempotencyKey) => {
-    const updated = await projectLifecycles.answer(
-      projectId,
-      input,
-      idempotencyKey,
-      (questions, answers) => projectContexts.applyClarifications(projectId, questions, answers).then(() => undefined),
-    );
-    return updated;
+const telegramOwnerChannel = new TelegramOwnerChannelService(
+  stateDirectory,
+  localProjects,
+  {
+    list: () => projectLifecycles.list(),
+    get: (projectId) => projectLifecycles.get(projectId),
+    answer: async (projectId, input, idempotencyKey) => {
+      const updated = await projectLifecycles.answer(
+        projectId,
+        input,
+        idempotencyKey,
+        (questions, answers) =>
+          projectContexts
+            .applyClarifications(projectId, questions, answers)
+            .then(() => undefined),
+      );
+      return updated;
+    },
+    decideSolution: async (projectId, input, idempotencyKey) => {
+      const lifecycle = await projectLifecycles.decideSolution(
+        projectId,
+        input,
+        idempotencyKey,
+        () =>
+          projectSolutions
+            .recordDecision(projectId, input, idempotencyKey)
+            .then(() => undefined),
+      );
+      if (lifecycle.stage === "backlog_design")
+        void deliveryPlanCoordinator.schedule(projectId);
+      if (lifecycle.stage === "solution_design")
+        void solutionCoordinator.schedule(projectId, { forceRegenerate: true });
+      return lifecycle;
+    },
   },
-  decideSolution: async (projectId, input, idempotencyKey) => {
-    const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey, () => projectSolutions.recordDecision(projectId, input, idempotencyKey).then(() => undefined));
-    if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
-    if (lifecycle.stage === "solution_design") void solutionCoordinator.schedule(projectId, { forceRegenerate: true });
-    return lifecycle;
-  },
-}, credentialVault);
+  credentialVault,
+);
 void telegramOwnerChannel.synchronize().catch(() => undefined);
-setInterval(() => void telegramOwnerChannel.synchronize().catch(() => undefined), 15_000).unref();
+setInterval(
+  () => void telegramOwnerChannel.synchronize().catch(() => undefined),
+  15_000,
+).unref();
 const ownerResponseDeliveries = new OwnerResponseDeliveryStore(stateDirectory);
 const oauthOwnerIdentities = new OAuthOwnerIdentityResolver(credentialVault);
 const ownerResponsePlanner = new OwnerResponseDeliveryPlanner(
@@ -272,21 +398,30 @@ const signedOwnerResponses = new SignedOwnerResponseService(
   ownerResponseDeliveries,
   {
     get: (projectId) => projectLifecycles.get(projectId),
-    answer: (projectId, input, idempotencyKey) => projectLifecycles.answer(
-      projectId,
-      input,
-      idempotencyKey,
-      (questions, answers) => projectContexts.applyClarifications(projectId, questions, answers).then(() => undefined),
-    ),
+    answer: (projectId, input, idempotencyKey) =>
+      projectLifecycles.answer(
+        projectId,
+        input,
+        idempotencyKey,
+        (questions, answers) =>
+          projectContexts
+            .applyClarifications(projectId, questions, answers)
+            .then(() => undefined),
+      ),
     decideSolution: async (projectId, input, idempotencyKey) => {
       const lifecycle = await projectLifecycles.decideSolution(
         projectId,
         input,
         idempotencyKey,
-        () => projectSolutions.recordDecision(projectId, input, idempotencyKey).then(() => undefined),
+        () =>
+          projectSolutions
+            .recordDecision(projectId, input, idempotencyKey)
+            .then(() => undefined),
       );
-      if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
-      if (lifecycle.stage === "solution_design") void solutionCoordinator.schedule(projectId, { forceRegenerate: true });
+      if (lifecycle.stage === "backlog_design")
+        void deliveryPlanCoordinator.schedule(projectId);
+      if (lifecycle.stage === "solution_design")
+        void solutionCoordinator.schedule(projectId, { forceRegenerate: true });
       return lifecycle;
     },
   },
@@ -295,15 +430,26 @@ const signedOwnerResponses = new SignedOwnerResponseService(
     await jiraDelivery.synchronize(projectId).catch(() => undefined);
   },
 );
-const slackOwnerTransport = new SlackOwnerNotificationTransport(credentialVault);
-const channelRelayConfig = await resolveChannelRelayRuntimeConfig(credentialVault);
+const slackOwnerTransport = new SlackOwnerNotificationTransport(
+  credentialVault,
+);
+const channelRelayConfig =
+  await resolveChannelRelayRuntimeConfig(credentialVault);
 const channelRelay = channelRelayConfig
-  ? new ChannelRelayClient(channelRelayConfig.endpoint, channelRelayConfig.token, signedOwnerResponses, async (item) => {
-      if (item.provider === "slack") {
-        if (!item.messageTs) throw new Error("Slack relay response omitted the source message timestamp.");
-        await slackOwnerTransport.acknowledge(item.channelId, item.messageTs);
-      }
-    })
+  ? new ChannelRelayClient(
+      channelRelayConfig.endpoint,
+      channelRelayConfig.token,
+      signedOwnerResponses,
+      async (item) => {
+        if (item.provider === "slack") {
+          if (!item.messageTs)
+            throw new Error(
+              "Slack relay response omitted the source message timestamp.",
+            );
+          await slackOwnerTransport.acknowledge(item.channelId, item.messageTs);
+        }
+      },
+    )
   : null;
 const ownerChannelRuntime = new OwnerChannelRuntime(
   stateDirectory,
@@ -313,7 +459,10 @@ const ownerChannelRuntime = new OwnerChannelRuntime(
   async () => undefined,
 );
 void ownerChannelRuntime.synchronize().catch(() => undefined);
-setInterval(() => void ownerChannelRuntime.synchronize().catch(() => undefined), 15_000).unref();
+setInterval(
+  () => void ownerChannelRuntime.synchronize().catch(() => undefined),
+  15_000,
+).unref();
 const autonomy = new LocalAutonomyService(
   stateDirectory,
   () => localRequests.list(),
@@ -322,18 +471,22 @@ const autonomy = new LocalAutonomyService(
       localRequests.ground(
         requestId,
         await localProjects.grounding(
-          (await localRequests.list()).requests.find((request) => request.id === requestId)?.projectId ?? ""
-        )
+          (await localRequests.list()).requests.find(
+            (request) => request.id === requestId,
+          )?.projectId ?? "",
+        ),
       ),
     claim_lease: (requestId) => localRequests.claim(requestId),
     checkpoint_lease: (requestId) => localRequests.checkpoint(requestId),
     release_lease: (requestId) => localRequests.release(requestId),
     prepare_execution: (requestId) => localRequests.prepareExecution(requestId),
     start_execution: (requestId) => localRequests.startExecution(requestId),
-    validate_execution: (requestId) => localRequests.validateExecution(requestId),
-    reconcile_execution: (requestId) => localRequests.reconcileExecution(requestId),
+    validate_execution: (requestId) =>
+      localRequests.validateExecution(requestId),
+    reconcile_execution: (requestId) =>
+      localRequests.reconcileExecution(requestId),
     reconcile_expired_lease: (requestId) => localRequests.reconcile(requestId),
-  }
+  },
 );
 const attention = new LocalAttentionService(stateDirectory);
 
@@ -344,14 +497,31 @@ async function attentionInputs() {
     providers: await providerConnectionService.list(),
   });
   const autonomySnapshot = await autonomy.snapshot();
-  const [lifecycles, executions] = await Promise.all([projectLifecycles.list(), executionRecords()]);
-  const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles, executions, query: { range: "all" } });
-  return { live, decisions };
+  const [lifecycles, executions] = await Promise.all([
+    projectLifecycles.list(),
+    executionRecords(),
+  ]);
+  const decisions = buildDecisionSnapshot({
+    live,
+    autonomy: autonomySnapshot,
+    lifecycles,
+    executions,
+    query: { range: "all" },
+  });
+  return {
+    live,
+    decisions,
+    certification: await ownerJourneyCertification.snapshot(),
+  };
 }
 
 async function executionRecords() {
   const projects = await localProjects.list();
-  return (await Promise.all(projects.projects.map((project) => projectExecutions.get(project.id)))).filter((record) => record !== null);
+  return (
+    await Promise.all(
+      projects.projects.map((project) => projectExecutions.get(project.id)),
+    )
+  ).filter((record) => record !== null);
 }
 
 async function setupObservation() {
@@ -364,7 +534,7 @@ async function setupObservation() {
       (check) =>
         check &&
         typeof check === "object" &&
-        (check as Record<string, unknown>).ready === true
+        (check as Record<string, unknown>).ready === true,
     ).length;
     const state =
       record.status === "ready"
@@ -456,10 +626,20 @@ const controlPlane = createControlPlaneServer({
       providers: await providerConnectionService.list(),
     });
     const autonomySnapshot = await autonomy.snapshot();
-    const decisions = buildDecisionSnapshot({ live, autonomy: autonomySnapshot, lifecycles: await projectLifecycles.list(), executions: await executionRecords(), query: { range: "all" } });
+    const decisions = buildDecisionSnapshot({
+      live,
+      autonomy: autonomySnapshot,
+      lifecycles: await projectLifecycles.list(),
+      executions: await executionRecords(),
+      query: { range: "all" },
+    });
     return buildUniversalSearchSnapshot({
       live,
-      activity: buildActivitySnapshot({ live, autonomy: autonomySnapshot, query: { range: "all" } }),
+      activity: buildActivitySnapshot({
+        live,
+        autonomy: autonomySnapshot,
+        query: { range: "all" },
+      }),
       decisions,
       attention: await attention.snapshot(decisions, live, {}),
       query,
@@ -468,73 +648,141 @@ const controlPlane = createControlPlaneServer({
   attention: {
     snapshot: async (query) => {
       const input = await attentionInputs();
-      return attention.snapshot(input.decisions, input.live, query);
+      return attention.snapshot(
+        input.decisions,
+        input.live,
+        query,
+        Date.now(),
+        input.certification,
+      );
     },
     preview: async (body) => {
       const input = await attentionInputs();
-      return attention.preview(body, input.decisions, input.live);
+      return attention.preview(
+        body,
+        input.decisions,
+        input.live,
+        Date.now(),
+        input.certification,
+      );
     },
     apply: async (body, idempotencyKey) => {
       const input = await attentionInputs();
-      return attention.apply(body, idempotencyKey, input.decisions, input.live);
+      return attention.apply(
+        body,
+        idempotencyKey,
+        input.decisions,
+        input.live,
+        Date.now(),
+        input.certification,
+      );
     },
     previewQuietHours: (body) => attention.previewQuietHours(body),
     setQuietHours: async (body, expectedRevision, idempotencyKey) => {
       const input = await attentionInputs();
-      return attention.setQuietHours(body, expectedRevision, idempotencyKey, input.decisions, input.live);
+      return attention.setQuietHours(
+        body,
+        expectedRevision,
+        idempotencyKey,
+        input.decisions,
+        input.live,
+      );
     },
+  },
+  ownerJourneyCertification: {
+    snapshot: () => ownerJourneyCertification.snapshot(),
+    preview: () => ownerJourneyCertification.preview(),
+    run: (idempotencyKey) => ownerJourneyCertification.run(idempotencyKey),
+  },
+  externalOwnerLearning: {
+    list: () => externalOwnerLearning.list(),
+    create: (input, idempotencyKey) =>
+      externalOwnerLearning.create(input, idempotencyKey),
+    complete: (id, input) => externalOwnerLearning.complete(id, input),
+    withdraw: (id, expectedRevision) =>
+      externalOwnerLearning.withdraw(id, expectedRevision),
   },
   autonomy: {
     snapshot: () => autonomy.snapshot(),
-    setProjectMode: (projectId, input) => autonomy.setProjectMode(projectId, input),
-    setProjectPaused: (projectId, input) => autonomy.setProjectPaused(projectId, input),
-    setRequestMode: (requestId, input) => autonomy.setRequestMode(requestId, input),
+    setProjectMode: (projectId, input) =>
+      autonomy.setProjectMode(projectId, input),
+    setProjectPaused: (projectId, input) =>
+      autonomy.setProjectPaused(projectId, input),
+    setRequestMode: (requestId, input) =>
+      autonomy.setRequestMode(requestId, input),
     advance: (requestId, input) => autonomy.advance(requestId, input),
   },
   providerConnections: {
     list: () => providerConnectionService.list(),
     connect: async (input) => {
       const result = await providerConnectionService.connect(input);
-      if (result.connection?.admission.admitted) await wakeQueuedProjectExecutions();
+      if (result.connection?.admission.admitted)
+        await wakeQueuedProjectExecutions();
       return result;
     },
     reProbe: async (connectionId) => {
       const result = await providerConnectionService.reProbe(connectionId);
-      if (result.connection?.admission.admitted) await wakeQueuedProjectExecutions();
+      if (result.connection?.admission.admitted)
+        await wakeQueuedProjectExecutions();
       return result;
     },
     replaceModel: (connectionId, input) =>
       providerConnectionService.replaceModel(connectionId, input),
     revoke: (connectionId) => providerConnectionService.revoke(connectionId),
-    disconnect: (connectionId) => providerConnectionService.disconnect(connectionId)
+    disconnect: (connectionId) =>
+      providerConnectionService.disconnect(connectionId),
   },
   projects: {
     list: () => projectPortfolio.list(),
     create: (input, idempotencyKey) => {
       const request = input as Record<string, unknown>;
-      return localProjects.create({ ...request, workspacePath: nativePicker.resolveFolder(String(request.workspacePath)) }, idempotencyKey);
+      return localProjects.create(
+        {
+          ...request,
+          workspacePath: nativePicker.resolveFolder(
+            String(request.workspacePath),
+          ),
+        },
+        idempotencyKey,
+      );
     },
     register: (input) => {
       const request = input as Record<string, unknown>;
-      return localProjects.register({ ...request, path: nativePicker.resolveFolder(String(request.path)) });
+      return localProjects.register({
+        ...request,
+        path: nativePicker.resolveFolder(String(request.path)),
+      });
     },
     rescan: (projectId) => localProjects.rescan(projectId),
-    setResources: (projectId, input) => localProjects.setResources(projectId, input),
+    setResources: (projectId, input) =>
+      localProjects.setResources(projectId, input),
     addFiles: (projectId, input) => {
       const request = input as Record<string, unknown>;
-      return localProjects.addFiles(projectId, { ...request, paths: nativePicker.resolveFiles(Array.isArray(request.paths) ? request.paths.map(String) : []) });
+      return localProjects.addFiles(projectId, {
+        ...request,
+        paths: nativePicker.resolveFiles(
+          Array.isArray(request.paths) ? request.paths.map(String) : [],
+        ),
+      });
     },
-    addFileContent: (projectId, input) => localProjects.addFileContent(projectId, input),
-    generateContext: (projectId, input) => projectIntake.generate(projectId, input),
+    addFileContent: (projectId, input) =>
+      localProjects.addFileContent(projectId, input),
+    generateContext: (projectId, input) =>
+      projectIntake.generate(projectId, input),
     artifacts: (projectId) => localProjects.artifacts(projectId),
     artifact: (projectId, kind) => localProjects.artifact(projectId, kind),
-    openArtifact: (projectId, kind) => localProjects.openArtifact(projectId, kind),
+    openArtifact: (projectId, kind) =>
+      localProjects.openArtifact(projectId, kind),
     forget: (projectId) => localProjects.forget(projectId),
   },
   projectLifecycles: {
     get: async (projectId) => {
       const record = await projectLifecycles.get(projectId);
-      if (!record) throw new ProjectLifecycleServiceError("not_found", "Project lifecycle was not found.");
+      if (!record)
+        throw new ProjectLifecycleServiceError(
+          "not_found",
+          "Project lifecycle was not found.",
+        );
       return record;
     },
     answer: async (projectId, input, idempotencyKey) => {
@@ -542,17 +790,26 @@ const controlPlane = createControlPlaneServer({
         projectId,
         input,
         idempotencyKey,
-        (questions, answers) => projectContexts.applyClarifications(projectId, questions, answers).then(() => undefined),
+        (questions, answers) =>
+          projectContexts
+            .applyClarifications(projectId, questions, answers)
+            .then(() => undefined),
       );
       return updated;
     },
     eligibility: async (projectId) => {
       const decision = await projectLifecycles.eligibility(projectId);
-      if (!decision) throw new ProjectLifecycleServiceError("not_found", "Project eligibility decision was not found.");
+      if (!decision)
+        throw new ProjectLifecycleServiceError(
+          "not_found",
+          "Project eligibility decision was not found.",
+        );
       return decision;
     },
-    assess: (projectId, input, idempotencyKey) => projectLifecycles.assess(projectId, input, idempotencyKey),
-    override: (projectId, input, idempotencyKey) => projectLifecycles.override(projectId, input, idempotencyKey),
+    assess: (projectId, input, idempotencyKey) =>
+      projectLifecycles.assess(projectId, input, idempotencyKey),
+    override: (projectId, input, idempotencyKey) =>
+      projectLifecycles.override(projectId, input, idempotencyKey),
     publishSolution: async (projectId, input) => {
       const artifact = await projectSolutions.publish(projectId, input);
       return projectLifecycles.publishSolution(projectId, artifact);
@@ -560,64 +817,175 @@ const controlPlane = createControlPlaneServer({
     getSolution: (projectId) => projectSolutions.read(projectId),
     getSolutionHistory: (projectId) => projectSolutions.history(projectId),
     decideSolution: async (projectId, input, idempotencyKey) => {
-      const lifecycle = await projectLifecycles.decideSolution(projectId, input, idempotencyKey, () => projectSolutions.recordDecision(projectId, input, idempotencyKey).then(() => undefined));
-      if (lifecycle.stage === "backlog_design") void deliveryPlanCoordinator.schedule(projectId);
-      if (lifecycle.stage === "solution_design") void solutionCoordinator.schedule(projectId, { forceRegenerate: true });
+      const lifecycle = await projectLifecycles.decideSolution(
+        projectId,
+        input,
+        idempotencyKey,
+        () =>
+          projectSolutions
+            .recordDecision(projectId, input, idempotencyKey)
+            .then(() => undefined),
+      );
+      if (lifecycle.stage === "backlog_design")
+        void deliveryPlanCoordinator.schedule(projectId);
+      if (lifecycle.stage === "solution_design")
+        void solutionCoordinator.schedule(projectId, { forceRegenerate: true });
       return lifecycle;
     },
     reopen: async (projectId, input, idempotencyKey) => {
       const before = await projectLifecycles.get(projectId);
-      if (!before || (before.stage !== "complete" && before.stage !== "cancelled")) throw new Error("Only a terminal project can be reopened.");
-      const lifecycle = await projectLifecycles.reopen(projectId, input, idempotencyKey);
-      await lifecycleCoordinator.acknowledgeReopen(projectId, before.stage, lifecycle.revision);
+      if (
+        !before ||
+        (before.stage !== "complete" && before.stage !== "cancelled")
+      )
+        throw new Error("Only a terminal project can be reopened.");
+      const lifecycle = await projectLifecycles.reopen(
+        projectId,
+        input,
+        idempotencyKey,
+      );
+      await lifecycleCoordinator.acknowledgeReopen(
+        projectId,
+        before.stage,
+        lifecycle.revision,
+      );
       return lifecycle;
     },
     solutionRun: (projectId) => solutionCoordinator.get(projectId),
-    generateSolution: (projectId) => solutionCoordinator.schedule(projectId, {
-      forceDeferredRetry: true,
-      forceRegenerate: true,
-    }),
+    generateSolution: (projectId) =>
+      solutionCoordinator.schedule(projectId, {
+        forceDeferredRetry: true,
+        forceRegenerate: true,
+      }),
     getBacklog: (projectId) => projectDeliveryPlans.read(projectId),
     backlogRun: (projectId) => deliveryPlanCoordinator.get(projectId),
-    generateBacklog: (projectId) => deliveryPlanCoordinator.schedule(projectId, { forceDeferredRetry: true }),
+    generateBacklog: (projectId) =>
+      deliveryPlanCoordinator.schedule(projectId, { forceDeferredRetry: true }),
     getExecution: (projectId) => projectExecutions.get(projectId),
     retryExecution: async (projectId, input) => {
-      const requestedTaskId = typeof input === "object" && input !== null && "taskId" in input && typeof input.taskId === "string" ? input.taskId : null;
+      const requestedTaskId =
+        typeof input === "object" &&
+        input !== null &&
+        "taskId" in input &&
+        typeof input.taskId === "string"
+          ? input.taskId
+          : null;
       const current = await projectExecutions.get(projectId);
-      const task = requestedTaskId ? current?.tasks.find((candidate) => candidate.id === requestedTaskId) : null;
+      const task = requestedTaskId
+        ? current?.tasks.find((candidate) => candidate.id === requestedTaskId)
+        : null;
       if (task?.status === "completed") {
-        const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
-        await projectExecutions.authorizeCompletedRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
-      } else if (task && task.reviews.length === 0 && (task.status === "quarantined" || (task.status === "needs_user" && (task.safeMessage.includes("npm ci") || task.safeMessage.includes("Bounded source evidence") || ((task.failureClass === "implementation" || task.safeMessage === "Execution needs attention: Healing budget is invalid.") && task.validations.some((validation) => !validation.passed)))))) {
+        const repair = input as {
+          approvalId?: unknown;
+          expectedRevision?: unknown;
+          rationale?: unknown;
+        };
+        await projectExecutions.authorizeCompletedRepair(projectId, task.id, {
+          approvalId: repair.approvalId,
+          expectedRevision: repair.expectedRevision,
+          rationale: repair.rationale,
+        });
+      } else if (
+        task &&
+        task.reviews.length === 0 &&
+        (task.status === "quarantined" ||
+          (task.status === "needs_user" &&
+            (task.safeMessage.includes("npm ci") ||
+              task.safeMessage.includes("Bounded source evidence") ||
+              ((task.failureClass === "implementation" ||
+                task.safeMessage ===
+                  "Execution needs attention: Healing budget is invalid.") &&
+                task.validations.some((validation) => !validation.passed)))))
+      ) {
         let verification;
         try {
-          verification = await executionAdapters.verifyQuarantineRepair(projectId, task);
+          verification = await executionAdapters.verifyQuarantineRepair(
+            projectId,
+            task,
+          );
         } catch (error) {
-          if (!["needs_user", "quarantined"].includes(task.status) || (task.failureClass !== "implementation" && task.safeMessage !== "Execution needs attention: Healing budget is invalid.") || !task.validations.some((validation) => !validation.passed)) throw error;
-          const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
-          await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
+          if (
+            !["needs_user", "quarantined"].includes(task.status) ||
+            (task.failureClass !== "implementation" &&
+              task.safeMessage !==
+                "Execution needs attention: Healing budget is invalid.") ||
+            !task.validations.some((validation) => !validation.passed)
+          )
+            throw error;
+          const repair = input as {
+            approvalId?: unknown;
+            expectedRevision?: unknown;
+            rationale?: unknown;
+          };
+          await projectExecutions.authorizeReviewRepair(projectId, task.id, {
+            approvalId: repair.approvalId,
+            expectedRevision: repair.expectedRevision,
+            rationale: repair.rationale,
+          });
         }
         if (verification) {
-          if (verification.every((item) => item.passed && item.exitCode === 0)) {
-            await projectExecutions.authorizeQuarantineRecovery(projectId, input, verification);
+          if (
+            verification.every((item) => item.passed && item.exitCode === 0)
+          ) {
+            await projectExecutions.authorizeQuarantineRecovery(
+              projectId,
+              input,
+              verification,
+            );
           } else {
-            const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
-            await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
+            const repair = input as {
+              approvalId?: unknown;
+              expectedRevision?: unknown;
+              rationale?: unknown;
+            };
+            await projectExecutions.authorizeReviewRepair(projectId, task.id, {
+              approvalId: repair.approvalId,
+              expectedRevision: repair.expectedRevision,
+              rationale: repair.rationale,
+            });
           }
         }
-      } else if (task && ["needs_user", "quarantined"].includes(task.status) && (hasBlockingReviewDissent(task.reviews) || isPreEvidenceExecutionDissent(task) || (task.status === "needs_user" && task.reviews.length > 0 && (task.failureClass === "implementation" || task.safeMessage.includes("Post-integration validation") || task.safeMessage === "Execution needs attention: Commit changes do not match exact file authority.")) || (task.status === "needs_user" && task.implementationEvidence.length === 0 && /(?:Provider proposal (?:failed strict response contract|exceeded grounded file authority|conflicts with observed file state|omitted required task files)|Command failed:[\s\S]{0,600}\bprettier --write\b)/.test(task.safeMessage)))) {
-        const repair = input as { approvalId?: unknown; expectedRevision?: unknown; rationale?: unknown };
-        await projectExecutions.authorizeReviewRepair(projectId, task.id, { approvalId: repair.approvalId, expectedRevision: repair.expectedRevision, rationale: repair.rationale });
+      } else if (
+        task &&
+        ["needs_user", "quarantined"].includes(task.status) &&
+        (hasBlockingReviewDissent(task.reviews) ||
+          isPreEvidenceExecutionDissent(task) ||
+          (task.status === "needs_user" &&
+            task.reviews.length > 0 &&
+            (task.failureClass === "implementation" ||
+              task.safeMessage.includes("Post-integration validation") ||
+              task.safeMessage ===
+                "Execution needs attention: Commit changes do not match exact file authority.")) ||
+          (task.status === "needs_user" &&
+            task.implementationEvidence.length === 0 &&
+            /(?:Provider proposal (?:failed strict response contract|exceeded grounded file authority|conflicts with observed file state|omitted required task files)|Command failed:[\s\S]{0,600}\bprettier --write\b)/.test(
+              task.safeMessage,
+            )))
+      ) {
+        const repair = input as {
+          approvalId?: unknown;
+          expectedRevision?: unknown;
+          rationale?: unknown;
+        };
+        await projectExecutions.authorizeReviewRepair(projectId, task.id, {
+          approvalId: repair.approvalId,
+          expectedRevision: repair.expectedRevision,
+          rationale: repair.rationale,
+        });
       } else {
         await projectExecutions.authorizeEnvironmentRetry(projectId, input);
       }
       await executionCoordinator.schedule(projectId);
       const execution = await projectExecutions.get(projectId);
-      if (!execution) throw new Error("Project execution disappeared after retry authorization.");
+      if (!execution)
+        throw new Error(
+          "Project execution disappeared after retry authorization.",
+        );
       return execution;
     },
     getEgressConsent: (projectId) => projectEgress.get(projectId),
-    grantEgressConsent: (projectId, input) => projectEgress.grant(projectId, input),
+    grantEgressConsent: (projectId, input) =>
+      projectEgress.grant(projectId, input),
     revokeEgressConsent: (projectId) => projectEgress.revoke(projectId),
   },
   nativePicker: {
@@ -627,17 +995,27 @@ const controlPlane = createControlPlaneServer({
   infrastructure: {
     status: (projectId) => infrastructureDelivery.status(projectId),
     getDesign: (projectId) => infrastructureDelivery.getDesign(projectId),
-    publishDesign: (projectId, input, key) => infrastructureDelivery.publishDesign(projectId, input, key),
-    preview: (projectId, input, key) => infrastructureDelivery.preview(projectId, input, key),
-    approve: (projectId, previewId, key) => infrastructureDelivery.approve(projectId, previewId, key),
-    execute: (projectId, previewId, key) => infrastructureDelivery.execute(projectId, previewId, key),
-    rollback: (projectId, previewId, key) => infrastructureDelivery.rollback(projectId, previewId, key),
-    receipt: (projectId, previewId) => infrastructureDelivery.receipt(projectId, previewId),
+    publishDesign: (projectId, input, key) =>
+      infrastructureDelivery.publishDesign(projectId, input, key),
+    preview: (projectId, input, key) =>
+      infrastructureDelivery.preview(projectId, input, key),
+    approve: (projectId, previewId, key) =>
+      infrastructureDelivery.approve(projectId, previewId, key),
+    execute: (projectId, previewId, key) =>
+      infrastructureDelivery.execute(projectId, previewId, key),
+    rollback: (projectId, previewId, key) =>
+      infrastructureDelivery.rollback(projectId, previewId, key),
+    receipt: (projectId, previewId) =>
+      infrastructureDelivery.receipt(projectId, previewId),
   },
   projectIntakes: {
-    list: () => projectIntakes.list(), create: (input) => projectIntakes.create(input),
-    saveDraft: (id, input) => projectIntakes.saveDraft(id, input), selectResources: (id, input) => projectIntakes.selectResources(id, input),
-    submit: (id, input, key) => projectIntakes.submit(id, input, key), cancel: (id, revision, reason) => projectIntakes.cancel(id, revision, reason),
+    list: () => projectIntakes.list(),
+    create: (input) => projectIntakes.create(input),
+    saveDraft: (id, input) => projectIntakes.saveDraft(id, input),
+    selectResources: (id, input) => projectIntakes.selectResources(id, input),
+    submit: (id, input, key) => projectIntakes.submit(id, input, key),
+    cancel: (id, revision, reason) =>
+      projectIntakes.cancel(id, revision, reason),
   },
   integrationConnections: {
     list: () => integrationConnections.list(),
@@ -648,15 +1026,20 @@ const controlPlane = createControlPlaneServer({
     connectTelegram: (input) => integrationConnections.connectTelegram(input),
     disconnectTelegram: () => integrationConnections.disconnectTelegram(),
     configureOAuth: (input) => integrationConnections.configureOAuth(input),
-    beginOAuth: (provider, redirectUri) => integrationConnections.beginOAuth(provider, redirectUri),
-    completeJiraOAuth: (input) => integrationConnections.completeJiraOAuth(input),
-    completeBrokerOAuth: (provider, ticket) => integrationConnections.completeBrokerOAuth(provider, ticket),
+    beginOAuth: (provider, redirectUri) =>
+      integrationConnections.beginOAuth(provider, redirectUri),
+    completeJiraOAuth: (input) =>
+      integrationConnections.completeJiraOAuth(input),
+    completeBrokerOAuth: (provider, ticket) =>
+      integrationConnections.completeBrokerOAuth(provider, ticket),
     connectToken: (input) => integrationConnections.connectToken(input),
-    disconnectService: (provider) => integrationConnections.disconnectService(provider),
+    disconnectService: (provider) =>
+      integrationConnections.disconnectService(provider),
   },
   requests: {
     list: () => localRequests.list(),
-    create: (input, idempotencyKey) => localRequests.create(input, idempotencyKey),
+    create: (input, idempotencyKey) =>
+      localRequests.create(input, idempotencyKey),
     cancel: (requestId) => localRequests.cancel(requestId),
     approve: (requestId) => localRequests.approve(requestId),
     claim: (requestId) => localRequests.claim(requestId),
@@ -665,47 +1048,69 @@ const controlPlane = createControlPlaneServer({
     reconcile: (requestId) => localRequests.reconcile(requestId),
     ground: async (requestId) => {
       const request = (await localRequests.list()).requests.find(
-        (candidate) => candidate.id === requestId
+        (candidate) => candidate.id === requestId,
       );
-      if (!request) throw new LocalRequestError("not_found", "Request was not found.");
+      if (!request)
+        throw new LocalRequestError("not_found", "Request was not found.");
       const snapshot = await localProjects.grounding(request.projectId);
       return localRequests.ground(requestId, snapshot);
     },
-    updatePlan: (requestId, input) => localRequests.updatePlan(requestId, input),
-    approvePlan: (requestId, input) => localRequests.approvePlan(requestId, input),
+    updatePlan: (requestId, input) =>
+      localRequests.updatePlan(requestId, input),
+    approvePlan: (requestId, input) =>
+      localRequests.approvePlan(requestId, input),
     authorizeExecution: (requestId, input) =>
       localRequests.authorizeExecution(requestId, input),
     prepareExecution: (requestId) => localRequests.prepareExecution(requestId),
     startExecution: (requestId) => localRequests.startExecution(requestId),
-    validateExecution: (requestId) => localRequests.validateExecution(requestId),
-    previewPatch: (requestId, input) => localRequests.previewPatch(requestId, input),
-    approvePatch: (requestId, input) => localRequests.approvePatch(requestId, input),
+    validateExecution: (requestId) =>
+      localRequests.validateExecution(requestId),
+    previewPatch: (requestId, input) =>
+      localRequests.previewPatch(requestId, input),
+    approvePatch: (requestId, input) =>
+      localRequests.approvePatch(requestId, input),
     applyPatch: (requestId) => localRequests.applyPatch(requestId),
     rollbackPatch: (requestId) => localRequests.rollbackPatch(requestId),
     reconcilePatch: (requestId) => localRequests.reconcilePatch(requestId),
-    previewCommit: (requestId, input) => localRequests.previewCommit(requestId, input),
-    approveCommit: (requestId, input) => localRequests.approveCommit(requestId, input),
+    previewCommit: (requestId, input) =>
+      localRequests.previewCommit(requestId, input),
+    approveCommit: (requestId, input) =>
+      localRequests.approveCommit(requestId, input),
     createCommit: (requestId) => localRequests.createCommit(requestId),
     undoCommit: (requestId) => localRequests.undoCommit(requestId),
     reconcileCommit: (requestId) => localRequests.reconcileCommit(requestId),
-    previewIntegration: (requestId, input) => localRequests.previewIntegration(requestId, input),
-    approveIntegration: (requestId, input) => localRequests.approveIntegration(requestId, input),
-    createIntegration: (requestId) => localRequests.createIntegration(requestId),
+    previewIntegration: (requestId, input) =>
+      localRequests.previewIntegration(requestId, input),
+    approveIntegration: (requestId, input) =>
+      localRequests.approveIntegration(requestId, input),
+    createIntegration: (requestId) =>
+      localRequests.createIntegration(requestId),
     undoIntegration: (requestId) => localRequests.undoIntegration(requestId),
-    reconcileIntegration: (requestId) => localRequests.reconcileIntegration(requestId),
-    previewChangeSet: (requestId, input) => localRequests.previewChangeSet(requestId, input),
-    approveChangeSet: (requestId, input) => localRequests.approveChangeSet(requestId, input),
+    reconcileIntegration: (requestId) =>
+      localRequests.reconcileIntegration(requestId),
+    previewChangeSet: (requestId, input) =>
+      localRequests.previewChangeSet(requestId, input),
+    approveChangeSet: (requestId, input) =>
+      localRequests.approveChangeSet(requestId, input),
     applyChangeSet: (requestId) => localRequests.applyChangeSet(requestId),
-    rollbackChangeSet: (requestId) => localRequests.rollbackChangeSet(requestId),
-    reconcileChangeSet: (requestId) => localRequests.reconcileChangeSet(requestId),
-    requestProposal: (requestId, input) => localRequests.requestProposal(requestId, input),
-    beginProposalGeneration: (requestId) => localRequests.beginProposalGeneration(requestId),
+    rollbackChangeSet: (requestId) =>
+      localRequests.rollbackChangeSet(requestId),
+    reconcileChangeSet: (requestId) =>
+      localRequests.reconcileChangeSet(requestId),
+    requestProposal: (requestId, input) =>
+      localRequests.requestProposal(requestId, input),
+    beginProposalGeneration: (requestId) =>
+      localRequests.beginProposalGeneration(requestId),
     generateProposal: (requestId) => proposalGenerator.schedule(requestId),
-    importProposal: (requestId, input) => localRequests.importProposal(requestId, input),
-    decideProposal: (requestId, input) => localRequests.decideProposal(requestId, input),
-    reconcileProposal: (requestId) => localRequests.reconcileProposal(requestId),
+    importProposal: (requestId, input) =>
+      localRequests.importProposal(requestId, input),
+    decideProposal: (requestId, input) =>
+      localRequests.decideProposal(requestId, input),
+    reconcileProposal: (requestId) =>
+      localRequests.reconcileProposal(requestId),
     cancelExecution: (requestId) => localRequests.cancelExecution(requestId),
-    reconcileExecution: (requestId) => localRequests.reconcileExecution(requestId),
+    reconcileExecution: (requestId) =>
+      localRequests.reconcileExecution(requestId),
     archive: (requestId) => localRequests.archive(requestId),
   },
 });
@@ -719,17 +1124,23 @@ await wakeQueuedProjectExecutions();
 lifecycleCoordinator.start();
 autonomy.start();
 const executionJiraTimer = setInterval(() => {
-  void localProjects.list().then(async ({ projects }) => {
-    for (const project of projects) {
-      await jiraDelivery.synchronize(project.id).catch(() => undefined);
-      if (await projectExecutions.get(project.id)) await projectExecutionJira.synchronize(project.id).catch(() => undefined);
-    }
-  }).catch(() => undefined);
+  void localProjects
+    .list()
+    .then(async ({ projects }) => {
+      for (const project of projects) {
+        await jiraDelivery.synchronize(project.id).catch(() => undefined);
+        if (await projectExecutions.get(project.id))
+          await projectExecutionJira
+            .synchronize(project.id)
+            .catch(() => undefined);
+      }
+    })
+    .catch(() => undefined);
 }, 60_000);
 executionJiraTimer.unref();
 console.log(`Codkesh control plane: http://${host}:${boundPort}`);
 console.log(
-  "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state."
+  "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state.",
 );
 
 let closing = false;
@@ -752,7 +1163,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       },
       () => {
         process.exit(1);
-      }
+      },
     );
   });
 }
@@ -760,7 +1171,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 function parseHost(value: string | undefined): "127.0.0.1" | "::1" {
   if (!value || value === "127.0.0.1") return "127.0.0.1";
   if (value === "::1") return "::1";
-  throw new Error("PIPELINE_STUDIO_CONTROL_HOST must be an explicit loopback host.");
+  throw new Error(
+    "PIPELINE_STUDIO_CONTROL_HOST must be an explicit loopback host.",
+  );
 }
 
 function parsePort(value: string | undefined): number {

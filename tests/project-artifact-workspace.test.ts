@@ -62,7 +62,10 @@ test("project status and Action Center provide direct navigation to project file
   const app = await readFile(join(process.cwd(), "apps/studio/src/App.tsx"), "utf8");
   assert.match(activity, /Open project files/);
   assert.match(activity, /href={`\/projects\/\$\{record\.projectId\}`}/);
-  assert.match(app, /<ProjectArtifactWorkspace endpoint={endpoint} projectId={selectedProjectId}/);
+  assert.match(
+    app,
+    /<ProjectArtifactWorkspace\s+endpoint=\{endpoint\}\s+projectId=\{selectedProjectId\}/,
+  );
   assert.match(app, /projectIdFromLocation\(window\.location\)/);
   assert.match(app, /setSelectedProjectId\(projectId\)/);
 });
