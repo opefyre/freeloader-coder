@@ -55,9 +55,26 @@ const guidanceByStage: Record<z.infer<typeof projectLifecycleStageSchema>, Guida
 
 export function ownerProjectGuidance(project: LocalProjectSnapshot): OwnerProjectGuidance {
   const stage = project.lifecycleStage ?? "intake";
+  const incompleteJira =
+    stage === "complete" &&
+    project.progress !== null &&
+    project.progress !== undefined &&
+    project.progress.percent < 100;
   const seed = project.state === "failed"
     ? guidance("Recovery required", "Canonical project evidence is unavailable or invalid.", "attention", "Needs recovery", "Review recovery", "actions", "No action is authorized until project evidence is trustworthy.", "A verified recovery may restore the last safe lifecycle state.", project.warnings[0] ?? "Inspect the preserved project evidence before retrying.")
-    : project.state === "warning" && stage !== "blocked"
+    : incompleteJira
+      ? guidance(
+          "Completion not verified",
+          `Jira reports ${project.progress?.completed ?? 0} of ${project.progress?.total ?? 0} items complete, so Codkesh cannot verify this project as complete.`,
+          "attention",
+          "Progress conflict",
+          "Review Jira progress",
+          "progress",
+          "No additional work or completion claim is authorized until lifecycle and Jira evidence agree.",
+          "Codkesh must reconcile local completion evidence with the selected Jira project before presenting a completed outcome.",
+          "Open Progress to inspect incomplete or blocked Jira items; preserve the existing completion receipt until reconciliation finishes.",
+        )
+      : project.state === "warning" && stage !== "blocked"
       ? { ...guidanceByStage[stage], ownerState: "attention" as const, ownerStateLabel: "Check project evidence", recovery: project.warnings[0] ?? guidanceByStage[stage].recovery }
       : guidanceByStage[stage];
   return ownerProjectGuidanceSchema.parse({ schemaVersion: 1, provenance: "canonical_project_owner_guidance", projectId: project.id, lifecycleStage: stage, ...seed, automaticSpendLimitUsd: 0 });

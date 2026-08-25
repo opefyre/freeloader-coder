@@ -32,6 +32,39 @@ test("owner-required, autonomous, terminal, warning, and failed states stay hone
   assert.match(failed.approvalBoundary, /No action is authorized/);
 });
 
+test("incomplete Jira evidence prevents a completion claim", () => {
+  const incomplete = ownerProjectGuidance({
+    ...project("complete"),
+    progress: {
+      source: "jira",
+      completed: 11,
+      total: 48,
+      blocked: 0,
+      percent: 23,
+      observedAt: 1,
+    },
+  });
+  assert.equal(incomplete.stageLabel, "Completion not verified");
+  assert.equal(incomplete.ownerState, "attention");
+  assert.equal(incomplete.primaryAction.label, "Review Jira progress");
+  assert.equal(incomplete.primaryAction.destination, "progress");
+  assert.match(incomplete.outcome, /11 of 48/);
+
+  const verified = ownerProjectGuidance({
+    ...project("complete"),
+    progress: {
+      source: "jira",
+      completed: 48,
+      total: 48,
+      blocked: 0,
+      percent: 100,
+      observedAt: 1,
+    },
+  });
+  assert.equal(verified.stageLabel, "Complete");
+  assert.equal(ownerProjectGuidance(project("complete")).stageLabel, "Complete");
+});
+
 function project(lifecycleStage: LocalProjectSnapshot["lifecycleStage"]): LocalProjectSnapshot {
   return { schemaVersion: 1, id: "project_1234567890abcdef", displayName: "Example", lifecycleStage, state: "ready", observedAt: 1, validForMs: 1_000, facts: [], inferences: [], decisions: [], warnings: [] };
 }
