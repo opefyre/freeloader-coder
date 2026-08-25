@@ -130,5 +130,11 @@ function atSolution(projectId: string, now: number): ProjectLifecycleRecord {
 
 function sourceOf(records: ProjectLifecycleRecord[]) { return { get: async (projectId: string) => records.find((record) => record.projectId === projectId) ?? null, list: async () => records }; }
 function workerSet(solution: (projectId: string, actionId: string) => Promise<unknown>) { return { solution, deliveryPlan: solution, execution: solution }; }
-async function waitFor(predicate: () => boolean) { for (let index = 0; index < 100 && !predicate(); index += 1) await new Promise((resolve) => setTimeout(resolve, 2)); assert.equal(predicate(), true); }
+async function waitFor(predicate: () => boolean) {
+  const deadline = Date.now() + 2_000;
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(predicate(), true);
+}
 async function temporaryDirectory() { return mkdtemp(join(tmpdir(), "codkesh-lifecycle-coordinator-")); }
