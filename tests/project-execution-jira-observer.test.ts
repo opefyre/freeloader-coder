@@ -131,10 +131,68 @@ function completedRecord(): ProjectExecutionRecord {
       revision: 6, attempt: 0, assignment: { providerId: "groq", modelId: "coder", deviceId: "spare", selectedAt: 100, reasons: ["All execution gates passed."] }, lease: null,
       implementationEvidence: [digest], validations: [{ tier: "fast", commandLabel: "fast", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 100 }, { tier: "full", commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 100 }, { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 100 }],
       reviews: [{ reviewerId: "functional", providerId: "gemini", role: "functional", verdict: "pass", evidenceDigest: digest, findings: [], observedAt: 100 }, { reviewerId: "design", providerId: "cloudflare", role: "design", verdict: "pass", evidenceDigest: digest, findings: [], observedAt: 100 }],
-      commitDigest: digest, integrationDigest: digest, failureClass: null, safeMessage: "All gates passed.", updatedAt: 100,
+      commitDigest: digest, integrationDigest: digest,
+      liveJourneyEvidence: { journeyId: "owner-feature-journey", revisionDigest: digest, reference: `validation://PIPE-4/live-journey/${digest}`, runtime: "browser", viewport: "1440x900", passed: true, assertions: [{ name: "Owner completes the approved journey", passed: true, evidenceDigest: digest }], observedAt: 100 },
+      failureClass: null, safeMessage: "All gates passed.", updatedAt: 100,
     }],
   };
 }
+
+test("Jira observer refuses a generic integration digest when distinct live proof is missing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-jira-no-live-proof-"));
+  try {
+    const record = completedRecord();
+    delete record.tasks[0]!.liveJourneyEvidence;
+    let jiraRequests = 0;
+    const observer = new ProjectExecutionJiraObserver(root, { get: async () => record }, { get: async () => ({ completed: true, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, plans(), { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) }, async () => { jiraRequests += 1; return json({}); }, () => 200);
+    await assert.rejects(() => observer.synchronize(projectId), /resolved observed live journey/i);
+    assert.equal(jiraRequests, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("Jira observer refuses live proof from another revision", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-jira-stale-live-proof-"));
+  try {
+    const record = completedRecord();
+    record.tasks[0]!.liveJourneyEvidence!.revisionDigest = "e".repeat(64);
+    const observer = new ProjectExecutionJiraObserver(root, { get: async () => record }, { get: async () => ({ completed: true, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, plans(), { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) }, async () => json({}), () => 200);
+    await assert.rejects(() => observer.synchronize(projectId), /resolved observed live journey/i);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("Jira observer closes a complete hierarchy bottom-up and remains idempotent after restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "execution-jira-hierarchy-"));
+  try {
+    const ids = ["plan_0000000000000001", "plan_0000000000000002", "plan_0000000000000003", taskId];
+    const keys = ["PIPE-1", "PIPE-2", "PIPE-3", "PIPE-4"];
+    const statuses = new Map(keys.map((key) => [key, "To Do"]));
+    const comments = new Map<string, unknown[]>();
+    const transitioned: string[] = [];
+    const fetcher: typeof fetch = async (url, init) => {
+      const parsed = new URL(String(url));
+      const key = decodeURIComponent(parsed.pathname.match(/\/issue\/([^/]+)/)?.[1] ?? "");
+      if (parsed.pathname.endsWith("/comment") && init?.method === "POST") { comments.set(key, [...(comments.get(key) ?? []), JSON.parse(String(init.body))]); return json({ id: "1" }, 201); }
+      if (parsed.pathname.endsWith("/comment")) return json({ comments: comments.get(key) ?? [] });
+      if (parsed.pathname.endsWith("/transitions") && init?.method === "POST") { transitioned.push(key); statuses.set(key, "Done"); return new Response(null, { status: 204 }); }
+      if (parsed.pathname.endsWith("/transitions")) return json({ transitions: [{ id: "31", name: "Done", to: { name: "Done" } }] });
+      if (key) return json({ fields: { status: { name: statuses.get(key) } } });
+      throw new Error(`Unexpected request: ${parsed.pathname}`);
+    };
+    const hierarchyPlan = { readDraft: async () => ({ draft: { items: [
+      { id: ids[0], type: "epic", parentId: null, acceptanceCriteria: ["All approved delivery outcomes are proven."] },
+      { id: ids[1], type: "story", parentId: ids[0], acceptanceCriteria: ["The owner story is proven end to end."] },
+      { id: ids[2], type: "task", parentId: ids[1], acceptanceCriteria: ["The bounded delivery task is proven."] },
+      { id: ids[3], type: "subtask", parentId: ids[2], acceptanceCriteria: ["The executable change passes its owner journey."] },
+    ] } as any }) };
+    const delivery = { completed: true, issues: Object.fromEntries(ids.map((id, index) => [id, { issueKey: keys[index]! }])) };
+    const observer = new ProjectExecutionJiraObserver(root, { get: async () => completedRecord() }, { get: async () => delivery }, hierarchyPlan, { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) }, fetcher, () => 200);
+    assert.deepEqual(await observer.synchronize(projectId), { synchronized: 4, pending: 0 });
+    assert.deepEqual(transitioned, ["PIPE-4", "PIPE-3", "PIPE-2", "PIPE-1"]);
+    const restarted = new ProjectExecutionJiraObserver(root, { get: async () => completedRecord() }, { get: async () => delivery }, hierarchyPlan, { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret" }) }, fetcher, () => 300);
+    assert.deepEqual(await restarted.synchronize(projectId), { synchronized: 0, pending: 0 });
+    assert.deepEqual(transitioned, ["PIPE-4", "PIPE-3", "PIPE-2", "PIPE-1"]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 function plans() {
   return { readDraft: async () => ({ draft: { items: [{ id: taskId, acceptanceCriteria: ["The feature works for the approved owner journey.", "The verified result remains accessible after refresh."] }] } as any }) };

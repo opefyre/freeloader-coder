@@ -132,15 +132,17 @@ export function buildDecisionSnapshot(input: {
 }
 
 function fromExecution(record: ProjectExecutionRecord, now: number): DecisionItem[] {
-  return record.tasks.filter((task) => task.status === "needs_user" || task.status === "quarantined").map((task) => decision({
+  return record.tasks.filter((task) => task.status === "needs_user" || task.status === "quarantined").map((task) => {
+    const blocker = executionBlocker(task);
+    return decision({
     seed: `execution:${record.projectId}:${task.id}:${task.revision}:${task.status}`,
     category: task.status === "quarantined" ? "failure" : "recovery",
     priority: task.status === "quarantined" ? "critical" : "high",
     owner: "user",
     state: task.status === "quarantined" ? "unavailable" : "open",
-    title: `${task.jiraIssueKey} needs owner attention`,
+    title: `${task.jiraIssueKey} · ${blocker.title}`,
     reason: task.safeMessage,
-    nextAction: task.status === "quarantined" ? "Review the quarantined evidence" : "Review the failure and available recovery options",
+    nextAction: blocker.nextAction,
     authorityBoundary: task.status === "quarantined" ? "review_quarantine" : "review_execution_failure",
     effect: "local_read",
     reversible: true,
@@ -152,9 +154,18 @@ function fromExecution(record: ProjectExecutionRecord, now: number): DecisionIte
     providerId: task.assignment?.providerId ?? null,
     source: "system_observation",
     sourceRecordId: `${record.projectId}:${task.id}`,
-    evidence: [`Jira issue ${task.jiraIssueKey}`, `Execution revision ${task.revision}`, `${task.implementationEvidence.length} implementation evidence record(s)`, `${task.validations.length} validation record(s)`],
+    evidence: [`Blocker code: ${blocker.code}`, `Jira issue ${task.jiraIssueKey}`, `Execution revision ${task.revision}`, `${task.implementationEvidence.length} implementation evidence record(s)`, `${task.validations.length} validation record(s)`],
     reference: { surface: "projects", path: `/projects?project=${encodeURIComponent(record.projectId)}`, label: "Open project" },
-  }, now));
+  }, now);
+  });
+}
+
+function executionBlocker(task: ProjectExecutionRecord["tasks"][number]) {
+  if (/live journey|owner-facing completion/i.test(task.safeMessage)) return { code: "live_journey_incomplete", title: "Live journey proof required", nextAction: "Run the owner journey against the exact integrated revision, then retry completion" };
+  if (/environment|ENOENT|npm ci|dependency/i.test(task.safeMessage)) return { code: "execution_environment_unavailable", title: "Execution environment needs repair", nextAction: "Repair the local project environment, verify it, then resume the bounded task" };
+  if (/provider|free route|capacity/i.test(task.safeMessage)) return { code: "free_provider_unavailable", title: "Free provider unavailable", nextAction: "Wait for a verified free route or retry when free capacity returns" };
+  if (task.status === "quarantined") return { code: "execution_quarantined", title: "Verified evidence is quarantined", nextAction: "Review the quarantined evidence and choose a bounded recovery" };
+  return { code: "execution_needs_owner", title: "Execution needs a decision", nextAction: "Review the evidence and choose an available safe recovery" };
 }
 
 function supersededByLifecycle(recommendation: AutonomySnapshot["recommendations"][number], lifecycles: readonly ProjectLifecycleRecord[]): boolean {

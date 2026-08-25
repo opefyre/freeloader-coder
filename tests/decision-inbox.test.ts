@@ -112,9 +112,23 @@ test("delivery execution failures replace superseded request prompts with a curr
   const staleAutonomy = { ...autonomy, recommendations: [{ ...autonomy.recommendations[0]!, boundary: "approve_request" as const }], leases: [] };
   const snapshot = buildDecisionSnapshot({ live: { ...live, providers: [], recentEvents: [] }, autonomy: staleAutonomy, lifecycles: [lifecycle], executions: [execution], query: { range: "all" }, now });
   assert.equal(snapshot.items.length, 1);
-  assert.equal(snapshot.items[0]?.title, "PIPE-22 needs owner attention");
+  assert.equal(snapshot.items[0]?.title, "PIPE-22 · Execution environment needs repair");
   assert.equal(snapshot.items[0]?.priority, "high");
   assert.equal(snapshot.items[0]?.projectId, projectId);
   assert.equal(snapshot.items[0]?.reference.path, `/projects?project=${projectId}`);
+  assert.match(snapshot.items[0]?.nextAction ?? "", /repair the local project environment/i);
+  assert.match(snapshot.items[0]?.evidence.join(" ") ?? "", /execution_environment_unavailable/);
   assert.doesNotMatch(JSON.stringify(snapshot), /Approve the grounded plan/);
+});
+
+test("missing live proof appears once with an exact owner recovery action", () => {
+  const execution: ProjectExecutionRecord = {
+    schemaVersion: 1, projectId, planDigest: "c".repeat(64), state: "needs_user", revision: 4, updatedAt: now,
+    tasks: [{ id: "plan_0000000000000004", jiraIssueKey: "PIPE-44", title: "Verify owner journey", dependsOn: [], allowedFiles: ["src/app.tsx"], validationProfiles: ["build", "visual"], uiChanged: true, requiredCapabilities: ["chat"], privacyClass: "source_code", status: "needs_user", revision: 8, attempt: 0, assignment: null, lease: null, implementationEvidence: ["d".repeat(64)], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: "contract", safeMessage: "Owner-facing completion requires a passing live journey for the exact integrated revision.", updatedAt: now }],
+  };
+  const snapshot = buildDecisionSnapshot({ live: { ...live, providers: [], recentEvents: [] }, autonomy: { ...autonomy, recommendations: [], leases: [] }, executions: [execution, execution], query: { range: "all" }, now });
+  assert.equal(snapshot.items.length, 1);
+  assert.equal(snapshot.items[0]?.title, "PIPE-44 · Live journey proof required");
+  assert.match(snapshot.items[0]?.nextAction ?? "", /exact integrated revision/i);
+  assert.match(snapshot.items[0]?.evidence.join(" ") ?? "", /live_journey_incomplete/);
 });

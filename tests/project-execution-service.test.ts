@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { ProjectExecutionService } from "../apps/core/src/project-execution-service.js";
+import {
+  ProjectExecutionService,
+  executionEquivalenceSignature,
+} from "../apps/core/src/project-execution-service.js";
 import { completeDeliveryPlan } from "./delivery-plan-fixture.js";
 
 const projectId = "project_abcdef0123456789";
@@ -1226,6 +1229,280 @@ test("owner-facing work cannot start without build and visual journey validation
     await assert.rejects(
       () => service.initialize(projectId),
       /lacks build and visual journey validation/i,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("legacy owner-facing completion without a live receipt migrates to owner attention", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "project-execution-live-migration-"),
+  );
+  try {
+    const service = makeService(root, () => 100);
+    const initialized = await service.initialize(projectId);
+    const task = initialized.tasks[0]!;
+    await writeFile(
+      join(root, "project-executions.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        projects: {
+          [projectId]: {
+            ...initialized,
+            state: "completed",
+            tasks: [
+              {
+                ...task,
+                uiChanged: true,
+                validationProfiles: [
+                  ...new Set([...task.validationProfiles, "visual"]),
+                ],
+                status: "completed",
+                assignment: {
+                  providerId: "groq",
+                  modelId: "coder",
+                  deviceId: "spare-mac",
+                  selectedAt: 90,
+                  reasons: ["Verified free execution route."],
+                },
+                lease: null,
+                implementationEvidence: [evidence],
+                validations: [
+                  {
+                    tier: "fast",
+                    commandLabel: "fast",
+                    passed: true,
+                    exitCode: 0,
+                    evidenceDigest: evidence,
+                    observedAt: 91,
+                  },
+                  {
+                    tier: "full",
+                    commandLabel: "full",
+                    passed: true,
+                    exitCode: 0,
+                    evidenceDigest: evidence,
+                    observedAt: 92,
+                  },
+                  {
+                    tier: "integration",
+                    commandLabel: "integration",
+                    passed: true,
+                    exitCode: 0,
+                    evidenceDigest: evidence,
+                    observedAt: 93,
+                  },
+                ],
+                reviews: [
+                  {
+                    reviewerId: "functional-reviewer",
+                    providerId: "gemini",
+                    role: "functional",
+                    verdict: "pass",
+                    evidenceDigest: evidence,
+                    findings: [],
+                    observedAt: 94,
+                  },
+                  {
+                    reviewerId: "design-reviewer",
+                    providerId: "cloudflare",
+                    role: "design",
+                    verdict: "pass",
+                    evidenceDigest: evidence,
+                    findings: [],
+                    observedAt: 95,
+                  },
+                ],
+                commitDigest: "1".repeat(40),
+                integrationDigest: "2".repeat(64),
+                liveJourneyEvidence: undefined,
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const migrated = await new ProjectExecutionService(
+      root,
+      {
+        readDraft: async () => {
+          throw new Error("not needed");
+        },
+      },
+      { get: async () => null },
+      () => 200,
+      eligibility,
+    ).get(projectId);
+    assert.equal(migrated?.state, "needs_user");
+    assert.equal(migrated?.tasks[0]?.status, "needs_user");
+    assert.match(
+      migrated?.tasks[0]?.safeMessage ?? "",
+      /owner-visible journey/i,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("exact equivalent queued work reuses canonical proof once and survives restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-reconcile-"));
+  const duplicateId = "plan_0000000000000005";
+  try {
+    const duplicate = {
+      ...draft.items.at(-1)!,
+      id: duplicateId,
+      title: "A differently titled but exactly equivalent bounded contract",
+    };
+    const duplicateDraft = { ...draft, items: [...draft.items, duplicate] };
+    const service = new ProjectExecutionService(
+      root,
+      {
+        readDraft: async () => ({
+          draft: duplicateDraft as any,
+          document: {
+            schemaVersion: 1 as const,
+            projectId,
+            projectRelativePath: ".pipeline/BACKLOG.md" as const,
+            revision: 1,
+            digest,
+            markdown: "# Plan",
+            itemCount: 5,
+          },
+        }),
+      },
+      {
+        get: async () => ({
+          completed: true,
+          planDigest: digest,
+          issues: {
+            [taskId]: { issueKey: "PIPE-4" },
+            [duplicateId]: { issueKey: "PIPE-5" },
+          },
+        }),
+      },
+      () => 100,
+      eligibility,
+    );
+    const initialized = await service.initialize(projectId);
+    assert.equal(initialized.tasks.length, 2);
+    assert.equal(
+      executionEquivalenceSignature(initialized, initialized.tasks[0]!),
+      executionEquivalenceSignature(initialized, initialized.tasks[1]!),
+    );
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      evidence,
+    );
+    await service.recordValidation(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      {
+        tier: "fast",
+        commandLabel: "fast",
+        passed: true,
+        exitCode: 0,
+        evidenceDigest: evidence,
+      },
+    );
+    await service.recordValidation(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      {
+        tier: "full",
+        commandLabel: "full",
+        passed: true,
+        exitCode: 0,
+        evidenceDigest: evidence,
+      },
+    );
+    await service.recordReviews(projectId, taskId, lease.leaseId, "worker-a", [
+      review("functional-reviewer", "gemini", "functional"),
+      review("design-reviewer", "cloudflare", "design"),
+    ]);
+    await service.recordIntegration(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      {
+        commitDigest: evidence,
+        integrationDigest: evidence,
+        validation: {
+          tier: "integration",
+          commandLabel: "integration",
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+      },
+    );
+    const reconciled = await service.reconcileEquivalentQueued(projectId);
+    assert.equal(reconciled.state, "completed");
+    assert.equal(reconciled.tasks[1]!.status, "completed");
+    assert.equal(
+      reconciled.tasks[1]!.reconciliationEvidence?.sourceTaskId,
+      taskId,
+    );
+    assert.match(
+      reconciled.tasks[1]!.safeMessage,
+      /no duplicate implementation ran/i,
+    );
+    const restarted = new ProjectExecutionService(
+      root,
+      {
+        readDraft: async () => {
+          throw new Error("not needed");
+        },
+      },
+      { get: async () => null },
+      () => 200,
+      eligibility,
+    );
+    const reloaded = await restarted.reconcileEquivalentQueued(projectId);
+    assert.deepEqual(
+      reloaded.tasks[1]!.reconciliationEvidence,
+      reconciled.tasks[1]!.reconciliationEvidence,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("title similarity cannot reconcile different acceptance or file authority", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "project-execution-no-false-reconcile-"),
+  );
+  try {
+    const service = makeService(root, () => 100);
+    const record = await service.initialize(projectId);
+    const source = record.tasks[0]!;
+    const sameTitleDifferentAcceptance = {
+      ...source,
+      id: "plan_0000000000000005",
+      acceptanceDigest: "f".repeat(64),
+    };
+    const sameTitleDifferentFiles = {
+      ...source,
+      id: "plan_0000000000000006",
+      allowedFiles: ["src/other.ts"],
+    };
+    assert.notEqual(
+      executionEquivalenceSignature(record, source),
+      executionEquivalenceSignature(record, sameTitleDifferentAcceptance),
+    );
+    assert.notEqual(
+      executionEquivalenceSignature(record, source),
+      executionEquivalenceSignature(record, sameTitleDifferentFiles),
     );
   } finally {
     await rm(root, { recursive: true, force: true });

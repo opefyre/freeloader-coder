@@ -202,7 +202,18 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
       await this.workspaces.prepareDependencies?.({ ...workspace, root }, task);
       const results = await this.workspaces.validate(root, task); const passed = results.length > 0 && results.every((result) => result.passed);
       if (!passed) await this.workspaces.revertIntegration(root, workspace, committed.commitDigest);
-      return { commitDigest: committed.commitDigest, integrationDigest: integrated.integrationDigest, validation: { tier: "integration" as const, commandLabel: task.validationProfiles.join(" + "), passed, exitCode: passed ? 0 : results.find((result) => !result.passed)?.exitCode ?? 1, evidenceDigest: hash(JSON.stringify(results.map(({ output: _output, ...result }) => result))) } };
+      const visual = results.find((result) => result.profile === "visual");
+      const liveJourneyEvidence = visual ? {
+        journeyId: `${task.id}-owner-journey`,
+        revisionDigest: committed.commitDigest,
+        reference: `validation://${task.jiraIssueKey}/live-journey/${committed.commitDigest}`,
+        runtime: "browser" as const,
+        viewport: "configured-by-test:visual",
+        passed: visual.passed,
+        assertions: [{ name: "Owner-facing visual journey completed", passed: visual.passed, evidenceDigest: visual.evidenceDigest }],
+        observedAt: Date.now(),
+      } : undefined;
+      return { commitDigest: committed.commitDigest, integrationDigest: integrated.integrationDigest, liveJourneyEvidence, validation: { tier: "integration" as const, commandLabel: task.validationProfiles.join(" + "), passed, exitCode: passed ? 0 : results.find((result) => !result.passed)?.exitCode ?? 1, evidenceDigest: hash(JSON.stringify(results.map(({ output: _output, ...result }) => result))) } };
     } catch (error) {
       await this.workspaces.revertIntegration(root, workspace, committed.commitDigest);
       throw error;

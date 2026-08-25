@@ -41,6 +41,21 @@ export const executionReviewSchema = z.strictObject({
   observedAt: z.number().int().nonnegative(),
 });
 
+export const executionLiveJourneySchema = z.strictObject({
+  journeyId: z.string().trim().min(3).max(160),
+  revisionDigest: gitDigest,
+  reference: z.string().trim().min(3).max(2_048),
+  runtime: z.enum(["browser", "preview", "service"]),
+  viewport: z.string().trim().min(3).max(100).nullable(),
+  passed: z.boolean(),
+  assertions: z.array(z.strictObject({
+    name: z.string().trim().min(3).max(300),
+    passed: z.boolean(),
+    evidenceDigest: digest,
+  })).min(1).max(100),
+  observedAt: z.number().int().nonnegative(),
+});
+
 export const executionAttemptSchema = z.strictObject({
   approvalId: z.string().regex(/^approval_[a-f0-9]{20}$/),
   priorRevision: z.number().int().nonnegative(),
@@ -58,6 +73,7 @@ export const executionTaskSchema = z.strictObject({
   id: planItemId,
   jiraIssueKey: z.string().trim().min(2).max(100),
   title: z.string().trim().min(3).max(200),
+  acceptanceDigest: digest.optional(),
   dependsOn: z.array(planItemId).max(100),
   allowedFiles: z.array(relativeFile).min(1).max(100),
   validationProfiles: z.array(z.enum(["format", "lint", "typecheck", "unit", "integration", "build", "visual"])).min(1).max(7),
@@ -77,6 +93,15 @@ export const executionTaskSchema = z.strictObject({
   reviewAttempts: z.array(executionAttemptSchema).max(20).optional(),
   commitDigest: gitDigest.nullable(),
   integrationDigest: digest.nullable(),
+  // Optional for stored-record migration, but mandatory for owner-facing work
+  // before completion can pass. It must never be inferred from integration.
+  liveJourneyEvidence: executionLiveJourneySchema.nullable().optional(),
+  reconciliationEvidence: z.strictObject({
+    sourceTaskId: planItemId,
+    signature: digest,
+    proofDigest: digest,
+    reconciledAt: z.number().int().nonnegative(),
+  }).nullable().optional(),
   failureClass: z.enum(["implementation", "environment", "flaky", "provider", "contract", "product_decision", "unsafe"]).nullable(),
   safeMessage: z.string().trim().min(1).max(500),
   updatedAt: z.number().int().nonnegative(),
@@ -157,7 +182,15 @@ export function completionEvidence(task: ExecutionTask) {
   const validationTiers = new Set(task.validations.filter((validation) => validation.passed).map((validation) => validation.tier));
   const passedReviews = task.reviews.filter((review) => review.verdict === "pass");
   const roles = new Set(passedReviews.map((review) => review.role));
-  return task.implementationEvidence.length > 0 && validationTiers.has("fast") && validationTiers.has("full") && validationTiers.has("integration") && task.commitDigest !== null && task.integrationDigest !== null && roles.has("functional") && (!task.uiChanged || roles.has("design")) && new Set(passedReviews.map((review) => review.reviewerId)).size >= 2 && task.assignment !== null && passedReviews.some((review) => review.providerId !== task.assignment?.providerId);
+  const liveJourneyRequired = task.uiChanged || task.validationProfiles.includes("visual");
+  const liveJourney = task.liveJourneyEvidence;
+  const liveJourneyPassed = !liveJourneyRequired || Boolean(
+    liveJourney &&
+    liveJourney.passed &&
+    liveJourney.revisionDigest === task.commitDigest &&
+    liveJourney.assertions.every((assertion) => assertion.passed)
+  );
+  return task.implementationEvidence.length > 0 && validationTiers.has("fast") && validationTiers.has("full") && validationTiers.has("integration") && task.commitDigest !== null && task.integrationDigest !== null && liveJourneyPassed && roles.has("functional") && (!task.uiChanged || roles.has("design")) && new Set(passedReviews.map((review) => review.reviewerId)).size >= 2 && task.assignment !== null && passedReviews.some((review) => review.providerId !== task.assignment?.providerId);
 }
 
 function score(candidate: ExecutionCandidate) { return candidate.preference * 1_000 + (candidate.safeConcurrency - candidate.activeRequests) * 100 + Math.floor((1 - candidate.deviceLoad) * 100) + Math.min(99, Math.floor((candidate.availableMemoryMb - candidate.requiredMemoryMb) / 256)); }

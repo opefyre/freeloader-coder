@@ -15,6 +15,7 @@ import {
 import {
   completionEvidence,
   eligibleExecutionTasks,
+  executionLiveJourneySchema,
   projectExecutionRecordSchema,
   selectExecutionAssignment,
   type ExecutionCandidate,
@@ -179,6 +180,68 @@ export class ProjectExecutionService {
       };
       const next = replaceTask(record, claimed);
       return { record: next, result: { record: next, task: claimed } };
+    });
+  }
+
+  async reconcileEquivalentQueued(projectId: string) {
+    return this.#mutateProject(projectId, (record) => {
+      let next = record;
+      let changed = true;
+      while (changed) {
+        changed = false;
+        const completed = new Set(
+          next.tasks
+            .filter((task) => task.status === "completed")
+            .map((task) => task.id),
+        );
+        for (const target of next.tasks.filter(
+          (task) =>
+            task.status === "queued" &&
+            task.dependsOn.every((dependency) => completed.has(dependency)),
+        )) {
+          const signature = executionEquivalenceSignature(next, target);
+          if (!signature) continue;
+          const candidates = next.tasks.filter(
+            (source) =>
+              source.id !== target.id &&
+              source.status === "completed" &&
+              completionEvidence(source) &&
+              executionEquivalenceSignature(next, source) === signature,
+          );
+          const proofDigests = new Set(
+            candidates.map(executionCompletionProofDigest),
+          );
+          if (candidates.length !== 1 || proofDigests.size !== 1) continue;
+          const source = candidates[0]!;
+          const reconciled: ExecutionTask = {
+            ...target,
+            status: "completed",
+            revision: target.revision + 1,
+            assignment: source.assignment,
+            lease: null,
+            implementationEvidence: source.implementationEvidence,
+            validations: source.validations,
+            reviews: source.reviews,
+            commitDigest: source.commitDigest,
+            integrationDigest: source.integrationDigest,
+            liveJourneyEvidence: source.liveJourneyEvidence ?? null,
+            reconciliationEvidence: {
+              sourceTaskId: source.id,
+              signature,
+              proofDigest: executionCompletionProofDigest(source),
+              reconciledAt: this.now(),
+            },
+            failureClass: null,
+            safeMessage: `Verified equivalent delivery was reconciled from ${source.jiraIssueKey}; no duplicate implementation ran.`,
+            updatedAt: this.now(),
+          };
+          next = replaceTask(next, reconciled);
+          changed = true;
+          break;
+        }
+      }
+      next = projectState(next, this.now());
+      return { record: next, result: next };
     });
   }
 
@@ -370,6 +433,7 @@ export class ProjectExecutionService {
       commitDigest: string;
       integrationDigest: string;
       validation: unknown;
+      liveJourneyEvidence?: unknown;
     },
   ) {
     return this.#updateOwned(
@@ -393,11 +457,33 @@ export class ProjectExecutionService {
             "integration_failed",
             "Post-integration validation must pass before completion.",
           );
+        const commitDigest = gitDigestSchema.parse(input.commitDigest);
+        const liveJourneyEvidence =
+          input.liveJourneyEvidence === undefined
+            ? null
+            : executionLiveJourneySchema.parse(input.liveJourneyEvidence);
+        const liveJourneyRequired =
+          task.uiChanged || task.validationProfiles.includes("visual");
+        if (
+          liveJourneyRequired &&
+          (!liveJourneyEvidence ||
+            !liveJourneyEvidence.passed ||
+            liveJourneyEvidence.revisionDigest !== commitDigest ||
+            liveJourneyEvidence.assertions.some(
+              (assertion) => !assertion.passed,
+            ))
+        ) {
+          throw new ProjectExecutionError(
+            "live_journey_incomplete",
+            "Owner-facing completion requires a passing live journey for the exact integrated revision.",
+          );
+        }
         const updated = {
           ...task,
           status: "completed" as const,
-          commitDigest: gitDigestSchema.parse(input.commitDigest),
+          commitDigest,
           integrationDigest: digestSchema.parse(input.integrationDigest),
+          liveJourneyEvidence,
           validations: [
             ...task.validations,
             { ...validation, observedAt: now },
@@ -1090,13 +1176,81 @@ export class ProjectExecutionService {
   }
   async #load() {
     try {
-      return stateSchema.parse(JSON.parse(await readFile(this.#path, "utf8")));
+      return stateSchema.parse(
+        migrateStoredExecutionState(
+          JSON.parse(await readFile(this.#path, "utf8")),
+          this.now(),
+        ),
+      );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT")
         return stateSchema.parse({ schemaVersion: 1, projects: {} });
-      throw new Error("Project execution state is corrupt.");
+      throw new Error("Project execution state is corrupt.", { cause: error });
     }
   }
+}
+
+function migrateStoredExecutionState(value: unknown, now: number): unknown {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("projects" in value) ||
+    !value.projects ||
+    typeof value.projects !== "object"
+  )
+    return value;
+  const projects = Object.fromEntries(
+    Object.entries(value.projects).map(([projectId, candidate]) => {
+      if (
+        !candidate ||
+        typeof candidate !== "object" ||
+        !("tasks" in candidate) ||
+        !Array.isArray(candidate.tasks)
+      )
+        return [projectId, candidate];
+      let migrated = false;
+      const tasks = candidate.tasks.map((task: unknown) => {
+        if (!task || typeof task !== "object") return task;
+        const record = task as Record<string, unknown>;
+        const validationProfiles = Array.isArray(record.validationProfiles)
+          ? record.validationProfiles
+          : [];
+        const needsLiveProof =
+          record.uiChanged === true || validationProfiles.includes("visual");
+        if (
+          record.status !== "completed" ||
+          !needsLiveProof ||
+          record.liveJourneyEvidence
+        )
+          return task;
+        migrated = true;
+        return {
+          ...record,
+          status: "needs_user",
+          lease: null,
+          revision:
+            typeof record.revision === "number" ? record.revision + 1 : 1,
+          safeMessage:
+            "Completion needs attention: run the owner-visible journey for the current revision and attach its passing receipt.",
+          updatedAt: now,
+        };
+      });
+      if (!migrated) return [projectId, candidate];
+      const record = candidate as Record<string, unknown>;
+      return [
+        projectId,
+        {
+          ...record,
+          state: "needs_user",
+          revision:
+            typeof record.revision === "number" ? record.revision + 1 : 1,
+          tasks,
+          updatedAt: now,
+        },
+      ];
+    }),
+  );
+  return { ...(value as Record<string, unknown>), projects };
 }
 
 export class ProjectExecutionError extends Error {
@@ -1167,6 +1321,14 @@ function executableTasks(
       id: item.id,
       jiraIssueKey: issue.issueKey,
       title: item.title,
+      acceptanceDigest: createHash("sha256")
+        .update(
+          JSON.stringify({
+            acceptanceCriteria: item.acceptanceCriteria,
+            definitionOfDone: item.definitionOfDone,
+          }),
+        )
+        .digest("hex"),
       dependsOn: [
         ...new Set([
           ...item.dependencies.filter((id) =>
@@ -1197,6 +1359,40 @@ function executableTasks(
       updatedAt: now,
     };
   });
+}
+export function executionEquivalenceSignature(
+  record: ProjectExecutionRecord,
+  task: ExecutionTask,
+) {
+  if (!task.acceptanceDigest) return null;
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        projectId: record.projectId,
+        planDigest: record.planDigest,
+        acceptanceDigest: task.acceptanceDigest,
+        allowedFiles: [...task.allowedFiles].sort(),
+        validationProfiles: [...task.validationProfiles].sort(),
+        uiChanged: task.uiChanged,
+        requiredCapabilities: [...task.requiredCapabilities].sort(),
+        privacyClass: task.privacyClass,
+      }),
+    )
+    .digest("hex");
+}
+export function executionCompletionProofDigest(task: ExecutionTask) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        implementationEvidence: task.implementationEvidence,
+        validations: task.validations,
+        reviews: task.reviews,
+        commitDigest: task.commitDigest,
+        integrationDigest: task.integrationDigest,
+        liveJourneyEvidence: task.liveJourneyEvidence ?? null,
+      }),
+    )
+    .digest("hex");
 }
 function isProtectedExecutionPath(path: string) {
   const parts = path
