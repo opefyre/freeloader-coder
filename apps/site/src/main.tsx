@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import "./globals.css";
 
-const stored = window.localStorage.getItem("pipeline-site-theme");
+const stored = window.localStorage.getItem("codkesh-site-theme");
 const dark = stored === "dark" || (stored !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
 document.documentElement.classList.toggle("dark", dark);
 

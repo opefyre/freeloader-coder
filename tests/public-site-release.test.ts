@@ -18,6 +18,8 @@ test("public site exposes the complete source-first adoption journey", () => {
   assert.ok(app.includes("aria-label=\"Primary\""));
   assert.ok(app.includes("role=\"tablist\""));
   assert.ok(app.includes("aria-live=\"polite\""));
+  assert.match(app, /Codkesh turns a request/);
+  assert.doesNotMatch(app, /Pipeline Studio/);
 });
 
 test("public site rejects deceptive visual and tracking shortcuts", () => {
