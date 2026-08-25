@@ -10,6 +10,8 @@ import {
   previewOwnerJourneyCertification,
   runOwnerJourneyCertification,
   withdrawExternalOwnerLearning,
+  getOwnerCertificationEvidence,
+  ownerCertificationEvidenceFilename,
 } from "../apps/studio/src/owner-journey-certification-client.js";
 import type { OwnerJourneyCertificationSnapshot } from "../packages/runtime/src/owner-journey-certification.js";
 import type {
@@ -155,6 +157,30 @@ test("certification API and client are loopback-only, input-free, idempotent, bo
   await assert.rejects(() =>
     getOwnerJourneyCertification("https://example.com"),
   );
+});
+
+test("owner certification evidence API is input-free, loopback-only, bounded, and deterministic", async () => {
+  const packet = {
+    schemaVersion: 1 as const, provenance: "local_owner_certification_evidence" as const, generatedAt: now,
+    packetDigest: "e".repeat(64), automaticSpendLimitUsd: 0 as const, externalEffects: 0 as const,
+    certification: { state: "not_run" as const, certificationId: null, completedAt: null, stages: [], limitations: ["No passing local owner-journey certification is currently available."] },
+    readiness: { state: "certification_needed" as const, completedSessions: 0, minimumSampleSize: 3 as const, nextAction: "Run the local check", reasons: ["not_run"] },
+    pilotReview: { state: "certification_needed" as const, completionRatePercent: null, medianTimeToPreviewSeconds: null, trustAtLeastFourPercent: null, rankedFrictions: [], evidenceDigest: "f".repeat(64), limitations: ["Current certification is required."] },
+    improvementHandoffs: [],
+    privacy: { prompts: false as const, sourceCode: false as const, attachments: false as const, credentials: false as const, absolutePaths: false as const, personalIdentifiers: false as const, sessionNotes: false as const, privateJiraContent: false as const },
+    limitations: ["Local proof only."],
+  };
+  const server = createControlPlaneServer({ host: "127.0.0.1", port: 0, allowedOrigins: ["http://127.0.0.1:4310"], health: () => health, snapshot: () => runtime, ownerCertificationEvidence: { packet: () => packet } });
+  const port = await server.listen(); const endpoint = `http://127.0.0.1:${port}`;
+  try {
+    const result = await getOwnerCertificationEvidence(endpoint);
+    assert.deepEqual(result, packet);
+    assert.equal(ownerCertificationEvidenceFilename(result), "codkesh-owner-evidence-eeeeeeeeeeee.json");
+    assert.equal((await fetch(`${endpoint}/api/v1/owner-certification-evidence?bad=1`)).status, 400);
+    assert.equal((await fetch(`${endpoint}/api/v1/owner-certification-evidence`, { method: "POST" })).status, 405);
+    assert.equal((await fetch(`${endpoint}/api/v1/owner-certification-evidence`, { headers: { Origin: "https://example.com" } })).status, 403);
+  } finally { await server.close(); }
+  await assert.rejects(() => getOwnerCertificationEvidence("https://example.com"));
 });
 
 test("external-owner learning API requires consent and supports bounded draft, completion, and withdrawal", async () => {

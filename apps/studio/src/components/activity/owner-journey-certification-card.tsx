@@ -1,6 +1,7 @@
 import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
 import { Flask } from "@phosphor-icons/react/Flask";
 import { Warning } from "@phosphor-icons/react/Warning";
+import { DownloadSimple } from "@phosphor-icons/react/DownloadSimple";
 import { useCallback, useEffect, useState } from "react";
 
 import type {
@@ -27,6 +28,8 @@ import {
   declineOwnerPilotImprovements,
   editOwnerPilotImprovements,
   withdrawOwnerPilot,
+  getOwnerCertificationEvidence,
+  ownerCertificationEvidenceFilename,
 } from "../../owner-journey-certification-client.js";
 import { listLocalProjects } from "../../local-project-client.js";
 import { Badge } from "../ui/badge.js";
@@ -115,6 +118,24 @@ export function OwnerJourneyCertificationCard({
       setBusy(false);
     }
   }
+  async function downloadEvidence() {
+    setBusy(true);
+    setNotice("Preparing privacy-safe evidence…");
+    try {
+      const packet = await getOwnerCertificationEvidence(endpoint);
+      const url = URL.createObjectURL(new Blob([`${JSON.stringify(packet, null, 2)}\n`], { type: "application/json" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = ownerCertificationEvidenceFilename(packet);
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setNotice("Evidence downloaded. It contains only safe aggregates, digests, states, and receipts.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Evidence could not be prepared. Your current work is unchanged.");
+    } finally {
+      setBusy(false);
+    }
+  }
   const passed = snapshot?.state === "passed";
   const stages = snapshot?.lastPassedReceipt?.stages ?? [];
   const completedLearning = sessions.filter(
@@ -151,9 +172,14 @@ export function OwnerJourneyCertificationCard({
             </CardDescription>
           </div>
         </div>
-        <Button onClick={() => void run()} disabled={busy}>
-          {busy ? "Checking…" : passed ? "Run again" : "Run check"}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => void downloadEvidence()} disabled={busy} aria-label="Download privacy-safe certification evidence">
+            <DownloadSimple aria-hidden="true" /> Evidence
+          </Button>
+          <Button onClick={() => void run()} disabled={busy}>
+            {busy ? "Working…" : passed ? "Run again" : "Run check"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-5">
         {notice && (

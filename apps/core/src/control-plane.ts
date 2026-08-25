@@ -136,6 +136,7 @@ import {
   ownerPilotImprovementDraftSchema,
   ownerPilotImprovementEditInputSchema,
   ownerPilotImprovementPreviewInputSchema,
+  ownerCertificationEvidencePacketSchema,
   type ExternalLearningCollection,
   type ExternalLearningSession,
   type OwnerJourneyCertificationPreview,
@@ -147,6 +148,7 @@ import {
   type OwnerPilotSession,
   type OwnerPilotImprovementCollection,
   type OwnerPilotImprovementDraft,
+  type OwnerCertificationEvidencePacket,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 import {
   projectLifecycleRecordSchema,
@@ -311,6 +313,9 @@ export type ControlPlaneServerOptions = {
     edit: (id: string, input: unknown) => OwnerPilotImprovementDraft | Promise<OwnerPilotImprovementDraft>;
     approve: (id: string, input: unknown) => OwnerPilotImprovementDraft | Promise<OwnerPilotImprovementDraft>;
     decline: (id: string, input: unknown) => OwnerPilotImprovementDraft | Promise<OwnerPilotImprovementDraft>;
+  };
+  ownerCertificationEvidence?: {
+    packet: () => OwnerCertificationEvidencePacket | Promise<OwnerCertificationEvidencePacket>;
   };
   autonomy?: {
     snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
@@ -1289,6 +1294,13 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       if (
+        url.pathname === "/api/v1/owner-certification-evidence" &&
+        request.method !== "GET"
+      ) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
         url.pathname === "/api/v1/owner-journey-trust" &&
         request.method !== "GET"
       ) {
@@ -1372,6 +1384,16 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             await options.ownerJourneyCertification.snapshot(),
           ),
         );
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/owner-certification-evidence" &&
+        options.ownerCertificationEvidence
+      ) {
+        if (requestBodyDeclared(request) || url.search)
+          throw new ControlPlaneRequestError("Certification evidence does not accept input.");
+        sendJson(response, 200, ownerCertificationEvidencePacketSchema.parse(await options.ownerCertificationEvidence.packet()));
         return;
       }
       if (

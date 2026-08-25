@@ -235,6 +235,14 @@ retrying. If only part of the handoff completed, use **Retry remaining**; never
 delete the local receipt file to force a replay. Corrupt handoff evidence is
 preserved and requires explicit recovery rather than silent replacement.
 
+Use **Evidence** on the owner-journey card to download one deterministic local
+certification packet. It contains current certification stages and digests,
+pilot readiness and privacy-safe aggregates, improvement-handoff state, and
+safe Jira receipt links. It excludes prompts, source code, attachments,
+credentials, absolute paths, personal identifiers, session notes, and private
+Jira content. Preparing it makes no external request or state change and its
+automatic spend limit is literally $0.
+
 `npm run artifacts:identity:preview` shows a mutation-free governed-artifact
 identity plan. `npm run artifacts:identity:apply` applies the same explicit
 replacement through digest-bound writes with history preservation. Changed

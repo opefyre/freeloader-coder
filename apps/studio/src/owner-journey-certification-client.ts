@@ -21,6 +21,8 @@ import {
   type OwnerPilotSession,
   type OwnerPilotImprovementCollection,
   type OwnerPilotImprovementDraft,
+  ownerCertificationEvidencePacketSchema,
+  type OwnerCertificationEvidencePacket,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 
 const MAX_BYTES = 300_000;
@@ -213,6 +215,14 @@ export async function approveOwnerPilotImprovements(endpoint: string, id: string
 }
 export async function declineOwnerPilotImprovements(endpoint: string, id: string, input: unknown): Promise<OwnerPilotImprovementDraft> {
   return ownerPilotImprovementDraftSchema.parse(await request(new URL(`/api/v1/owner-pilot/improvements/${id}/decline`, loopback(endpoint)), json(input)));
+}
+
+export async function getOwnerCertificationEvidence(endpoint: string): Promise<OwnerCertificationEvidencePacket> {
+  return ownerCertificationEvidencePacketSchema.parse(await request(new URL("/api/v1/owner-certification-evidence", loopback(endpoint)), { method: "GET" }));
+}
+
+export function ownerCertificationEvidenceFilename(packet: OwnerCertificationEvidencePacket): string {
+  return `codkesh-owner-evidence-${packet.packetDigest.slice(0, 12)}.json`;
 }
 function json(body: unknown, idempotencyKey?: string): RequestInit {
   return {

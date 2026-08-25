@@ -65,6 +65,12 @@ test("certification UI and client preserve accessibility, responsive layout, pri
   assert.match(client, /127\.0\.0\.1/);
   assert.match(client, /Idempotency-Key/);
   assert.match(client, /\/api\/v1\/owner-journey-trust/);
+  assert.match(source, /Download privacy-safe certification evidence/);
+  assert.match(source, /getOwnerCertificationEvidence/);
+  assert.match(source, /ownerCertificationEvidenceFilename/);
+  assert.match(source, /URL\.createObjectURL/);
+  assert.match(client, /\/api\/v1\/owner-certification-evidence/);
+  assert.match(client, /codkesh-owner-evidence-/);
 });
 
 test("pilot improvements use one exact owner decision before Jira mutation", () => {

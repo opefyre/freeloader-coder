@@ -62,6 +62,7 @@ import { ExternalOwnerLearningService } from "./external-owner-learning-service.
 import { OwnerJourneyTrustService } from "./owner-journey-trust-service.js";
 import { OwnerPilotService } from "./owner-pilot-service.js";
 import { OwnerPilotImprovementService } from "./owner-pilot-improvement-service.js";
+import { OwnerCertificationEvidenceService } from "./owner-certification-evidence-service.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
@@ -277,6 +278,12 @@ const ownerPilotImprovements = new OwnerPilotImprovementService(
       jiraDelivery.createImprovement(projectId, improvement, marker),
   },
 );
+const ownerCertificationEvidence = new OwnerCertificationEvidenceService({
+  certification: () => ownerJourneyCertification.snapshot(),
+  trust: () => ownerJourneyTrust.snapshot(),
+  review: async () => ownerPilot.review(await ownerJourneyTrust.snapshot()),
+  improvements: () => ownerPilotImprovements.list(),
+});
 const projectExecutions = new ProjectExecutionService(
   stateDirectory,
   projectDeliveryPlans,
@@ -754,6 +761,9 @@ const controlPlane = createControlPlaneServer({
     edit: (id, input) => ownerPilotImprovements.edit(id, input),
     approve: (id, input) => ownerPilotImprovements.approve(id, input),
     decline: (id, input) => ownerPilotImprovements.decline(id, input),
+  },
+  ownerCertificationEvidence: {
+    packet: () => ownerCertificationEvidence.packet(),
   },
   autonomy: {
     snapshot: () => autonomy.snapshot(),

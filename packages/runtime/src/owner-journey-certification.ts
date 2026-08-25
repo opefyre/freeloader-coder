@@ -364,6 +364,53 @@ export const ownerPilotImprovementDecisionInputSchema = z.strictObject({
   expectedPreviewDigest: digest,
 });
 
+export const ownerCertificationEvidencePacketSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("local_owner_certification_evidence"),
+  generatedAt: z.number().int().nonnegative(),
+  packetDigest: digest,
+  automaticSpendLimitUsd: z.literal(0),
+  externalEffects: z.literal(0),
+  certification: z.strictObject({
+    state: ownerJourneyCertificationSnapshotSchema.shape.state,
+    certificationId: digest.nullable(),
+    completedAt: timestamp.nullable(),
+    stages: z.array(z.strictObject({ name: ownerJourneyStageSchema, evidenceDigest: digest })).max(11),
+    limitations: z.array(z.string().trim().min(1).max(240)).max(8),
+  }),
+  readiness: z.strictObject({
+    state: pilotReadinessSchema.shape.state,
+    completedSessions: z.number().int().nonnegative().max(50),
+    minimumSampleSize: z.literal(3),
+    nextAction: z.string().trim().min(1).max(160),
+    reasons: z.array(z.string().trim().min(1).max(160)).max(6),
+  }),
+  pilotReview: z.strictObject({
+    state: ownerPilotReviewSchema.shape.state,
+    completionRatePercent: z.number().int().min(0).max(100).nullable(),
+    medianTimeToPreviewSeconds: z.number().int().min(1).max(86_400).nullable(),
+    trustAtLeastFourPercent: z.number().int().min(0).max(100).nullable(),
+    rankedFrictions: ownerPilotReviewSchema.shape.rankedFrictions,
+    evidenceDigest: digest,
+    limitations: z.array(z.string().trim().min(1).max(200)).min(1).max(6),
+  }),
+  improvementHandoffs: z.array(z.strictObject({
+    id: z.string().regex(/^improvement_draft_[a-f0-9]{20}$/),
+    state: ownerPilotImprovementDecisionSchema,
+    revision: z.number().int().positive(),
+    jiraProjectKey: z.string().trim().min(1).max(40),
+    previewDigest: digest,
+    receipts: ownerPilotImprovementDraftSchema.shape.receipts,
+    lastError: z.string().trim().min(1).max(240).nullable(),
+  })).max(50),
+  privacy: z.strictObject({
+    prompts: z.literal(false), sourceCode: z.literal(false), attachments: z.literal(false),
+    credentials: z.literal(false), absolutePaths: z.literal(false), personalIdentifiers: z.literal(false),
+    sessionNotes: z.literal(false), privateJiraContent: z.literal(false),
+  }),
+  limitations: z.array(z.string().trim().min(1).max(240)).min(1).max(8),
+});
+
 export type OwnerJourneyCertificationReceipt = z.infer<
   typeof ownerJourneyCertificationReceiptSchema
 >;
@@ -398,3 +445,4 @@ export type OwnerPilotReview = z.infer<typeof ownerPilotReviewSchema>;
 export type OwnerPilotImprovement = z.infer<typeof ownerPilotImprovementSchema>;
 export type OwnerPilotImprovementDraft = z.infer<typeof ownerPilotImprovementDraftSchema>;
 export type OwnerPilotImprovementCollection = z.infer<typeof ownerPilotImprovementCollectionSchema>;
+export type OwnerCertificationEvidencePacket = z.infer<typeof ownerCertificationEvidencePacketSchema>;
