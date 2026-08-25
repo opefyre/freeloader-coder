@@ -59,6 +59,7 @@ import { buildUniversalSearchSnapshot } from "./universal-search.js";
 import { LocalAttentionService } from "./attention-center.js";
 import { OwnerJourneyCertificationService } from "./owner-journey-certification-service.js";
 import { ExternalOwnerLearningService } from "./external-owner-learning-service.js";
+import { OwnerJourneyTrustService } from "./owner-journey-trust-service.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
@@ -89,6 +90,11 @@ const ownerJourneyCertification = new OwnerJourneyCertificationService(
   stateDirectory,
 );
 const externalOwnerLearning = new ExternalOwnerLearningService(stateDirectory);
+const ownerJourneyTrust = new OwnerJourneyTrustService(
+  stateDirectory,
+  ownerJourneyCertification,
+  externalOwnerLearning,
+);
 const projectContexts = new ProjectContextService(localProjects);
 const projectSolutions = new ProjectSolutionService(localProjects);
 const projectDeliveryPlans = new ProjectDeliveryPlanService(localProjects);
@@ -512,6 +518,7 @@ async function attentionInputs() {
     live,
     decisions,
     certification: await ownerJourneyCertification.snapshot(),
+    trust: await ownerJourneyTrust.snapshot(),
   };
 }
 
@@ -654,6 +661,7 @@ const controlPlane = createControlPlaneServer({
         query,
         Date.now(),
         input.certification,
+        input.trust,
       );
     },
     preview: async (body) => {
@@ -664,6 +672,7 @@ const controlPlane = createControlPlaneServer({
         input.live,
         Date.now(),
         input.certification,
+        input.trust,
       );
     },
     apply: async (body, idempotencyKey) => {
@@ -675,6 +684,7 @@ const controlPlane = createControlPlaneServer({
         input.live,
         Date.now(),
         input.certification,
+        input.trust,
       );
     },
     previewQuietHours: (body) => attention.previewQuietHours(body),
@@ -701,6 +711,10 @@ const controlPlane = createControlPlaneServer({
     complete: (id, input) => externalOwnerLearning.complete(id, input),
     withdraw: (id, expectedRevision) =>
       externalOwnerLearning.withdraw(id, expectedRevision),
+  },
+  ownerJourneyTrust: {
+    snapshot: () => ownerJourneyTrust.snapshot(),
+    tick: () => ownerJourneyTrust.tick(),
   },
   autonomy: {
     snapshot: () => autonomy.snapshot(),
@@ -1138,6 +1152,11 @@ const executionJiraTimer = setInterval(() => {
     .catch(() => undefined);
 }, 60_000);
 executionJiraTimer.unref();
+void ownerJourneyTrust.tick().catch(() => undefined);
+const ownerJourneyTrustTimer = setInterval(() => {
+  void ownerJourneyTrust.tick().catch(() => undefined);
+}, 60 * 60_000);
+ownerJourneyTrustTimer.unref();
 console.log(`Codkesh control plane: http://${host}:${boundPort}`);
 console.log(
   "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state.",
@@ -1151,6 +1170,7 @@ async function close(signal: string) {
   lifecycleCoordinator.stop();
   executionCoordinator.stop();
   clearInterval(executionJiraTimer);
+  clearInterval(ownerJourneyTrustTimer);
   console.log(`Stopping local control plane (${signal}).`);
   await controlPlane.close();
 }

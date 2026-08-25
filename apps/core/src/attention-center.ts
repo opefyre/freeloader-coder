@@ -22,7 +22,7 @@ import {
 } from "../../../packages/runtime/src/attention.js";
 import type { DecisionSnapshot } from "../../../packages/runtime/src/decisions.js";
 import type { LiveOperationsSnapshot } from "../../../packages/runtime/src/live-operations.js";
-import type { OwnerJourneyCertificationSnapshot } from "../../../packages/runtime/src/owner-journey-certification.js";
+import type { OwnerJourneyCertificationSnapshot, OwnerJourneyTrustSnapshot } from "../../../packages/runtime/src/owner-journey-certification.js";
 
 type Disposition = {
   disposition: AttentionDisposition;
@@ -78,6 +78,7 @@ export class LocalAttentionService {
     query?: Partial<AttentionQuery>,
     now = Date.now(),
     certification?: OwnerJourneyCertificationSnapshot,
+    trust?: OwnerJourneyTrustSnapshot,
   ): Promise<AttentionSnapshot> {
     return this.#serialize(async () =>
       this.#snapshot(
@@ -87,6 +88,7 @@ export class LocalAttentionService {
         query,
         now,
         certification,
+        trust,
       ),
     );
   }
@@ -97,6 +99,7 @@ export class LocalAttentionService {
     live: LiveOperationsSnapshot,
     now = Date.now(),
     certification?: OwnerJourneyCertificationSnapshot,
+    trust?: OwnerJourneyTrustSnapshot,
   ): Promise<AttentionPreview> {
     const action = attentionActionSchema.parse(actionInput);
     return this.#serialize(async () => {
@@ -108,6 +111,7 @@ export class LocalAttentionService {
         {},
         now,
         certification,
+        trust,
       );
       const item = snapshot.items.find((entry) => entry.id === action.itemId);
       if (!item)
@@ -140,6 +144,7 @@ export class LocalAttentionService {
     live: LiveOperationsSnapshot,
     now = Date.now(),
     certification?: OwnerJourneyCertificationSnapshot,
+    trust?: OwnerJourneyTrustSnapshot,
   ): Promise<AttentionMutationResponse> {
     const action = attentionActionSchema.parse(actionInput);
     return this.#serialize(async () => {
@@ -164,6 +169,7 @@ export class LocalAttentionService {
             {},
             now,
             certification,
+            trust,
           ),
           receipt: existing,
         });
@@ -174,6 +180,7 @@ export class LocalAttentionService {
         {},
         now,
         certification,
+        trust,
       );
       const item = snapshot.items.find((entry) => entry.id === action.itemId);
       if (!item)
@@ -222,6 +229,7 @@ export class LocalAttentionService {
           {},
           now,
           certification,
+          trust,
         ),
         receipt,
       });
@@ -316,6 +324,7 @@ export class LocalAttentionService {
     queryInput: Partial<AttentionQuery> = {},
     now = Date.now(),
     certification?: OwnerJourneyCertificationSnapshot,
+    trust?: OwnerJourneyTrustSnapshot,
   ): AttentionSnapshot {
     const query = attentionQuerySchema.parse(queryInput);
     const quiet = quietState(state.quietHours, now);
@@ -329,6 +338,7 @@ export class LocalAttentionService {
         )
         .map(fromCompletion),
       ...(certification ? [fromCertification(certification, now)] : []),
+      ...(trust ? [fromPilotReadiness(trust)] : []),
     ]);
     const all = candidates
       .map((candidate) => {
@@ -525,6 +535,34 @@ function fromCertification(
       path: "/activity?certification=owner-journey",
       label: "Open certification",
     },
+  });
+}
+
+function fromPilotReadiness(snapshot: OwnerJourneyTrustSnapshot): Candidate {
+  const readiness = snapshot.readiness;
+  const actionable = readiness.state !== "review_ready";
+  return candidate({
+    seed: `pilot-readiness:${readiness.state}:${snapshot.learning.completedSessions}:${snapshot.freshness.state}`,
+    severity: readiness.state === "certification_needed" ? "high" : actionable ? "medium" : "info",
+    category: readiness.state === "certification_needed" ? "recovery" : "action",
+    title: readiness.title,
+    reason: readiness.reason,
+    nextAction: readiness.nextAction,
+    authorityBoundary: "local_validation_and_learning_only",
+    effect: "local_read",
+    maximumCostUsd: 0,
+    observedAt: snapshot.observedAt,
+    projectId: null,
+    requestId: null,
+    providerId: null,
+    source: "system",
+    sourceRecordId: `pilot-readiness-${readiness.state}`,
+    evidence: [
+      `Completed anonymous sessions: ${snapshot.learning.completedSessions}`,
+      `Certification freshness: ${snapshot.freshness.state}`,
+      "Automatic spend limit: $0",
+    ],
+    reference: { surface: "activity", path: "/activity?certification=owner-journey", label: "Open pilot evidence" },
   });
 }
 

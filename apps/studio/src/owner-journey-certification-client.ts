@@ -4,11 +4,13 @@ import {
   ownerJourneyCertificationPreviewSchema,
   ownerJourneyCertificationRunResponseSchema,
   ownerJourneyCertificationSnapshotSchema,
+  ownerJourneyTrustSnapshotSchema,
   type ExternalLearningCollection,
   type ExternalLearningSession,
   type OwnerJourneyCertificationPreview,
   type OwnerJourneyCertificationRunResponse,
   type OwnerJourneyCertificationSnapshot,
+  type OwnerJourneyTrustSnapshot,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 
 const MAX_BYTES = 300_000;
@@ -21,6 +23,19 @@ export async function getOwnerJourneyCertification(
       new URL("/api/v1/owner-journey-certification", loopback(endpoint)),
       { method: "GET", ...(signal ? { signal } : {}) },
     ),
+  );
+}
+export async function getOwnerJourneyTrust(
+  endpoint: string,
+  signal?: AbortSignal,
+): Promise<OwnerJourneyTrustSnapshot> {
+  return ownerJourneyTrustSnapshotSchema.parse(
+    await request(new URL("/api/v1/owner-journey-trust", loopback(endpoint)), { method: "GET", ...(signal ? { signal } : {}) }),
+  );
+}
+export async function tickOwnerJourneyTrust(endpoint: string, idempotencyKey: string): Promise<OwnerJourneyTrustSnapshot> {
+  return ownerJourneyTrustSnapshotSchema.parse(
+    await request(new URL("/api/v1/owner-journey-trust/tick", loopback(endpoint)), { method: "POST", headers: { "Idempotency-Key": idempotencyKey } }),
   );
 }
 export async function previewOwnerJourneyCertification(

@@ -54,11 +54,11 @@ export class OwnerJourneyCertificationService {
   }
 
   async snapshot(now = Date.now()): Promise<OwnerJourneyCertificationSnapshot> {
-    return this.#snapshot(await this.#read(), now);
+    return this.#snapshot(await this.#readReconciled(), now);
   }
 
   async preview(now = Date.now()) {
-    const state = await this.#read();
+    const state = await this.#readReconciled();
     return ownerJourneyCertificationPreviewSchema.parse({
       schemaVersion: 1,
       previewId: `cert_preview_${hash(`${state.lastPassedReceipt?.certificationId ?? "none"}:${now}`).slice(0, 20)}`,
@@ -184,6 +184,19 @@ export class OwnerJourneyCertificationService {
         "corrupt_state",
       );
     }
+  }
+  async #readReconciled(): Promise<Stored> {
+    const state = await this.#read();
+    if (state.state !== "running" || this.#active) return state;
+    const reconciled: Stored = {
+      ...state,
+      state: "failed",
+      receipt: null,
+      message:
+        "The previous local check was interrupted. Prior passing evidence was preserved and an automatic retry is available.",
+    };
+    await this.#write(reconciled);
+    return reconciled;
   }
   async #write(state: Stored) {
     await mkdir(resolve(this.#path, ".."), { recursive: true, mode: 0o700 });

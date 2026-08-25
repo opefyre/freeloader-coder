@@ -6,14 +6,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ExternalLearningSession,
   OwnerJourneyCertificationSnapshot,
+  OwnerJourneyTrustSnapshot,
 } from "../../../../../packages/runtime/src/owner-journey-certification.js";
 import {
   completeExternalOwnerLearning,
   createExternalOwnerLearning,
   getOwnerJourneyCertification,
+  getOwnerJourneyTrust,
   listExternalOwnerLearning,
   previewOwnerJourneyCertification,
   runOwnerJourneyCertification,
+  tickOwnerJourneyTrust,
   withdrawExternalOwnerLearning,
 } from "../../owner-journey-certification-client.js";
 import { Badge } from "../ui/badge.js";
@@ -36,19 +39,23 @@ export function OwnerJourneyCertificationCard({
   const [sessions, setSessions] = useState<readonly ExternalLearningSession[]>(
     [],
   );
+  const [trust, setTrust] = useState<OwnerJourneyTrustSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [showLearning, setShowLearning] = useState(false);
   const refresh = useCallback(async () => {
     try {
-      const [certification, learning] = await Promise.all([
+      const [certification, learning, trustSnapshot] = await Promise.all([
         getOwnerJourneyCertification(endpoint),
         listExternalOwnerLearning(endpoint),
+        getOwnerJourneyTrust(endpoint),
       ]);
       setSnapshot(certification);
       setSessions(learning.sessions);
+      setTrust(trustSnapshot);
     } catch {
       setSnapshot(null);
+      setTrust(null);
     }
   }, [endpoint]);
   useEffect(() => {
@@ -73,6 +80,18 @@ export function OwnerJourneyCertificationCard({
     } finally {
       setBusy(false);
     }
+  }
+  async function refreshTrust() {
+    setBusy(true);
+    setNotice("Refreshing local trust evidence…");
+    try {
+      const result = await tickOwnerJourneyTrust(endpoint, `trust.ui.${Date.now()}`);
+      setTrust(result);
+      await refresh();
+      setNotice("Trust evidence is current.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Trust evidence did not refresh.");
+    } finally { setBusy(false); }
   }
   const passed = snapshot?.state === "passed";
   const stages = snapshot?.lastPassedReceipt?.stages ?? [];
@@ -121,7 +140,7 @@ export function OwnerJourneyCertificationCard({
           </p>
         )}
         {snapshot && (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="Stages" value={`${stages.length}/11`} />
             <Fact
               label="Last verified"
@@ -137,7 +156,28 @@ export function OwnerJourneyCertificationCard({
               }
             />
             <Fact label="Real sessions" value={String(completedLearning)} />
+            <Fact label="Pilot readiness" value={trust ? readinessLabel(trust.readiness.state) : "Checking…"} />
           </div>
+        )}
+        {trust && (
+          <section aria-labelledby="pilot-readiness-title" className="rounded-[1.5rem] bg-muted/45 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 id="pilot-readiness-title" className="font-semibold">{trust.readiness.title}</h3>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{trust.readiness.reason}</p>
+              </div>
+              <Badge tone={trust.readiness.state === "review_ready" ? "positive" : "neutral"}>{readinessLabel(trust.readiness.state)}</Badge>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Fact label="Next local check" value={new Date(trust.freshness.nextCheckAt).toLocaleDateString([], { dateStyle: "medium" })} />
+              <Fact label="Median to preview" value={trust.learning.medianTimeToPreviewSeconds === null ? "Not enough data" : `${Math.round(trust.learning.medianTimeToPreviewSeconds / 60)} min`} />
+              <Fact label="Trust 4–5" value={trust.learning.trustAtLeastFourPercent === null ? "Not enough data" : `${trust.learning.trustAtLeastFourPercent}%`} />
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">Anonymous aggregates only. At least 3 completed sessions are required.</p>
+              <Button variant="secondary" onClick={() => void refreshTrust()} disabled={busy}>Refresh evidence</Button>
+            </div>
+          </section>
         )}
         {stages.length > 0 && (
           <ol
@@ -393,4 +433,12 @@ function label(value: string) {
   return value
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+function readinessLabel(value: OwnerJourneyTrustSnapshot["readiness"]["state"]) {
+  return ({
+    certification_needed: "Check needed",
+    learning_needed: "Learning",
+    review_ready: "Review ready",
+    thresholds_not_met: "Improve",
+  } as const)[value];
 }

@@ -10,7 +10,7 @@ import {
 } from "../apps/core/src/attention-center.js";
 import type { DecisionSnapshot } from "../packages/runtime/src/decisions.js";
 import type { LiveOperationsSnapshot } from "../packages/runtime/src/live-operations.js";
-import type { OwnerJourneyCertificationSnapshot } from "../packages/runtime/src/owner-journey-certification.js";
+import type { OwnerJourneyCertificationSnapshot, OwnerJourneyTrustSnapshot } from "../packages/runtime/src/owner-journey-certification.js";
 
 const now = 1_800_000_000_000;
 const projectId = "project_0123456789abcdef";
@@ -279,6 +279,23 @@ test("certification truth becomes one deduplicated zero-cost Action Center item 
   assert.equal(item?.category, "action");
   assert.match(item?.title ?? "", /real owner session/i);
   assert.doesNotMatch(JSON.stringify(item), /adopted|customer/i);
+});
+
+test("pilot readiness contributes one deduplicated privacy-safe Action Center item", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "attention-pilot-"));
+  const service = new LocalAttentionService(directory);
+  const trust: OwnerJourneyTrustSnapshot = {
+    schemaVersion: 1, provenance: "local_owner_journey_trust", observedAt: now, validForMs: 15_000, automaticSpendLimitUsd: 0,
+    freshness: { schemaVersion: 1, provenance: "local_certification_freshness", state: "current", observedAt: now, lastPassedAt: now - 1_000, nextCheckAt: now + 1_000, dueAt: now + 1_000, retryAt: null, cadenceMs: 604_800_000, automaticSpendLimitUsd: 0, message: "Current." },
+    learning: { schemaVersion: 1, provenance: "privacy_safe_external_learning_aggregate", observedAt: now, completedSessions: 2, eligibleForDecision: false, minimumSampleSize: 3, completionRatePercent: 100, medianTimeToPreviewSeconds: 600, averageTrustRating: 4.5, trustAtLeastFourPercent: 100, frictionCounts: { setup: 0, navigation: 0, trust: 0, clarity: 1, speed: 0, approval: 0, none: 1 }, excludedDrafts: 1, excludedWithdrawn: 1, automaticSpendLimitUsd: 0, limitations: ["More evidence required."] },
+    readiness: { schemaVersion: 1, provenance: "local_pilot_readiness_policy", observedAt: now, state: "learning_needed", title: "More owner sessions needed", reason: "One more completed consented session is required.", nextAction: "Record a consented owner session", reasons: ["Minimum sample not reached."], automaticSpendLimitUsd: 0 },
+  };
+  const snapshot = await service.snapshot(decisions, live, {}, now, undefined, trust);
+  const items = snapshot.items.filter((item) => item.sourceRecordId.startsWith("pilot-readiness"));
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.maximumCostUsd, 0);
+  assert.match(items[0]?.title ?? "", /owner sessions/i);
+  assert.doesNotMatch(JSON.stringify(items[0]), /participant-|private note|adopted/i);
 });
 
 test("attention actions preview, persist, replay idempotently, reject stale revisions, and survive restart", async () => {

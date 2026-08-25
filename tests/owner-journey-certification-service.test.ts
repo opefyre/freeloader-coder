@@ -122,3 +122,36 @@ test("certification registry coalesces concurrent work and fails closed on corru
     })).run("certification.private.0001"),
   );
 });
+
+test("an interrupted persisted run is reconciled after restart and remains retryable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codkesh-certification-"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = new OwnerJourneyCertificationService(root, async () => {
+    await gate;
+    return receipt();
+  });
+  const activeRun = original.run("certification.interrupted.0001");
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if ((await original.snapshot()).state === "running") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal((await original.snapshot()).state, "running");
+
+  const restarted = new OwnerJourneyCertificationService(root, async () =>
+    receipt("b".repeat(64)),
+  );
+  const reconciled = await restarted.snapshot();
+  assert.equal(reconciled.state, "failed");
+  assert.match(reconciled.message, /interrupted/i);
+  assert.equal(reconciled.lastPassedReceipt, null);
+  assert.equal(
+    (await restarted.run("certification.interrupted.0002")).snapshot.state,
+    "passed",
+  );
+
+  release();
+  await activeRun;
+});

@@ -122,11 +122,13 @@ import {
   ownerJourneyCertificationPreviewSchema,
   ownerJourneyCertificationRunResponseSchema,
   ownerJourneyCertificationSnapshotSchema,
+  ownerJourneyTrustSnapshotSchema,
   type ExternalLearningCollection,
   type ExternalLearningSession,
   type OwnerJourneyCertificationPreview,
   type OwnerJourneyCertificationRunResponse,
   type OwnerJourneyCertificationSnapshot,
+  type OwnerJourneyTrustSnapshot,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 import {
   projectLifecycleRecordSchema,
@@ -259,6 +261,10 @@ export type ControlPlaneServerOptions = {
       id: string,
       expectedRevision: number,
     ) => ExternalLearningSession | Promise<ExternalLearningSession>;
+  };
+  ownerJourneyTrust?: {
+    snapshot: () => OwnerJourneyTrustSnapshot | Promise<OwnerJourneyTrustSnapshot>;
+    tick: () => OwnerJourneyTrustSnapshot | Promise<OwnerJourneyTrustSnapshot>;
   };
   autonomy?: {
     snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
@@ -1237,6 +1243,20 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       if (
+        url.pathname === "/api/v1/owner-journey-trust" &&
+        request.method !== "GET"
+      ) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
+        url.pathname === "/api/v1/owner-journey-trust/tick" &&
+        request.method !== "POST"
+      ) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (
         [
           "/api/v1/owner-journey-certification/preview",
           "/api/v1/owner-journey-certification/run",
@@ -1279,6 +1299,27 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
             await options.ownerJourneyCertification.snapshot(),
           ),
         );
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/owner-journey-trust" &&
+        options.ownerJourneyTrust
+      ) {
+        if (requestBodyDeclared(request) || url.search)
+          throw new ControlPlaneRequestError("Trust status does not accept input.");
+        sendJson(response, 200, ownerJourneyTrustSnapshotSchema.parse(await options.ownerJourneyTrust.snapshot()));
+        return;
+      }
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/v1/owner-journey-trust/tick" &&
+        options.ownerJourneyTrust
+      ) {
+        if (requestBodyDeclared(request))
+          throw new ControlPlaneRequestError("Trust refresh does not accept a body.");
+        requireIdempotencyKey(request);
+        sendJson(response, 200, ownerJourneyTrustSnapshotSchema.parse(await options.ownerJourneyTrust.tick()));
         return;
       }
       if (

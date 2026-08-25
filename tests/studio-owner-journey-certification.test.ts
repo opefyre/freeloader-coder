@@ -23,6 +23,10 @@ test("Action Center owns a minimal honest certification and consented-learning e
     "explicitly consented",
     "anonymous",
     "external adoption",
+    "Pilot readiness",
+    "Anonymous aggregates only",
+    "At least 3 completed sessions",
+    "Refresh evidence",
   ])
     assert.equal(
       source.toLocaleLowerCase().includes(phrase.toLocaleLowerCase()),
@@ -40,6 +44,9 @@ test("Action Center owns a minimal honest certification and consented-learning e
     /saved=\{async \(\) => \{\s*setShowLearning\(false\)/,
   );
   assert.match(source, /saved=\{async \(message\) =>/);
+  assert.match(source, /getOwnerJourneyTrust/);
+  assert.match(source, /tickOwnerJourneyTrust/);
+  assert.doesNotMatch(source, /participantAlias.*trust\.learning|trust\.learning.*note/);
 });
 
 test("certification UI and client preserve accessibility, responsive layout, privacy, and loopback boundaries", () => {
@@ -57,4 +64,5 @@ test("certification UI and client preserve accessibility, responsive layout, pri
   assert.match(client, /MAX_BYTES/);
   assert.match(client, /127\.0\.0\.1/);
   assert.match(client, /Idempotency-Key/);
+  assert.match(client, /\/api\/v1\/owner-journey-trust/);
 });

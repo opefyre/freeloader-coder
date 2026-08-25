@@ -61,3 +61,20 @@ structured trust/friction feedback, and a digest. Draft, completed, and
 withdrawn states remain local. Synthetic certification cannot be promoted into
 external evidence, and a single completed learning session cannot be described
 as adoption, retention, or market validation.
+
+## Automatic trust freshness and pilot-readiness policy
+
+Local certification is evaluated on startup and hourly, with a seven-day
+freshness window. Only one due run can be active. A failed automatic run keeps
+the last passing evidence and waits six hours before retrying, preventing
+continuous quota or compute pressure. Every automatic path has a literal $0
+spend limit and no external effect.
+
+Pilot learning becomes decision-eligible only after three completed consented
+sessions. The aggregate includes completion rate, median time-to-preview,
+average trust, the share of ratings at four or five, and bounded friction
+counts. It excludes participant aliases, notes, drafts, and withdrawn sessions.
+The initial review thresholds are 70% completion, a median preview time of at
+most 30 minutes, and at least 67% of ratings at four or five. Passing these
+thresholds means “ready for owner review,” not adoption, product-market fit, or
+public-launch approval.

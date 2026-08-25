@@ -202,6 +202,17 @@ prompts, project files, names, email, credentials, attachments, private Jira
 content, and provider output. A draft can be completed or withdrawn locally.
 One session is learning evidence, never an adoption claim.
 
+Codkesh evaluates this trust evidence automatically at startup and once per
+hour without keeping the process alive. A passing local receipt is current for
+seven days; due work is coalesced into one zero-cost run, while failures retain
+the last pass and wait six hours before retrying. Action Center shows the next
+check and an explicit manual refresh. Completed consented sessions are reduced
+to counts, completion rate, median time-to-preview, trust distribution, and
+friction frequencies. Drafts and withdrawals are excluded, and aliases and
+notes never leave the private session store. Pilot readiness requires current
+certification and at least three completed sessions; it is a review gate, not
+an adoption or market-validation claim.
+
 `npm run artifacts:identity:preview` shows a mutation-free governed-artifact
 identity plan. `npm run artifacts:identity:apply` applies the same explicit
 replacement through digest-bound writes with history preservation. Changed

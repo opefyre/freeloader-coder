@@ -143,6 +143,61 @@ export const externalLearningCompleteSchema = z.strictObject({
   note: z.string().trim().max(400).default(""),
 });
 
+export const certificationFreshnessSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("local_certification_freshness"),
+  state: z.enum(["current", "due", "overdue", "running", "failed", "not_run"]),
+  observedAt: z.number().int().nonnegative(),
+  lastPassedAt: z.number().int().nonnegative().nullable(),
+  nextCheckAt: z.number().int().nonnegative(),
+  dueAt: z.number().int().nonnegative().nullable(),
+  retryAt: z.number().int().nonnegative().nullable(),
+  cadenceMs: z.number().int().min(86_400_000).max(30 * 86_400_000),
+  automaticSpendLimitUsd: z.literal(0),
+  message: z.string().trim().min(1).max(240),
+});
+
+export const externalLearningAggregateSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("privacy_safe_external_learning_aggregate"),
+  observedAt: z.number().int().nonnegative(),
+  completedSessions: z.number().int().nonnegative().max(50),
+  eligibleForDecision: z.boolean(),
+  minimumSampleSize: z.literal(3),
+  completionRatePercent: z.number().int().min(0).max(100).nullable(),
+  medianTimeToPreviewSeconds: z.number().int().min(1).max(86_400).nullable(),
+  averageTrustRating: z.number().min(1).max(5).nullable(),
+  trustAtLeastFourPercent: z.number().int().min(0).max(100).nullable(),
+  frictionCounts: z.record(externalLearningFrictionSchema, z.number().int().nonnegative().max(50)),
+  excludedDrafts: z.number().int().nonnegative().max(50),
+  excludedWithdrawn: z.number().int().nonnegative().max(50),
+  automaticSpendLimitUsd: z.literal(0),
+  limitations: z.array(z.string().trim().min(1).max(200)).min(1).max(6),
+});
+
+export const pilotReadinessSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("local_pilot_readiness_policy"),
+  observedAt: z.number().int().nonnegative(),
+  state: z.enum(["certification_needed", "learning_needed", "review_ready", "thresholds_not_met"]),
+  title: z.string().trim().min(1).max(100),
+  reason: z.string().trim().min(1).max(240),
+  nextAction: z.string().trim().min(1).max(160),
+  reasons: z.array(z.string().trim().min(1).max(160)).max(6),
+  automaticSpendLimitUsd: z.literal(0),
+});
+
+export const ownerJourneyTrustSnapshotSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("local_owner_journey_trust"),
+  observedAt: z.number().int().nonnegative(),
+  validForMs: z.number().int().min(1_000).max(60_000),
+  freshness: certificationFreshnessSchema,
+  learning: externalLearningAggregateSchema,
+  readiness: pilotReadinessSchema,
+  automaticSpendLimitUsd: z.literal(0),
+});
+
 export type OwnerJourneyCertificationReceipt = z.infer<
   typeof ownerJourneyCertificationReceiptSchema
 >;
@@ -161,3 +216,7 @@ export type ExternalLearningSession = z.infer<
 export type ExternalLearningCollection = z.infer<
   typeof externalLearningCollectionSchema
 >;
+export type CertificationFreshness = z.infer<typeof certificationFreshnessSchema>;
+export type ExternalLearningAggregate = z.infer<typeof externalLearningAggregateSchema>;
+export type PilotReadiness = z.infer<typeof pilotReadinessSchema>;
+export type OwnerJourneyTrustSnapshot = z.infer<typeof ownerJourneyTrustSnapshotSchema>;
