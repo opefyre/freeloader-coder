@@ -51,7 +51,7 @@ export const providerConnectionGuides: readonly ProviderConnectionGuide[] = [
     minimumPermission: "Inference only",
     steps: [
       "Open the Groq API Keys page.",
-      "Create a key for Pipeline Studio.",
+      "Create a key for Codkesh.",
       "Return and use secure key entry.",
       "Run free-status, quota, model, and live-canary checks."
     ],

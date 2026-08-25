@@ -10,7 +10,7 @@
     "url": "https://github.com/opefyre/freeloader-coder/issues"
   },
   "version": "1.12.0",
-  "description": "Pipeline Studio coding canvas and autonomous execution workspace",
+  "description": "Codkesh coding canvas and autonomous execution workspace",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -97,7 +97,7 @@
     "prelint": "npm run make-i18n",
     "lint": "npm run typecheck && eslint src && prettier --check src/**/*.{ts,tsx}",
     "lint:fix": "eslint src --fix && prettier --write src/**/*.{ts,tsx}",
-    "postinstall": "node -e \"if (process.env.npm_config_global === 'true') { console.log('Pipeline Studio canvas installed.') }\"",
+    "postinstall": "node -e \"if (process.env.npm_config_global === 'true') { console.log('Codkesh canvas installed.') }\"",
     "prepare": "husky",
     "typecheck": "react-router typegen && tsc",
     "typecheck:staged": "react-router typegen && npx tsc --noEmit --skipLibCheck",

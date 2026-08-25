@@ -109,7 +109,7 @@ export function evaluateResourcePolicy(input: {
     return {
       decision: "reduce",
       concurrency: 1,
-      plainLanguage: "The computer is busy, so Pipeline Studio reduced work to one safe task.",
+      plainLanguage: "The computer is busy, so Codkesh reduced work to one safe task.",
       limits,
       resumeToken: null,
       stateDigest

@@ -36,7 +36,7 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/v1/oauth/start") {
       const origin = request.headers.get("Origin");
-      if (!isLocalOrigin(origin)) return json({ error: "Local Pipeline Studio origin required." }, 403);
+      if (!isLocalOrigin(origin)) return json({ error: "Local Codkesh origin required." }, 403);
       const input = await request.json().catch(() => null) as { provider?: unknown; returnTo?: unknown } | null;
       if (!input || !isProvider(input.provider) || typeof input.returnTo !== "string" || !isLocalReturn(input.returnTo)) return json({ error: "Invalid authorization request." }, 400);
       if (!providerConfigured(env, input.provider)) return json({ error: `${label(input.provider)} connection is temporarily unavailable.` }, 503);
@@ -47,10 +47,10 @@ export default {
     if (request.method === "GET" && url.pathname.startsWith("/callback/")) {
       const provider = url.pathname.slice("/callback/".length);
       const code = url.searchParams.get("code"); const state = url.searchParams.get("state");
-      if (!isProvider(provider) || !code || !state) return page("Connection was not approved", "Return to Pipeline Studio and try again.", 400);
+      if (!isProvider(provider) || !code || !state) return page("Connection was not approved", "Return to Codkesh and try again.", 400);
       const stored = await env.OAUTH_STATE.get(`state:${state}`, "json") as StoredState | null;
       await env.OAUTH_STATE.delete(`state:${state}`);
-      if (!stored || stored.provider !== provider || Date.now() - stored.createdAt > 600_000) return page("Connection expired", "Return to Pipeline Studio and try again.", 400);
+      if (!stored || stored.provider !== provider || Date.now() - stored.createdAt > 600_000) return page("Connection expired", "Return to Codkesh and try again.", 400);
       try {
         const credential = await exchangeCode(url.origin, provider, code, stored.verifier, env);
         if ((provider === "jira" || provider === "google") && typeof credential.refresh_token === "string") {
@@ -63,12 +63,12 @@ export default {
         return Response.redirect(destination.toString(), 302);
       } catch (error) {
         console.error("oauth_callback_failed", provider, error instanceof Error ? error.message : "unknown");
-        return page("Connection failed", "No access was saved. Return to Pipeline Studio and try again.", 502);
+        return page("Connection failed", "No access was saved. Return to Codkesh and try again.", 502);
       }
     }
     if (request.method === "POST" && url.pathname === "/v1/oauth/exchange") {
       const origin = request.headers.get("Origin");
-      if (!isLocalOrigin(origin)) return json({ error: "Local Pipeline Studio origin required." }, 403);
+      if (!isLocalOrigin(origin)) return json({ error: "Local Codkesh origin required." }, 403);
       const input = await request.json().catch(() => null) as { ticket?: unknown } | null;
       if (!input || typeof input.ticket !== "string" || input.ticket.length < 32) return json({ error: "Invalid connection ticket." }, 400);
       const key = `ticket:${input.ticket}`; const result = await env.OAUTH_STATE.get(key, "json"); await env.OAUTH_STATE.delete(key);
@@ -76,7 +76,7 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/v1/oauth/refresh") {
       const origin = request.headers.get("Origin");
-      if (!isLocalOrigin(origin)) return json({ error: "Local Pipeline Studio origin required." }, 403);
+      if (!isLocalOrigin(origin)) return json({ error: "Local Codkesh origin required." }, 403);
       const input = await request.json().catch(() => null) as { provider?: unknown; refreshGrant?: unknown; refreshToken?: unknown } | null;
       if (!input || (input.provider !== "google" && input.provider !== "jira")) return json({ error: "Invalid refresh request." }, 400, origin);
       try {

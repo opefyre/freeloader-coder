@@ -175,7 +175,7 @@ export const contentPatternExamples: {
     kind: "approval",
     title: "Ready to apply the approved plan",
     whatChanges: ["Add the activity timeline UI", "Add contract tests and evidence"],
-    where: ["Pipeline Studio repository", "Local feature branch"],
+    where: ["Codkesh repository", "Local feature branch"],
     externalEffects: [],
     evidenceRequirement:
       "Show the changed files, validation results, and the resulting local commit before completion.",

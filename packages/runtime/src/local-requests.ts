@@ -611,7 +611,10 @@ export const localCommitPreviewSchema = z.strictObject({
   deletions: z.number().int().nonnegative().max(100_000),
   hooksDisabled: z.literal(true),
   signingDisabled: z.literal(true),
-  identity: z.literal("Pipeline Studio <pipeline-studio@local.invalid>"),
+  identity: z.union([
+    z.literal("Codkesh <codkesh@local.invalid>"),
+    z.literal("Pipeline Studio <pipeline-studio@local.invalid>"),
+  ]),
   maximumCostUsd: z.literal(0),
   previewedAt: z.number().int().nonnegative(),
 });

@@ -1,8 +1,8 @@
 # Third-party notices
 
-Pipeline Studio includes a modified, embedded coding engine derived from
+Codkesh includes a modified, embedded coding engine derived from
 [OpenHands](https://github.com/OpenHands/OpenHands). The embedded source and its
-MIT license are retained under `engine/`. Pipeline Studio branding, product
+MIT license are retained under `engine/`. Codkesh branding, product
 workflow, orchestration, integrations, and outer application shell are separate
 project work.
 

@@ -31,7 +31,7 @@ for (const path of required) {
 
 const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 const major = Number(process.versions.node.split(".")[0]);
-if (major < 22) throw new Error("Pipeline Studio requires Node.js 22 or newer.");
+if (major < 22) throw new Error("Codkesh requires Node.js 22 or newer.");
 if (packageJson.private !== true) throw new Error("Workspace root must stay private.");
 
 console.log(`Setup OK: Node ${process.versions.node}, ${required.length} required entries.`);

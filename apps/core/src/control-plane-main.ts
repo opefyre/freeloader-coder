@@ -727,7 +727,7 @@ const executionJiraTimer = setInterval(() => {
   }).catch(() => undefined);
 }, 60_000);
 executionJiraTimer.unref();
-console.log(`Pipeline Studio control plane: http://${host}:${boundPort}`);
+console.log(`Codkesh control plane: http://${host}:${boundPort}`);
 console.log(
   "Loopback API. Project registration, grounded plans, and isolated-worktree preparation use real local state."
 );

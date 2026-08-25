@@ -36,7 +36,7 @@ const services = [
   }),
 ];
 
-console.log("Pipeline Studio is starting on loopback.");
+console.log("Codkesh is starting on loopback.");
 console.log(`Open: http://127.0.0.1:${studioPort}`);
 console.log("Paid model routing remains disabled.");
 

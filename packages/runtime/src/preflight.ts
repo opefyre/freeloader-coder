@@ -106,7 +106,7 @@ export function runPreflight(
         : "The private runtime state directory is not writable.",
       snapshot.stateDirectoryWritable
         ? null
-        : "Allow this user to write the local Pipeline Studio state directory, then Resume.",
+        : "Allow this user to write the local Codkesh state directory, then Resume.",
       "A user-only probe file can be created and removed."
     ),
   ];
@@ -147,7 +147,7 @@ export function runPreflight(
         ? "This profile already has an active controller."
         : "No competing controller owns this profile.",
       controllerConflict
-        ? "Open the existing Pipeline Studio window or stop that instance before Resume."
+        ? "Open the existing Codkesh window or stop that instance before Resume."
         : null,
       "At most one unexpired controller lease exists for this profile."
     )

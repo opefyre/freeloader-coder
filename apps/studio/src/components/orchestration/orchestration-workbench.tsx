@@ -263,7 +263,7 @@ export function OrchestrationWorkbench() {
               {groundingSnapshot.citations.map((citation) => (
                 <a
                   key={citation.path}
-                  href={`https://github.com/opefyre/pipeline-studio/blob/main/${citation.path}#L${citation.lines.split("–")[0]}`}
+                  href={`https://github.com/opefyre/freeloader-coder/blob/main/${citation.path}#L${citation.lines.split("–")[0]}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center justify-between gap-4 rounded-2xl bg-muted/50 px-3 py-2.5 text-xs outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"

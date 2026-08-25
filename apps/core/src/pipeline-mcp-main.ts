@@ -21,7 +21,7 @@ async function handleLine(line: string): Promise<void> {
     return send(id ?? null, {
       protocolVersion: "2024-11-05",
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "pipeline-studio", version: "1.0.0" },
+      serverInfo: { name: "codkesh", version: "1.0.0" },
     });
   }
   if (request.method === "ping") return send(id ?? null, {});

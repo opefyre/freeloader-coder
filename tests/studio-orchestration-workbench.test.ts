@@ -28,7 +28,7 @@ test("task plan exposes bounded edits and approval freezes them", () => {
 });
 
 test("grounding and scheduler claims expose inspectable evidence", () => {
-  assert.match(source, /github\.com\/opefyre\/pipeline-studio\/blob\/main/);
+  assert.match(source, /github\.com\/opefyre\/freeloader-coder\/blob\/main/);
   assert.match(source, /citation\.path/);
   assert.match(source, /citation\.lines/);
   assert.match(source, /classifyTaskActivity/);

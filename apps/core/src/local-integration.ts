@@ -192,8 +192,8 @@ function parsePaths(value: string): string[] {
 
 function identityEnv(): NodeJS.ProcessEnv {
   return {
-    GIT_AUTHOR_NAME: "Pipeline Studio", GIT_AUTHOR_EMAIL: "pipeline-studio@local.invalid",
-    GIT_COMMITTER_NAME: "Pipeline Studio", GIT_COMMITTER_EMAIL: "pipeline-studio@local.invalid",
+    GIT_AUTHOR_NAME: "Codkesh", GIT_AUTHOR_EMAIL: "codkesh@local.invalid",
+    GIT_COMMITTER_NAME: "Codkesh", GIT_COMMITTER_EMAIL: "codkesh@local.invalid",
   };
 }
 

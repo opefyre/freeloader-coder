@@ -15,7 +15,7 @@ test("one-command start builds and owns the unified loopback stack", async () =>
     "scripts/dev-with-automation.mjs",
     "SIGINT",
     "SIGTERM",
-    "Pipeline Studio is starting on loopback.",
+    "Codkesh is starting on loopback.",
   ]) {
     assert.equal(script.includes(phrase), true, `Missing local start contract: ${phrase}`);
   }

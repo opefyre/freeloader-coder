@@ -85,7 +85,7 @@ await atomicPrivateWrite(statePath, `${JSON.stringify(state, null, 2)}\n`);
 if (jsonOutput) {
   console.log(JSON.stringify(state));
 } else {
-  console.log(ready ? "Pipeline Studio is ready." : "Pipeline Studio needs attention.");
+  console.log(ready ? "Codkesh is ready." : "Codkesh needs attention.");
   for (const item of checks) {
     console.log(`${item.ready ? "✓" : "!"} ${item.label}: ${item.detail}`);
   }

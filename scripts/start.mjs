@@ -61,7 +61,7 @@ for (const child of children) {
   });
 }
 
-console.log("Starting Pipeline Studio on loopback.");
+console.log("Starting Codkesh on loopback.");
 console.log(`Studio: ${studioOrigin}`);
 console.log(`Control plane: http://127.0.0.1:${controlPort}/api/v1/health`);
 console.log("Press Ctrl+C to stop both foreground services.");

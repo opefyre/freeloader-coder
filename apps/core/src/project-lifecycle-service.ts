@@ -346,7 +346,7 @@ function scopeClarification(decision: EligibilityDecision): OwnerQuestion {
   return ownerQuestionSchema.parse({
     id: `question_${decision.requestId.slice("request_".length, "request_".length + 16)}`,
     prompt: "How substantial is this outcome?",
-    whyItMatters: "Pipeline Studio runs the autonomous product lifecycle only for a new product or a major feature.",
+    whyItMatters: "Codkesh runs the autonomous product lifecycle only for a new product or a major feature.",
     options: [
       { id: "new_product", label: "New product", consequence: "Continue through product discovery, solution design, planning, and delivery." },
       { id: "major_feature", label: "Major feature", consequence: "Continue after the existing product and affected systems are understood." },

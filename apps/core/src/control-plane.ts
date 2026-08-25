@@ -377,7 +377,7 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         const code = url.searchParams.get("code"); const state = url.searchParams.get("state");
         if (!code || !state) { response.statusCode = 400; response.end("Jira authorization was not completed."); return; }
         await options.integrationConnections.completeJiraOAuth({ code, state });
-        response.statusCode = 200; response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end("<!doctype html><title>Jira connected</title><body style='font-family:system-ui;background:#111;color:#fff;display:grid;place-items:center;height:100vh'><main><h1>Jira connected</h1><p>You can close this tab and return to Pipeline Studio.</p></main></body>");
+        response.statusCode = 200; response.setHeader("Content-Type", "text/html; charset=utf-8"); response.end("<!doctype html><title>Jira connected</title><body style='font-family:system-ui;background:#111;color:#fff;display:grid;place-items:center;height:100vh'><main><h1>Jira connected</h1><p>You can close this tab and return to Codkesh.</p></main></body>");
         return;
       }
       if (url.pathname === "/oauth/broker/callback" && options.integrationConnections?.completeBrokerOAuth) {

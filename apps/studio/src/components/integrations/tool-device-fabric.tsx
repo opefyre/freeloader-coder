@@ -35,7 +35,7 @@ const tools = [
     version: "1.4.0",
     permissions: ["Read selected repos", "Write studio branches", "Create draft PR"],
     effect: "External write",
-    source: "https://github.com/opefyre/pipeline-studio",
+    source: "https://github.com/opefyre/freeloader-coder",
     ticket: "https://opefyre.atlassian.net/browse/PIPE-80"
   },
   {

@@ -1526,7 +1526,7 @@ const isMainModule =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMainModule) {
-  main({ bannerTitle: "Pipeline Studio Engine" }).catch((err) => {
+  main({ bannerTitle: "Codkesh Engine" }).catch((err) => {
     logError(`Fatal error: ${err.message}`);
     if (err.stack) {
       console.error(c.dim + err.stack + c.reset);

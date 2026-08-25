@@ -352,7 +352,7 @@ export function buildReleaseNotes(input: {
   semanticVersion.parse(input.version);
   semanticVersion.parse(input.rollbackVersion);
   return [
-    `# Pipeline Studio ${input.version}`,
+    `# Codkesh ${input.version}`,
     section("Highlights", input.highlights),
     section("Migration", input.migrations),
     section("Compatibility", input.compatibilityChanges),

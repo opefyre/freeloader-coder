@@ -213,7 +213,7 @@ export class ProjectTaskWorkspaceService {
     }
     if (changed.some((path) => !task.allowedFiles.includes(path))) throw new ProjectTaskWorkspaceError("operation_denied", "Commit changes do not match exact file authority.");
     await git(workspace.root, ["add", "--", ...changed]);
-    await git(workspace.root, ["-c", "user.name=Pipeline Studio", "-c", "user.email=pipeline-studio@localhost", "commit", "--no-verify", "-m", `${task.jiraIssueKey}: ${task.title}`]);
+    await git(workspace.root, ["-c", "user.name=Codkesh", "-c", "user.email=codkesh@localhost", "commit", "--no-verify", "-m", `${task.jiraIssueKey}: ${task.title}`]);
     const commitDigest = (await git(workspace.root, ["rev-parse", "--verify", "HEAD"])).trim();
     return { commitDigest, evidenceDigest: hash(JSON.stringify({ commitDigest, changed, authorityDigest: workspace.authorityDigest })) };
   }
@@ -231,7 +231,7 @@ export class ProjectTaskWorkspaceService {
   async revertIntegration(canonicalRoot: string, workspace: PreparedTaskWorkspace, commitDigest: string) {
     const root = await realpath(canonicalRoot);
     if (parseChanged(await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).length > 0 || (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() !== commitDigest) throw new ProjectTaskWorkspaceError("integration_conflict", "Automatic integration restore was refused because canonical Git changed.");
-    await git(root, ["-c", "user.name=Pipeline Studio", "-c", "user.email=pipeline-studio@localhost", "revert", "--no-edit", commitDigest]);
+    await git(root, ["-c", "user.name=Codkesh", "-c", "user.email=codkesh@localhost", "revert", "--no-edit", commitDigest]);
     await git(root, ["diff", "--quiet", workspace.baseline, "HEAD"]);
     return { restoreDigest: hash(JSON.stringify({ baseline: workspace.baseline, failedCommit: commitDigest, restoredHead: (await git(root, ["rev-parse", "--verify", "HEAD"])).trim() })) };
   }

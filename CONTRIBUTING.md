@@ -1,4 +1,4 @@
-# Contributing to Pipeline Studio
+# Contributing to Codkesh
 
 Thank you for helping build reliable, understandable autonomous development.
 

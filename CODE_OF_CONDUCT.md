@@ -1,6 +1,6 @@
 # Community code of conduct
 
-Pipeline Studio contributors must make participation safe, constructive, and
+Codkesh contributors must make participation safe, constructive, and
 welcoming. Harassment, threats, discrimination, sexualized attention, doxxing,
 credential disclosure, and sustained disruption are not accepted.
 

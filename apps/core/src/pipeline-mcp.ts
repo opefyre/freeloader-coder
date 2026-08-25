@@ -1,7 +1,7 @@
 export const PIPELINE_MCP_TOOLS = [
   {
     name: "pipeline_status",
-    description: "Read Pipeline Studio health and runtime readiness.",
+    description: "Read Codkesh health and runtime readiness.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     path: "/api/v1/health",
   },
@@ -13,7 +13,7 @@ export const PIPELINE_MCP_TOOLS = [
   },
   {
     name: "pipeline_projects",
-    description: "List Pipeline Studio projects and their current lifecycle state.",
+    description: "List Codkesh projects and their current lifecycle state.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     path: "/api/v1/projects",
   },
@@ -31,10 +31,10 @@ export async function callPipelineMcpTool(
   controlPlaneBaseUrl = "http://127.0.0.1:4312",
 ): Promise<{ content: readonly { type: "text"; text: string }[]; isError?: boolean }> {
   const tool = PIPELINE_MCP_TOOLS.find((candidate) => candidate.name === name);
-  if (!tool) return mcpError("Unknown Pipeline Studio tool.");
+  if (!tool) return mcpError("Unknown Codkesh tool.");
   const base = new URL(controlPlaneBaseUrl);
   if (base.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(base.hostname)) {
-    return mcpError("Pipeline Studio MCP only connects to the local control plane.");
+    return mcpError("Codkesh MCP only connects to the local control plane.");
   }
   try {
     const response = await fetcher(new URL(tool.path, base), {
@@ -43,12 +43,12 @@ export async function callPipelineMcpTool(
       redirect: "error",
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return mcpError(`Pipeline Studio returned ${response.status}.`);
+    if (!response.ok) return mcpError(`Codkesh returned ${response.status}.`);
     const text = await readBounded(response, 512_000);
     const value = JSON.parse(text) as unknown;
     return { content: [{ type: "text", text: JSON.stringify(redactSensitive(value), null, 2) }] };
   } catch {
-    return mcpError("Pipeline Studio is unavailable. Start the local control plane and retry.");
+    return mcpError("Codkesh is unavailable. Start the local control plane and retry.");
   }
 }
 

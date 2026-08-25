@@ -70,7 +70,7 @@ const rawArticles: readonly HelpArticle[] = [
     steps: [
       "Open Settings, then Connections, and select the provider.",
       "Use the provider dashboard link to create the minimum required credential.",
-      "Paste it only into secure entry; Pipeline Studio stores it in the operating-system vault.",
+      "Paste it only into secure entry; Codkesh stores it in the operating-system vault.",
       "Wait for account, model, quota, and capability checks before the route becomes Ready."
     ],
     safeAlternative: "If free status cannot be proven, leave the route inactive and use another verified provider.",
@@ -164,7 +164,7 @@ const rawArticles: readonly HelpArticle[] = [
   }),
   article({
     id: "update-pipeline-studio",
-    title: "Update Pipeline Studio safely",
+    title: "Update Codkesh safely",
     summary: "Verify compatibility, preserve projects and data, preview migrations, and retain a proven rollback before applying a source update.",
     category: "safety",
     journeys: [],
@@ -389,7 +389,7 @@ export function supportAlternative(input: {
   if (input.requestType === "security") return "Use the private security disclosure channel.";
   if (!input.supportedVersion) return "Reproduce on the latest supported version or attach its compatibility status.";
   if (input.requestType === "customization") return "Ask in community discussions or propose a documented extension.";
-  if (input.requestType === "billing") return "Contact the billing owner for that provider; Pipeline Studio cannot inspect provider charges.";
+  if (input.requestType === "billing") return "Contact the billing owner for that provider; Codkesh cannot inspect provider charges.";
   return "Create a redacted issue with observable behavior and reproduction steps.";
 }
 

@@ -1,6 +1,6 @@
-# Pipeline Studio
+# Codkesh
 
-Pipeline Studio is one local-first autonomous product-development app for
+Codkesh is one local-first autonomous product-development app for
 GitHub-capable builders. Its single interface combines project intake,
 integrations, action and progress views, and a complete coding canvas. It turns
 a request into grounded, reviewable work; executes in isolation; validates
@@ -14,7 +14,7 @@ can ship.
 
 ## Current phase
 
-Unified local beta: Pipeline Studio owns the public UI, settings, integrations,
+Unified local beta: Codkesh owns the public UI, settings, integrations,
 project activity, model routing, and launch lifecycle. The embedded coding
 engine is an internal component and is not a second product or a second user
 entry point. Generated runtime state remains private and ignored.
@@ -25,8 +25,8 @@ Requirements: Git, Node.js 22 or newer, npm 10 or newer, 8 GB memory, and
 5 GB free disk. Docker, a local model runtime, cloud accounts, and provider keys are optional.
 
 ```sh
-git clone https://github.com/opefyre/freeloader-coder.git pipeline-studio
-cd pipeline-studio
+git clone https://github.com/opefyre/freeloader-coder.git codkesh
+cd codkesh
 npm ci
 npm run setup
 npm start
@@ -170,7 +170,7 @@ the [paid-provider architecture](docs/architecture/optional-paid-providers.md).
 They ship disabled and cannot execute without a later explicit credential,
 route, role, hard budget, and final approval.
 
-Pipeline Studio is available under the [Apache License 2.0](LICENSE). Public
+Codkesh is available under the [Apache License 2.0](LICENSE). Public
 contributions use DCO terms and must follow the
 [contributor guide](docs/contributing/README.md), the
 [community code of conduct](CODE_OF_CONDUCT.md), and the
