@@ -114,6 +114,8 @@ import {
   type AttentionSnapshot,
 } from "../../../packages/runtime/src/attention.js";
 import { AttentionError } from "./attention-center.js";
+import { OwnerPilotImprovementError } from "./owner-pilot-improvement-service.js";
+import { JiraDeliveryNeedsUserError } from "./jira-delivery-service.js";
 import {
   externalLearningCollectionSchema,
   externalLearningCompleteSchema,
@@ -129,6 +131,11 @@ import {
   ownerPilotCreateSchema,
   ownerPilotReviewSchema,
   ownerPilotSessionSchema,
+  ownerPilotImprovementCollectionSchema,
+  ownerPilotImprovementDecisionInputSchema,
+  ownerPilotImprovementDraftSchema,
+  ownerPilotImprovementEditInputSchema,
+  ownerPilotImprovementPreviewInputSchema,
   type ExternalLearningCollection,
   type ExternalLearningSession,
   type OwnerJourneyCertificationPreview,
@@ -138,6 +145,8 @@ import {
   type OwnerPilotCollection,
   type OwnerPilotReview,
   type OwnerPilotSession,
+  type OwnerPilotImprovementCollection,
+  type OwnerPilotImprovementDraft,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 import {
   projectLifecycleRecordSchema,
@@ -295,6 +304,13 @@ export type ControlPlaneServerOptions = {
       expectedRevision: number,
     ) => OwnerPilotSession | Promise<OwnerPilotSession>;
     review: () => OwnerPilotReview | Promise<OwnerPilotReview>;
+  };
+  ownerPilotImprovements?: {
+    list: () => OwnerPilotImprovementCollection | Promise<OwnerPilotImprovementCollection>;
+    preview: (input: unknown, idempotencyKey: string) => OwnerPilotImprovementDraft | Promise<OwnerPilotImprovementDraft>;
+    edit: (id: string, input: unknown) => OwnerPilotImprovementDraft | Promise<OwnerPilotImprovementDraft>;
+    approve: (id: string, input: unknown) => OwnerPilotImprovementDraft | Promise<OwnerPilotImprovementDraft>;
+    decline: (id: string, input: unknown) => OwnerPilotImprovementDraft | Promise<OwnerPilotImprovementDraft>;
   };
   autonomy?: {
     snapshot: () => AutonomySnapshot | Promise<AutonomySnapshot>;
@@ -1332,6 +1348,14 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         sendJson(response, 405, { error: "Method is not allowed." });
         return;
       }
+      if (url.pathname === "/api/v1/owner-pilot/improvements" && !["GET", "POST"].includes(request.method ?? "")) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (/^\/api\/v1\/owner-pilot\/improvements\/improvement_draft_[a-f0-9]{20}\/(edit|approve|decline)$/.test(url.pathname) && request.method !== "POST") {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
       if (
         request.method === "GET" &&
         url.pathname === "/api/v1/owner-journey-certification" &&
@@ -1420,6 +1444,28 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
                     .parse(body).expectedRevision,
                 );
         sendJson(response, 200, ownerPilotSessionSchema.parse(session));
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/api/v1/owner-pilot/improvements" && options.ownerPilotImprovements) {
+        if (requestBodyDeclared(request) || url.search) throw new ControlPlaneRequestError("Improvement handoffs do not accept input.");
+        sendJson(response, 200, ownerPilotImprovementCollectionSchema.parse(await options.ownerPilotImprovements.list()));
+        return;
+      }
+      if (request.method === "POST" && url.pathname === "/api/v1/owner-pilot/improvements" && options.ownerPilotImprovements) {
+        const draft = await options.ownerPilotImprovements.preview(ownerPilotImprovementPreviewInputSchema.parse(await readJsonBody(request)), requireIdempotencyKey(request));
+        sendJson(response, 200, ownerPilotImprovementDraftSchema.parse(draft));
+        return;
+      }
+      const improvementMutation = url.pathname.match(/^\/api\/v1\/owner-pilot\/improvements\/(improvement_draft_[a-f0-9]{20})\/(edit|approve|decline)$/);
+      if (request.method === "POST" && improvementMutation && options.ownerPilotImprovements) {
+        const [, id, action] = improvementMutation;
+        const body = await readJsonBody(request);
+        const draft = action === "edit"
+          ? await options.ownerPilotImprovements.edit(id!, ownerPilotImprovementEditInputSchema.parse(body))
+          : action === "approve"
+            ? await options.ownerPilotImprovements.approve(id!, ownerPilotImprovementDecisionInputSchema.parse(body))
+            : await options.ownerPilotImprovements.decline(id!, ownerPilotImprovementDecisionInputSchema.parse(body));
+        sendJson(response, 200, ownerPilotImprovementDraftSchema.parse(draft));
         return;
       }
       if (
@@ -3593,6 +3639,10 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
               ? 409
               : 503;
         sendJson(response, status, { error: error.message, code: error.code });
+      } else if (error instanceof OwnerPilotImprovementError) {
+        sendJson(response, /changed|exact preview/i.test(error.message) ? 409 : 400, { error: error.message });
+      } else if (error instanceof JiraDeliveryNeedsUserError) {
+        sendJson(response, 409, { error: error.message });
       } else if (error instanceof ProjectLifecycleServiceError) {
         sendJson(
           response,

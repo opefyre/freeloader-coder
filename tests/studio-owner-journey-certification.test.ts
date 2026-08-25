@@ -66,3 +66,25 @@ test("certification UI and client preserve accessibility, responsive layout, pri
   assert.match(client, /Idempotency-Key/);
   assert.match(client, /\/api\/v1\/owner-journey-trust/);
 });
+
+test("pilot improvements use one exact owner decision before Jira mutation", () => {
+  for (const phrase of [
+    "Jira improvement preview",
+    "Review Jira handoff",
+    "Save edits",
+    "Approve and create",
+    "Decline",
+    "Retry remaining",
+    "evidence receipt",
+  ]) assert.match(source, new RegExp(phrase, "i"));
+  assert.match(source, /expectedPreviewDigest: draft\.previewDigest/);
+  assert.match(source, /expectedRevision: draft\.revision/);
+  assert.match(source, /aria-label="Jira receipts"/);
+  assert.match(source, /role="alert"/);
+  for (const path of [
+    "/api/v1/owner-pilot/improvements",
+    "/edit",
+    "/approve",
+    "/decline",
+  ]) assert.equal(client.includes(path), true, path);
+});

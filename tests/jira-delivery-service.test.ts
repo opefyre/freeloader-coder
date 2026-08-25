@@ -116,6 +116,55 @@ test("Jira delivery detects an externally edited marker issue and creates nothin
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("Jira improvement handoff targets only the selected project and records evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "jira-improvement-"));
+  try {
+    const requests: { path: string; body: string }[] = [];
+    const fetcher: typeof fetch = async (url, init) => {
+      const parsed = new URL(String(url));
+      requests.push({ path: parsed.pathname, body: String(init?.body ?? "") });
+      if (parsed.pathname.endsWith("/myself")) return json({ accountId: "account-1" });
+      if (parsed.pathname.endsWith("/issuetype/project")) return json([{ id: "102", name: "Task" }]);
+      if (parsed.pathname.endsWith("/search/jql")) return json({ issues: [] });
+      if (parsed.pathname.endsWith("/issue") && init?.method === "POST") return json({ id: "501", key: "PIPE-501" }, 201);
+      if (parsed.pathname.endsWith("/issue/PIPE-501/comment")) return json({ id: "601" }, 201);
+      throw new Error(`Unexpected Jira request: ${parsed.pathname}`);
+    };
+    const service = new JiraDeliveryService(
+      root,
+      { list: async () => ({ schemaVersion: 1, provenance: "local_observation", observedAt: 1, projects: [{ schemaVersion: 1, id: projectId, displayName: "Product", state: "ready", observedAt: 1, validForMs: 60_000, facts: [], inferences: [], decisions: [], warnings: [], resources: [{ id: "binding_abcdef0123456789", kind: "jira_project", connectionId: "jira:account", resourceId: "20000", label: "PIPE", url: "https://example.atlassian.net/jira/software/projects/PIPE", role: "primary", selectedAt: 1 }] }] }) },
+      {} as never,
+      {} as never,
+      { read: async () => JSON.stringify({ siteUrl: "https://example.atlassian.net", email: "owner@example.com", apiToken: "secret-token" }) },
+      fetcher,
+      () => 100,
+    );
+    assert.deepEqual(await service.selectedImprovementProject(projectId), { key: "PIPE" });
+    const receipt = await service.createImprovement(projectId, {
+      id: `improvement_${"a".repeat(20)}`,
+      category: "clarity",
+      title: "Clarify owner decisions",
+      problem: "Owners repeatedly found decisions unclear.",
+      recommendation: "Show one bounded decision.",
+      evidenceCount: 3,
+      priority: "high",
+      estimatedSize: "small",
+      dependencies: [],
+      acceptanceCriteria: ["Three sessions pass.", "One action is obvious."],
+      evidenceDigest: "f".repeat(64),
+    }, "codkesh_pilot_marker");
+    assert.equal(receipt.issueKey, "PIPE-501");
+    assert.equal(receipt.evidenceCommented, true);
+    const serialized = requests.map((request) => request.body).join("\n");
+    assert.match(serialized, /codkesh-pilot-improvement/);
+    assert.match(serialized, /Acceptance criteria/);
+    assert.match(serialized, /Definition of Done/);
+    assert.match(serialized, /Evidence required for closure/);
+    assert.match(serialized, /Evidence digest/);
+    assert.ok(requests.some((request) => request.path.endsWith("/issue/PIPE-501/comment")));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 }

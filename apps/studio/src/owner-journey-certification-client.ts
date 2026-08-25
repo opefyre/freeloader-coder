@@ -8,6 +8,8 @@ import {
   ownerPilotCollectionSchema,
   ownerPilotReviewSchema,
   ownerPilotSessionSchema,
+  ownerPilotImprovementCollectionSchema,
+  ownerPilotImprovementDraftSchema,
   type ExternalLearningCollection,
   type ExternalLearningSession,
   type OwnerJourneyCertificationPreview,
@@ -17,6 +19,8 @@ import {
   type OwnerPilotCollection,
   type OwnerPilotReview,
   type OwnerPilotSession,
+  type OwnerPilotImprovementCollection,
+  type OwnerPilotImprovementDraft,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 
 const MAX_BYTES = 300_000;
@@ -194,6 +198,21 @@ export async function withdrawOwnerPilot(
       json({ expectedRevision }),
     ),
   );
+}
+export async function listOwnerPilotImprovements(endpoint: string): Promise<OwnerPilotImprovementCollection> {
+  return ownerPilotImprovementCollectionSchema.parse(await request(new URL("/api/v1/owner-pilot/improvements", loopback(endpoint)), { method: "GET" }));
+}
+export async function previewOwnerPilotImprovements(endpoint: string, input: unknown, idempotencyKey: string): Promise<OwnerPilotImprovementDraft> {
+  return ownerPilotImprovementDraftSchema.parse(await request(new URL("/api/v1/owner-pilot/improvements", loopback(endpoint)), json(input, idempotencyKey)));
+}
+export async function editOwnerPilotImprovements(endpoint: string, id: string, input: unknown): Promise<OwnerPilotImprovementDraft> {
+  return ownerPilotImprovementDraftSchema.parse(await request(new URL(`/api/v1/owner-pilot/improvements/${id}/edit`, loopback(endpoint)), json(input)));
+}
+export async function approveOwnerPilotImprovements(endpoint: string, id: string, input: unknown): Promise<OwnerPilotImprovementDraft> {
+  return ownerPilotImprovementDraftSchema.parse(await request(new URL(`/api/v1/owner-pilot/improvements/${id}/approve`, loopback(endpoint)), json(input)));
+}
+export async function declineOwnerPilotImprovements(endpoint: string, id: string, input: unknown): Promise<OwnerPilotImprovementDraft> {
+  return ownerPilotImprovementDraftSchema.parse(await request(new URL(`/api/v1/owner-pilot/improvements/${id}/decline`, loopback(endpoint)), json(input)));
 }
 function json(body: unknown, idempotencyKey?: string): RequestInit {
   return {

@@ -8,18 +8,24 @@ import type {
   OwnerJourneyTrustSnapshot,
   OwnerPilotReview,
   OwnerPilotSession,
+  OwnerPilotImprovementDraft,
 } from "../../../../../packages/runtime/src/owner-journey-certification.js";
 import {
+  approveOwnerPilotImprovements,
   advanceOwnerPilot,
   completeOwnerPilot,
   createOwnerPilot,
   getOwnerPilotReview,
   getOwnerJourneyCertification,
   getOwnerJourneyTrust,
+  listOwnerPilotImprovements,
   listOwnerPilot,
   previewOwnerJourneyCertification,
+  previewOwnerPilotImprovements,
   runOwnerJourneyCertification,
   tickOwnerJourneyTrust,
+  declineOwnerPilotImprovements,
+  editOwnerPilotImprovements,
   withdrawOwnerPilot,
 } from "../../owner-journey-certification-client.js";
 import { listLocalProjects } from "../../local-project-client.js";
@@ -323,17 +329,19 @@ function PilotCapture({
   const [frictions, setFrictions] = useState<OwnerPilotSession["frictions"]>([
     "none",
   ]);
+  const [drafts, setDrafts] = useState<readonly OwnerPilotImprovementDraft[]>([]);
   const active = sessions.find((session) => session.status === "active");
   useEffect(() => {
-    void listLocalProjects({ endpoint }).then((value) => {
-      const available = value.projects.map((project) => ({
-        id: project.id,
-        name: project.displayName,
-      }));
+    void Promise.all([listLocalProjects({ endpoint }), listOwnerPilotImprovements(endpoint)]).then(([value, handoffs]) => {
+      const available = value.projects.map((project) => ({ id: project.id, name: project.displayName }));
       setProjects(available);
       setProjectId((current) => current || available[0]?.id || "");
+      setDrafts(handoffs.drafts);
     });
   }, [endpoint]);
+  async function reloadDrafts() {
+    setDrafts((await listOwnerPilotImprovements(endpoint)).drafts);
+  }
   async function create() {
     setBusy(true);
     setError("");
@@ -633,8 +641,91 @@ function PilotCapture({
               ))}
             </ul>
           )}
+          {review.state === "improvements_needed" && projectId && !drafts.some((draft) => draft.projectId === projectId && ["pending", "partially_applied"].includes(draft.state)) && (
+            <Button
+              className="mt-3"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                void previewOwnerPilotImprovements(endpoint, { projectId, expectedReviewDigest: review.evidenceDigest }, `pilot.improvements.ui.${Date.now()}`)
+                  .then(() => reloadDrafts())
+                  .catch((value) => setError(value instanceof Error ? value.message : "The Jira preview could not be prepared."))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Review Jira handoff
+            </Button>
+          )}
         </div>
       )}
+      {drafts.filter((draft) => draft.projectId === projectId).slice(-1).map((draft) => (
+        <ImprovementDecision key={`${draft.id}:${draft.revision}`} endpoint={endpoint} draft={draft} busy={busy} setBusy={setBusy} failed={setError} saved={async (message) => { await reloadDrafts(); await saved(message); }} />
+      ))}
+    </section>
+  );
+}
+
+function ImprovementDecision({ endpoint, draft, busy, setBusy, failed, saved }: {
+  endpoint: string;
+  draft: OwnerPilotImprovementDraft;
+  busy: boolean;
+  setBusy: (value: boolean) => void;
+  failed: (value: string) => void;
+  saved: (message: string) => Promise<void>;
+}) {
+  const [items, setItems] = useState(draft.improvements);
+  const actionable = draft.state === "pending" || draft.state === "partially_applied";
+  async function act(action: "save" | "approve" | "decline") {
+    setBusy(true);
+    failed("");
+    try {
+      if (action === "save") {
+        await editOwnerPilotImprovements(endpoint, draft.id, { expectedRevision: draft.revision, improvements: items });
+        await saved("Edited preview saved. Review the new revision before approving.");
+      } else if (action === "approve") {
+        const next = await approveOwnerPilotImprovements(endpoint, draft.id, { expectedRevision: draft.revision, expectedPreviewDigest: draft.previewDigest });
+        await saved(next.state === "completed" ? "Approved improvements were created in Jira." : "Jira applied part of the handoff. The remaining items are safe to retry.");
+      } else {
+        await declineOwnerPilotImprovements(endpoint, draft.id, { expectedRevision: draft.revision, expectedPreviewDigest: draft.previewDigest });
+        await saved("Jira handoff declined. No Jira item was created.");
+      }
+    } catch (value) {
+      failed(value instanceof Error ? value.message : "The improvement decision failed safely.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section aria-labelledby={`${draft.id}-title`} className="mt-5 rounded-[1.5rem] bg-background p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 id={`${draft.id}-title`} className="font-semibold">Jira improvement preview</h3>
+          <p className="mt-1 text-xs text-muted-foreground">{draft.jiraProjectKey} · revision {draft.revision} · exactly {draft.improvements.length} task{draft.improvements.length === 1 ? "" : "s"}</p>
+        </div>
+        <Badge tone={draft.state === "completed" ? "positive" : draft.state === "partially_applied" ? "caution" : "neutral"}>{label(draft.state)}</Badge>
+      </div>
+      <div className="mt-4 space-y-3">
+        {items.map((item, index) => (
+          <div key={item.id} className="rounded-2xl bg-muted/55 p-3">
+            <label className="block text-xs font-medium">Title
+              <input className="mt-2 h-10 w-full rounded-xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30" disabled={!actionable || draft.state === "partially_applied"} value={item.title} onChange={(event) => setItems((current) => current.map((candidate, position) => position === index ? { ...candidate, title: event.target.value } : candidate))} />
+            </label>
+            <label className="mt-3 block text-xs font-medium">Recommendation
+              <textarea className="mt-2 min-h-20 w-full resize-y rounded-xl bg-background p-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30" disabled={!actionable || draft.state === "partially_applied"} value={item.recommendation} onChange={(event) => setItems((current) => current.map((candidate, position) => position === index ? { ...candidate, recommendation: event.target.value } : candidate))} />
+            </label>
+            <p className="mt-2 text-xs text-muted-foreground">{item.evidenceCount} sessions · {item.acceptanceCriteria.length} acceptance checks · $0</p>
+          </div>
+        ))}
+      </div>
+      {draft.lastError && <p role="alert" className="mt-3 rounded-2xl bg-amber-400/10 p-3 text-xs">{draft.lastError}</p>}
+      {draft.receipts.length > 0 && <ul aria-label="Jira receipts" className="mt-3 space-y-2">{draft.receipts.map((receipt) => <li key={receipt.issueKey}><a className="text-xs font-medium text-primary underline-offset-4 hover:underline" href={receipt.url} target="_blank" rel="noreferrer">{receipt.issueKey} · evidence receipt</a></li>)}</ul>}
+      {actionable && <div className="mt-4 flex flex-wrap gap-2">
+        {draft.state === "pending" && <Button variant="secondary" disabled={busy} onClick={() => void act("save")}>Save edits</Button>}
+        <Button disabled={busy} onClick={() => void act("approve")}>{draft.state === "partially_applied" ? "Retry remaining" : "Approve and create"}</Button>
+        {draft.state === "pending" && <Button variant="ghost" disabled={busy} onClick={() => void act("decline")}>Decline</Button>}
+      </div>}
     </section>
   );
 }

@@ -314,6 +314,56 @@ export const ownerPilotReviewSchema = z.strictObject({
   automaticSpendLimitUsd: z.literal(0),
 });
 
+export const ownerPilotImprovementDecisionSchema = z.enum([
+  "pending",
+  "declined",
+  "applying",
+  "partially_applied",
+  "completed",
+]);
+export const ownerPilotImprovementDraftSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(/^improvement_draft_[a-f0-9]{20}$/),
+  projectId: z.string().regex(/^project_[a-f0-9]{16}$/),
+  revision: z.number().int().positive(),
+  state: ownerPilotImprovementDecisionSchema,
+  reviewDigest: digest,
+  previewDigest: digest,
+  improvements: z.array(ownerPilotImprovementSchema).min(1).max(6),
+  jiraProjectKey: z.string().trim().min(1).max(40),
+  createdAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative(),
+  declinedAt: z.number().int().nonnegative().nullable(),
+  completedAt: z.number().int().nonnegative().nullable(),
+  receipts: z.array(z.strictObject({
+    improvementId: z.string().regex(/^improvement_[a-f0-9]{20}$/),
+    issueId: z.string().trim().min(1).max(100),
+    issueKey: z.string().trim().min(2).max(100),
+    url: z.string().url().max(2_048),
+    evidenceCommented: z.boolean(),
+  })).max(6),
+  lastError: z.string().trim().min(1).max(240).nullable(),
+  automaticSpendLimitUsd: z.literal(0),
+});
+export const ownerPilotImprovementCollectionSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("local_owner_approved_improvement_handoff"),
+  drafts: z.array(ownerPilotImprovementDraftSchema).max(50),
+  automaticSpendLimitUsd: z.literal(0),
+});
+export const ownerPilotImprovementPreviewInputSchema = z.strictObject({
+  projectId: z.string().regex(/^project_[a-f0-9]{16}$/),
+  expectedReviewDigest: digest,
+});
+export const ownerPilotImprovementEditInputSchema = z.strictObject({
+  expectedRevision: z.number().int().positive(),
+  improvements: z.array(ownerPilotImprovementSchema).min(1).max(6),
+});
+export const ownerPilotImprovementDecisionInputSchema = z.strictObject({
+  expectedRevision: z.number().int().positive(),
+  expectedPreviewDigest: digest,
+});
+
 export type OwnerJourneyCertificationReceipt = z.infer<
   typeof ownerJourneyCertificationReceiptSchema
 >;
@@ -345,3 +395,6 @@ export type OwnerJourneyTrustSnapshot = z.infer<
 export type OwnerPilotSession = z.infer<typeof ownerPilotSessionSchema>;
 export type OwnerPilotCollection = z.infer<typeof ownerPilotCollectionSchema>;
 export type OwnerPilotReview = z.infer<typeof ownerPilotReviewSchema>;
+export type OwnerPilotImprovement = z.infer<typeof ownerPilotImprovementSchema>;
+export type OwnerPilotImprovementDraft = z.infer<typeof ownerPilotImprovementDraftSchema>;
+export type OwnerPilotImprovementCollection = z.infer<typeof ownerPilotImprovementCollectionSchema>;

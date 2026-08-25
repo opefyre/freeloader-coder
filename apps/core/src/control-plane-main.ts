@@ -61,6 +61,7 @@ import { OwnerJourneyCertificationService } from "./owner-journey-certification-
 import { ExternalOwnerLearningService } from "./external-owner-learning-service.js";
 import { OwnerJourneyTrustService } from "./owner-journey-trust-service.js";
 import { OwnerPilotService } from "./owner-pilot-service.js";
+import { OwnerPilotImprovementService } from "./owner-pilot-improvement-service.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
 import { TelegramOwnerChannelService } from "./telegram-owner-channel-service.js";
 import { InfrastructureDeliveryService } from "./infrastructure-delivery-service.js";
@@ -266,6 +267,15 @@ const jiraDelivery = new JiraDeliveryService(
   projectDeliveryPlans,
   projectLifecycles,
   credentialVault,
+);
+const ownerPilotImprovements = new OwnerPilotImprovementService(
+  stateDirectory,
+  { review: async () => ownerPilot.review(await ownerJourneyTrust.snapshot()) },
+  {
+    selectedProject: (projectId) => jiraDelivery.selectedImprovementProject(projectId),
+    createImprovement: (projectId, improvement, marker) =>
+      jiraDelivery.createImprovement(projectId, improvement, marker),
+  },
 );
 const projectExecutions = new ProjectExecutionService(
   stateDirectory,
@@ -737,6 +747,13 @@ const controlPlane = createControlPlaneServer({
     withdraw: (id, expectedRevision) =>
       ownerPilot.withdraw(id, expectedRevision),
     review: async () => ownerPilot.review(await ownerJourneyTrust.snapshot()),
+  },
+  ownerPilotImprovements: {
+    list: () => ownerPilotImprovements.list(),
+    preview: (input, idempotencyKey) => ownerPilotImprovements.preview(input, idempotencyKey),
+    edit: (id, input) => ownerPilotImprovements.edit(id, input),
+    approve: (id, input) => ownerPilotImprovements.approve(id, input),
+    decline: (id, input) => ownerPilotImprovements.decline(id, input),
   },
   autonomy: {
     snapshot: () => autonomy.snapshot(),

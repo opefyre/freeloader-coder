@@ -217,6 +217,24 @@ least two sessions becomes a deterministic, evidence-linked improvement
 candidate; it remains a review input, not an adoption or market-validation
 claim.
 
+When repeated friction qualifies, Action Center can prepare one Jira handoff
+preview for the Jira project already selected in Project settings. Preparing or
+editing the preview creates no Jira issue. The owner reviews the exact revision
+and can save edits, approve and create, or decline. Approval creates only the
+shown Task items, assigns them to the connected Jira account, and includes the
+problem, recommendation, acceptance criteria, Definition of Done, evidence
+requirements, and privacy-safe evidence digest. Every created issue is returned
+as a clickable receipt. A changed preview or stale revision fails closed;
+decline has no Jira effect; a partial Jira outage preserves completed receipts
+and exposes **Retry remaining** without duplicating finished items. The path is
+always free-only and cannot authorize paid model or infrastructure usage.
+
+Recovery: refresh Action Center first. If the preview changed, review the new
+revision. If Jira reports a conflict, inspect the linked existing issue before
+retrying. If only part of the handoff completed, use **Retry remaining**; never
+delete the local receipt file to force a replay. Corrupt handoff evidence is
+preserved and requires explicit recovery rather than silent replacement.
+
 `npm run artifacts:identity:preview` shows a mutation-free governed-artifact
 identity plan. `npm run artifacts:identity:apply` applies the same explicit
 replacement through digest-bound writes with history preservation. Changed

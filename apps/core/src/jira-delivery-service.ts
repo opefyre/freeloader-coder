@@ -8,6 +8,7 @@ import type { ProjectDeliveryPlanService } from "./project-delivery-plan-service
 import type { ProjectLifecycleService } from "./project-lifecycle-service.js";
 import type { CredentialVault } from "../../../packages/providers/src/lifecycle.js";
 import { resolveCurrentJiraCredential } from "./jira-oauth-credential.js";
+import type { OwnerPilotImprovement } from "../../../packages/runtime/src/owner-journey-certification.js";
 
 export const JIRA_CREDENTIAL_REFERENCE = "vault:providers/jira/default";
 
@@ -50,6 +51,41 @@ export class JiraDeliveryService {
 
   async get(projectId: string) {
     return (await this.#load()).receipts[projectId] ?? null;
+  }
+
+  async selectedImprovementProject(projectId: string) {
+    const context = await this.#improvementContext(projectId);
+    return { key: context.selected.projectKey };
+  }
+
+  async createImprovement(projectId: string, improvement: OwnerPilotImprovement, marker: string) {
+    const { access, selected } = await this.#improvementContext(projectId);
+    const client = new JiraClient(access, this.fetcher);
+    const observed = await client.findByMarker(selected.projectKey, marker);
+    if (observed && observed.summary !== null && observed.summary !== improvement.title)
+      throw new JiraDeliveryNeedsUserError(`${observed.key} was edited in Jira after approval. Review the conflict before retrying.`);
+    const issue = observed ?? await client.createImprovement(selected.projectId, improvement, marker);
+    if (!observed) await client.commentImprovement(issue.key, improvement);
+    return {
+      issueId: issue.id,
+      issueKey: issue.key,
+      url: `${access.siteUrl}/browse/${encodeURIComponent(issue.key)}`,
+      evidenceCommented: true,
+    };
+  }
+
+  async #improvementContext(projectId: string) {
+    const [collection, stored] = await Promise.all([
+      this.projects.list(),
+      resolveCurrentJiraCredential(this.vault, this.fetcher, this.now),
+    ]);
+    if (!stored) throw new JiraDeliveryNeedsUserError("Connect Jira in Settings before creating improvement items.");
+    const project = collection.projects.find((candidate) => candidate.id === projectId);
+    if (!project) throw new JiraDeliveryNeedsUserError("The local project is no longer registered.");
+    const binding = project.resources?.find((resource) => resource.kind === "jira_project" && resource.role === "primary") ?? project.resources?.find((resource) => resource.kind === "jira_project");
+    if (!binding?.url) throw new JiraDeliveryNeedsUserError("Choose a Jira project for this project before preparing improvements.");
+    const access = await resolveJiraAccess(parseCredential(stored), binding.url, this.fetcher);
+    return { access, selected: parseSelectedProject(binding.url, binding.resourceId, access.siteUrl) };
   }
 
   async synchronize(projectId: string): Promise<SyncReceipt> {
@@ -205,6 +241,39 @@ class JiraClient {
     return parseIssue(await this.json("/rest/api/3/issue", { method: "POST", body: JSON.stringify({ fields }) }));
   }
 
+  async createImprovement(projectId: string, improvement: OwnerPilotImprovement, marker: string) {
+    const [myself, issueTypes] = await Promise.all([
+      this.json("/rest/api/3/myself"),
+      this.json(`/rest/api/3/issuetype/project?projectId=${encodeURIComponent(projectId)}`),
+    ]);
+    if (typeof myself.accountId !== "string" || !Array.isArray(issueTypes)) throw new JiraDeliveryNeedsUserError("Jira did not return the account or Task type needed for improvement delivery.");
+    const task = issueTypes.find((candidate) => candidate && typeof candidate === "object" && String((candidate as Record<string, unknown>).name).toLowerCase() === "task") as Record<string, unknown> | undefined;
+    if (!task || typeof task.id !== "string") throw new JiraDeliveryNeedsUserError("The selected Jira project does not provide a Task issue type.");
+    return parseIssue(await this.json("/rest/api/3/issue", {
+      method: "POST",
+      body: JSON.stringify({ fields: {
+        project: { id: projectId },
+        issuetype: { id: task.id },
+        summary: improvement.title,
+        description: improvementAdf(improvement),
+        labels: [marker, "codkesh-pilot-improvement"],
+        assignee: { accountId: myself.accountId },
+      } }),
+    }));
+  }
+
+  async commentImprovement(issueKey: string, improvement: OwnerPilotImprovement) {
+    await this.json(`/rest/api/3/issue/${encodeURIComponent(issueKey)}/comment`, {
+      method: "POST",
+      body: JSON.stringify({ body: document([
+        "Codkesh owner-approved pilot improvement handoff.",
+        `Evidence digest: ${improvement.evidenceDigest}`,
+        `Evidence count: ${improvement.evidenceCount} consented sessions`,
+        "Status: created after exact owner approval; implementation has not started.",
+      ]) }),
+    });
+  }
+
   async link(type: string, inwardKey: string, outwardKey: string) {
     await this.json("/rest/api/3/issueLink", { method: "POST", body: JSON.stringify({ type: { name: type }, inwardIssue: { key: inwardKey }, outwardIssue: { key: outwardKey } }) }, true);
   }
@@ -288,4 +357,23 @@ function priorityId(fields: JiraCreateFields, requested: DeliveryPlanDraft["item
   return (exact ?? fallback)!.id;
 }
 function adf(item: DeliveryPlanDraft["items"][number], plan: DeliveryPlanDraft) { const coverage = plan.coverage.filter((entry) => entry.itemIds.includes(item.id)); const gates = plan.gates.filter((gate) => gate.beforeItemIds.includes(item.id)); const paragraphs = [item.description, `Plan ID: ${item.id}`, `Parent: ${item.parentId ?? "None"}`, `Estimate: ${item.estimatedMinutes} minutes${item.storyPoints ? ` / ${item.storyPoints} points` : ""}`, `Capabilities: ${item.roleCapabilities.join(", ")}`, `Allowed files: ${item.allowedFiles.join(", ") || "None"}`, `Validation: ${item.validationProfiles.join(", ") || "None"}`, "Requirement coverage", ...(coverage.length ? coverage.map((entry) => `• ${entry.requirement}: ${entry.validationProfiles.join(", ")}`) : ["• Inherited through child work."]), "Approval and infrastructure gates", ...(gates.length ? gates.map((gate) => `• ${gate.kind} — ${gate.title}: ${gate.rationale}`) : ["• None for this item."]), "Acceptance criteria", ...item.acceptanceCriteria.map((entry) => `• ${entry}`), "Definition of Done", ...item.definitionOfDone.map((entry) => `• ${entry}`), "Implementation notes", ...item.implementationNotes.map((entry) => `• ${entry}`), "Rollback requirements", ...item.rollbackRequirements.map((entry) => `• ${entry}`), "Sources", ...item.citations.map((entry) => `• ${entry}`)]; return { type: "doc", version: 1, content: paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) }; }
+function improvementAdf(value: OwnerPilotImprovement) { return document([
+  value.problem,
+  `Recommendation: ${value.recommendation}`,
+  `Priority: ${value.priority}`,
+  `Estimated size: ${value.estimatedSize}`,
+  `Evidence: ${value.evidenceCount} consented pilot sessions`,
+  `Evidence digest: ${value.evidenceDigest}`,
+  "Acceptance criteria",
+  ...value.acceptanceCriteria.map((criterion) => `• ${criterion}`),
+  "Definition of Done",
+  "• All acceptance criteria pass with deterministic evidence.",
+  "• Relevant automated tests, accessibility checks, and regression checks pass.",
+  "• The owner-facing result and recovery path are documented.",
+  "Evidence required for closure",
+  "• Test command and result",
+  "• Changed-file or commit reference",
+  "• Owner-visible validation evidence",
+]); }
+function document(paragraphs: readonly string[]) { return { type: "doc", version: 1, content: paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) }; }
 async function atomicWrite(path: string, content: string) { await mkdir(dirname(path), { recursive: true, mode: 0o700 }); const temporary = `${path}.${process.pid}.tmp`; await writeFile(temporary, content, { encoding: "utf8", mode: 0o600 }); await chmod(temporary, 0o600); await rename(temporary, path); await chmod(path, 0o600); }
