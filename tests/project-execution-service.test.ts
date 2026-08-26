@@ -1252,8 +1252,7 @@ test("freshly verified review-dissent repair preserves the committed repair for 
         taskId,
         expectedRevision: dissent.revision,
         approvalId: "approval_88888888888888888888",
-        rationale:
-          "The bounded descendant addresses every review finding and passes every required profile.",
+        rationale: `The bounded descendant addresses every review finding and passes every required profile. ${"x".repeat(390)}`,
       },
       [
         {
@@ -1278,6 +1277,10 @@ test("freshly verified review-dissent repair preserves the committed repair for 
     assert.equal(recovered.reviewAttempts?.at(-1)?.reviews[1]?.verdict, "fail");
     assert.ok(recovered.verifiedRecoveryEvidenceDigest);
     assert.match(recovered.safeMessage, /review-dissent recovery/i);
+    assert.ok(
+      recovered.safeMessage.length <= 500,
+      "owner recovery messages must remain valid public task evidence",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -1191,7 +1191,10 @@ export class ProjectExecutionService {
           ? [...(task.reviewAttempts ?? []), archived]
           : task.reviewAttempts,
         revision: task.revision + 1,
-        safeMessage: `Owner approved one freshly verified ${verifiedReviewDissentRepair ? "review-dissent" : verifiedCleanCheckoutRepair ? "clean-checkout" : "pre-review"} recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`,
+        safeMessage: `Owner approved one freshly verified ${verifiedReviewDissentRepair ? "review-dissent" : verifiedCleanCheckoutRepair ? "clean-checkout" : "pre-review"} recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`.slice(
+          0,
+          500,
+        ),
         updatedAt: now,
       };
       return {
