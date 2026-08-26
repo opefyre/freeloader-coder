@@ -130,6 +130,35 @@ test("pilot review is deterministic, aggregated, thresholded, and evidence-linke
   assert.deepEqual(review, await service.review(trust(), startedAt + 10_000));
 });
 
+test("pilot cohort report makes strict, deterministic, privacy-safe product decisions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  const improve = await service.cohortReport(trust(), startedAt + 10_000);
+  assert.equal(improve.decision, "improve");
+  assert.equal(improve.thresholds.length, 5);
+  assert.equal(improve.thresholds.at(-1)?.state, "failed");
+  assert.equal(improve.automaticSpendLimitUsd, 0);
+  assert.deepEqual(Object.values(improve.privacy), Array(8).fill(false));
+  assert.deepEqual(improve, await service.cohortReport(trust(), startedAt + 10_000));
+
+  const insufficient = trust();
+  insufficient.learning.completedSessions = 2;
+  insufficient.learning.eligibleForDecision = false;
+  assert.equal((await service.cohortReport(insufficient)).decision, "sample_needed");
+
+  const failed = trust();
+  failed.learning.completionRatePercent = 79;
+  assert.equal((await service.cohortReport(failed)).decision, "pause");
+
+  const passing = trust();
+  passing.learning.frictionCounts.clarity = 1;
+  assert.equal((await service.cohortReport(passing)).decision, "proceed");
+
+  const stale = trust();
+  stale.freshness.state = "due";
+  assert.equal((await service.cohortReport(stale)).decision, "certification_needed");
+});
+
 test("canonical evidence reconciles milestones in order without manual claims", async () => {
   const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
   const service = new OwnerPilotService(directory);

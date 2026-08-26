@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type {
   OwnerJourneyCertificationSnapshot,
-  OwnerJourneyTrustSnapshot,
+  OwnerPilotCohortReport,
   OwnerPilotReview,
   OwnerPilotSession,
   OwnerPilotSummary,
@@ -17,14 +17,13 @@ import {
   completeOwnerPilot,
   createOwnerPilot,
   getOwnerPilotReview,
+  getOwnerPilotCohortReport,
   getOwnerJourneyCertification,
-  getOwnerJourneyTrust,
   listOwnerPilotImprovements,
   listOwnerPilot,
   previewOwnerJourneyCertification,
   previewOwnerPilotImprovements,
   runOwnerJourneyCertification,
-  tickOwnerJourneyTrust,
   declineOwnerPilotImprovements,
   editOwnerPilotImprovements,
   withdrawOwnerPilot,
@@ -33,6 +32,7 @@ import {
   getOwnerPilotSummary,
   reconcileOwnerPilot,
   ownerCertificationEvidenceFilename,
+  ownerPilotCohortReportFilename,
 } from "../../owner-journey-certification-client.js";
 import { listLocalProjects } from "../../local-project-client.js";
 import { Badge } from "../ui/badge.js";
@@ -54,27 +54,27 @@ export function OwnerJourneyCertificationCard({
     useState<OwnerJourneyCertificationSnapshot | null>(null);
   const [sessions, setSessions] = useState<readonly OwnerPilotSession[]>([]);
   const [review, setReview] = useState<OwnerPilotReview | null>(null);
-  const [trust, setTrust] = useState<OwnerJourneyTrustSnapshot | null>(null);
+  const [cohort, setCohort] = useState<OwnerPilotCohortReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [showLearning, setShowLearning] = useState(false);
   const refresh = useCallback(async () => {
     try {
-      const [certification, pilot, trustSnapshot, pilotReview] =
+      const [certification, pilot, pilotReview, cohortReport] =
         await Promise.all([
           getOwnerJourneyCertification(endpoint),
           listOwnerPilot(endpoint),
-          getOwnerJourneyTrust(endpoint),
           getOwnerPilotReview(endpoint),
+          getOwnerPilotCohortReport(endpoint),
         ]);
       setSnapshot(certification);
       setSessions(pilot.sessions);
-      setTrust(trustSnapshot);
       setReview(pilotReview);
+      setCohort(cohortReport);
     } catch {
       setSnapshot(null);
-      setTrust(null);
       setReview(null);
+      setCohort(null);
     }
   }, [endpoint]);
   useEffect(() => {
@@ -100,27 +100,6 @@ export function OwnerJourneyCertificationCard({
       setBusy(false);
     }
   }
-  async function refreshTrust() {
-    setBusy(true);
-    setNotice("Refreshing local trust evidence…");
-    try {
-      const result = await tickOwnerJourneyTrust(
-        endpoint,
-        `trust.ui.${Date.now()}`,
-      );
-      setTrust(result);
-      await refresh();
-      setNotice("Trust evidence is current.");
-    } catch (error) {
-      setNotice(
-        error instanceof Error
-          ? error.message
-          : "Trust evidence did not refresh.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
   async function downloadEvidence() {
     setBusy(true);
     setNotice("Preparing privacy-safe evidence…");
@@ -138,6 +117,20 @@ export function OwnerJourneyCertificationCard({
     } finally {
       setBusy(false);
     }
+  }
+  function downloadCohortReport() {
+    if (!cohort) return;
+    const url = URL.createObjectURL(
+      new Blob([`${JSON.stringify(cohort, null, 2)}\n`], {
+        type: "application/json",
+      }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = ownerPilotCohortReportFilename(cohort);
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setNotice("Privacy-safe real-pilot cohort report downloaded.");
   }
   const passed = snapshot?.state === "passed";
   const stages = snapshot?.lastPassedReceipt?.stages ?? [];
@@ -209,72 +202,41 @@ export function OwnerJourneyCertificationCard({
             <Fact label="Real sessions" value={String(completedLearning)} />
             <Fact
               label="Pilot readiness"
-              value={
-                trust ? readinessLabel(trust.readiness.state) : "Checking…"
-              }
+              value={cohort ? label(cohort.decision) : "Checking…"}
             />
           </div>
         )}
-        {trust && (
+        {cohort && (
           <section
-            aria-labelledby="pilot-readiness-title"
+            aria-labelledby="pilot-decision-title"
             className="rounded-[1.5rem] bg-muted/45 p-4"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 id="pilot-readiness-title" className="font-semibold">
-                  {trust.readiness.title}
+                <h3 id="pilot-decision-title" className="font-semibold">
+                  {cohort.title}
                 </h3>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {trust.readiness.reason}
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
+                  {cohort.reason}
                 </p>
               </div>
-              <Badge
-                tone={
-                  trust.readiness.state === "review_ready"
-                    ? "positive"
-                    : "neutral"
-                }
-              >
-                {readinessLabel(trust.readiness.state)}
+              <Badge tone={cohort.decision === "proceed" ? "positive" : cohort.decision === "pause" ? "caution" : "neutral"}>
+                {label(cohort.decision)}
               </Badge>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Fact
-                label="Next local check"
-                value={new Date(trust.freshness.nextCheckAt).toLocaleDateString(
-                  [],
-                  { dateStyle: "medium" },
-                )}
-              />
-              <Fact
-                label="Median to preview"
-                value={
-                  trust.learning.medianTimeToPreviewSeconds === null
-                    ? "Not enough data"
-                    : `${Math.round(trust.learning.medianTimeToPreviewSeconds / 60)} min`
-                }
-              />
-              <Fact
-                label="Trust 4–5"
-                value={
-                  trust.learning.trustAtLeastFourPercent === null
-                    ? "Not enough data"
-                    : `${trust.learning.trustAtLeastFourPercent}%`
-                }
-              />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Pilot decision thresholds">
+              {cohort.thresholds.map((threshold) => (
+                <Fact
+                  key={threshold.metric}
+                  label={thresholdLabel(threshold.metric)}
+                  value={`${threshold.observed === null ? "—" : `${threshold.observed}${thresholdSuffix(threshold.metric)}`} · ${threshold.state === "passed" ? "Pass" : "Needs work"}`}
+                />
+              ))}
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
-                Anonymous aggregates only. At least 3 completed sessions are
-                required.
-              </p>
-              <Button
-                variant="secondary"
-                onClick={() => void refreshTrust()}
-                disabled={busy}
-              >
-                Refresh evidence
+              <p className="text-sm font-medium">Next: {cohort.nextAction}</p>
+              <Button variant="secondary" onClick={downloadCohortReport}>
+                <DownloadSimple aria-hidden="true" /> Cohort report
               </Button>
             </div>
           </section>
@@ -322,6 +284,7 @@ export function OwnerJourneyCertificationCard({
             endpoint={endpoint}
             sessions={sessions}
             review={review}
+            cohort={cohort}
             saved={async (message) => {
               await refresh();
               setNotice(message);
@@ -336,11 +299,13 @@ function PilotCapture({
   endpoint,
   sessions,
   review,
+  cohort,
   saved,
 }: {
   endpoint: string;
   sessions: readonly OwnerPilotSession[];
   review: OwnerPilotReview | null;
+  cohort: OwnerPilotCohortReport | null;
   saved: (message: string) => Promise<void>;
 }) {
   const [projects, setProjects] = useState<
@@ -647,7 +612,7 @@ function PilotCapture({
               ))}
             </ul>
           )}
-          {review.state === "improvements_needed" && projectId && !drafts.some((draft) => draft.projectId === projectId && ["pending", "partially_applied"].includes(draft.state)) && (
+          {cohort?.decision === "improve" && review.state === "improvements_needed" && projectId && !drafts.some((draft) => draft.projectId === projectId && ["pending", "partially_applied"].includes(draft.state)) && (
             <Button
               className="mt-3"
               variant="secondary"
@@ -738,6 +703,20 @@ function ImprovementDecision({ endpoint, draft, busy, setBusy, failed, saved }: 
 
 function duration(seconds: number) { return seconds < 60 ? `${seconds}s` : `${Math.round(seconds / 60)}m`; }
 
+function thresholdLabel(metric: OwnerPilotCohortReport["thresholds"][number]["metric"]): string {
+  return {
+    completed_sessions: "Completed sessions",
+    completion_rate_percent: "Completion rate",
+    trust_at_least_four_percent: "Trust 4–5",
+    median_time_to_preview_seconds: "Median to preview",
+    repeated_friction_count: "Repeated friction",
+  }[metric];
+}
+
+function thresholdSuffix(metric: OwnerPilotCohortReport["thresholds"][number]["metric"]): string {
+  return metric.endsWith("_percent") ? "%" : metric.endsWith("_seconds") ? "s" : "";
+}
+
 function toggleFriction(
   current: OwnerPilotSession["frictions"],
   value: OwnerPilotSession["frictions"][number],
@@ -762,16 +741,4 @@ function label(value: string) {
   return value
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-function readinessLabel(
-  value: OwnerJourneyTrustSnapshot["readiness"]["state"],
-) {
-  return (
-    {
-      certification_needed: "Check needed",
-      learning_needed: "Learning",
-      review_ready: "Review ready",
-      thresholds_not_met: "Improve",
-    } as const
-  )[value];
 }

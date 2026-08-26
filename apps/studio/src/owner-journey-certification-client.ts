@@ -8,6 +8,7 @@ import {
   ownerJourneyCertificationSnapshotSchema,
   ownerJourneyTrustSnapshotSchema,
   ownerPilotCollectionSchema,
+  ownerPilotCohortReportSchema,
   ownerPilotReviewSchema,
   ownerPilotSessionSchema,
   ownerPilotImprovementCollectionSchema,
@@ -19,6 +20,7 @@ import {
   type OwnerJourneyCertificationSnapshot,
   type OwnerJourneyTrustSnapshot,
   type OwnerPilotCollection,
+  type OwnerPilotCohortReport,
   type OwnerPilotReview,
   type OwnerPilotSession,
   type OwnerPilotImprovementCollection,
@@ -154,6 +156,21 @@ export async function getOwnerPilotReview(
       method: "GET",
     }),
   );
+}
+export async function getOwnerPilotCohortReport(
+  endpoint: string,
+): Promise<OwnerPilotCohortReport> {
+  return ownerPilotCohortReportSchema.parse(
+    await request(
+      new URL("/api/v1/owner-pilot/cohort-report", loopback(endpoint)),
+      { method: "GET" },
+    ),
+  );
+}
+export function ownerPilotCohortReportFilename(
+  report: OwnerPilotCohortReport,
+): string {
+  return `codkesh-pilot-cohort-${report.evidenceDigest.slice(0, 12)}.json`;
 }
 export async function createOwnerPilot(
   endpoint: string,

@@ -127,6 +127,7 @@ import {
   ownerJourneyTrustSnapshotSchema,
   ownerPilotAdvanceSchema,
   ownerPilotCollectionSchema,
+  ownerPilotCohortReportSchema,
   ownerPilotCompleteSchema,
   ownerPilotCreateSchema,
   ownerPilotReviewSchema,
@@ -146,6 +147,7 @@ import {
   type OwnerJourneyCertificationSnapshot,
   type OwnerJourneyTrustSnapshot,
   type OwnerPilotCollection,
+  type OwnerPilotCohortReport,
   type OwnerPilotReview,
   type OwnerPilotSession,
   type OwnerPilotImprovementCollection,
@@ -308,6 +310,9 @@ export type ControlPlaneServerOptions = {
       expectedRevision: number,
     ) => OwnerPilotSession | Promise<OwnerPilotSession>;
     review: () => OwnerPilotReview | Promise<OwnerPilotReview>;
+    cohortReport?: () =>
+      | OwnerPilotCohortReport
+      | Promise<OwnerPilotCohortReport>;
     reconcile?: (id: string) => OwnerPilotSession | Promise<OwnerPilotSession>;
     summary?: (id: string) => unknown | Promise<unknown>;
     receipt?: (id: string) => unknown | Promise<unknown>;
@@ -1347,7 +1352,11 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       if (
-        ["/api/v1/owner-pilot", "/api/v1/owner-pilot/review"].includes(
+        [
+          "/api/v1/owner-pilot",
+          "/api/v1/owner-pilot/review",
+          "/api/v1/owner-pilot/cohort-report",
+        ].includes(
           url.pathname,
         ) &&
         request.method !== "GET" &&
@@ -1434,6 +1443,24 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
           response,
           200,
           ownerPilotReviewSchema.parse(await options.ownerPilot.review()),
+        );
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/v1/owner-pilot/cohort-report" &&
+        options.ownerPilot?.cohortReport
+      ) {
+        if (requestBodyDeclared(request) || url.search)
+          throw new ControlPlaneRequestError(
+            "Pilot cohort report does not accept input.",
+          );
+        sendJson(
+          response,
+          200,
+          ownerPilotCohortReportSchema.parse(
+            await options.ownerPilot.cohortReport(),
+          ),
         );
         return;
       }

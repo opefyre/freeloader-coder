@@ -355,6 +355,56 @@ export const ownerPilotReviewSchema = z.strictObject({
   automaticSpendLimitUsd: z.literal(0),
 });
 
+const ownerPilotThresholdSchema = z.strictObject({
+  metric: z.enum([
+    "completed_sessions",
+    "completion_rate_percent",
+    "trust_at_least_four_percent",
+    "median_time_to_preview_seconds",
+    "repeated_friction_count",
+  ]),
+  direction: z.enum(["at_least", "at_most"]),
+  target: z.number().int().nonnegative(),
+  observed: z.number().int().nonnegative().nullable(),
+  state: z.enum(["passed", "failed", "not_enough_data"]),
+});
+export const ownerPilotCohortReportSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("privacy_safe_real_owner_pilot_cohort"),
+  observedAt: z.number().int().nonnegative(),
+  decision: z.enum([
+    "certification_needed",
+    "sample_needed",
+    "pause",
+    "improve",
+    "proceed",
+  ]),
+  title: z.string().trim().min(1).max(100),
+  reason: z.string().trim().min(1).max(240),
+  nextAction: z.string().trim().min(1).max(180),
+  thresholds: z.array(ownerPilotThresholdSchema).length(5),
+  completedSessions: z.number().int().nonnegative().max(50),
+  minimumSampleSize: z.literal(3),
+  completionRatePercent: z.number().int().min(0).max(100).nullable(),
+  medianTimeToPreviewSeconds: z.number().int().min(1).max(86_400).nullable(),
+  trustAtLeastFourPercent: z.number().int().min(0).max(100).nullable(),
+  rankedFrictions: ownerPilotReviewSchema.shape.rankedFrictions,
+  evidenceDigest: digest,
+  automaticSpendLimitUsd: z.literal(0),
+  privacy: z.strictObject({
+    prompts: z.literal(false),
+    sourceCode: z.literal(false),
+    sessionNotes: z.literal(false),
+    attachments: z.literal(false),
+    credentials: z.literal(false),
+    absolutePaths: z.literal(false),
+    personalIdentifiers: z.literal(false),
+    privateJiraContent: z.literal(false),
+  }),
+  limitations: z.array(z.string().trim().min(1).max(200)).min(1).max(6),
+});
+export type OwnerPilotCohortReport = z.infer<typeof ownerPilotCohortReportSchema>;
+
 export const ownerPilotImprovementDecisionSchema = z.enum([
   "pending",
   "declined",

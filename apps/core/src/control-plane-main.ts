@@ -756,6 +756,8 @@ const controlPlane = createControlPlaneServer({
     withdraw: (id, expectedRevision) =>
       ownerPilot.withdraw(id, expectedRevision),
     review: async () => ownerPilot.review(await ownerJourneyTrust.snapshot()),
+    cohortReport: async () =>
+      ownerPilot.cohortReport(await ownerJourneyTrust.snapshot()),
     reconcile: async (id) => {
       const session = (await ownerPilot.list()).sessions.find((candidate) => candidate.id === id);
       if (!session) throw new Error("Pilot session is unavailable.");

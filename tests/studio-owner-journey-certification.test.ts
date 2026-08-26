@@ -24,9 +24,8 @@ test("Action Center owns a minimal honest certification and consented-learning e
     "anonymous",
     "external adoption",
     "Pilot readiness",
-    "Anonymous aggregates only",
-    "At least 3 completed sessions",
-    "Refresh evidence",
+    "Pilot decision thresholds",
+    "Cohort report",
   ])
     assert.equal(
       source.toLocaleLowerCase().includes(phrase.toLocaleLowerCase()),
@@ -44,8 +43,7 @@ test("Action Center owns a minimal honest certification and consented-learning e
     /saved=\{async \(\) => \{\s*setShowLearning\(false\)/,
   );
   assert.match(source, /saved=\{async \(message\) =>/);
-  assert.match(source, /getOwnerJourneyTrust/);
-  assert.match(source, /tickOwnerJourneyTrust/);
+  assert.match(source, /getOwnerPilotCohortReport/);
   assert.doesNotMatch(source, /participantAlias.*trust\.learning|trust\.learning.*note/);
 });
 
@@ -103,4 +101,22 @@ test("pilot improvements use one exact owner decision before Jira mutation", () 
     "/approve",
     "/decline",
   ]) assert.equal(client.includes(path), true, path);
+});
+
+test("Action Center exposes one strict pilot decision, explicit thresholds, and a privacy-safe report", () => {
+  for (const phrase of [
+    "Pilot decision thresholds",
+    "Completed sessions",
+    "Completion rate",
+    "Trust 4–5",
+    "Median to preview",
+    "Repeated friction",
+    "Next:",
+    "Cohort report",
+  ]) assert.match(source, new RegExp(phrase, "i"));
+  assert.match(source, /cohort\?\.decision === "improve"/);
+  assert.match(source, /getOwnerPilotCohortReport/);
+  assert.match(source, /ownerPilotCohortReportFilename/);
+  assert.match(client, /\/api\/v1\/owner-pilot\/cohort-report/);
+  assert.match(client, /codkesh-pilot-cohort-/);
 });

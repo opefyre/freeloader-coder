@@ -6,6 +6,7 @@ import {
   externalLearningCollectionSchema,
   ownerPilotAdvanceSchema,
   ownerPilotCollectionSchema,
+  ownerPilotCohortReportSchema,
   ownerPilotCompleteSchema,
   ownerPilotCreateSchema,
   ownerPilotReviewSchema,
@@ -16,6 +17,7 @@ import {
   type ExternalLearningCollection,
   type OwnerJourneyTrustSnapshot,
   type OwnerPilotCollection,
+  type OwnerPilotCohortReport,
   type OwnerPilotReview,
   type OwnerPilotReceipt,
   type OwnerPilotSummary,
@@ -356,12 +358,16 @@ export class OwnerPilotService {
           evidenceDigest: hash(`${trust.observedAt}:${category}:${count}`),
         };
       });
+    const thresholdsPass =
+      (learning.completionRatePercent ?? 0) >= 80 &&
+      (learning.trustAtLeastFourPercent ?? 0) >= 67 &&
+      (learning.medianTimeToPreviewSeconds ?? Number.POSITIVE_INFINITY) <= 1_800;
     const state =
       trust.freshness.state !== "current"
         ? "certification_needed"
         : !learning.eligibleForDecision
           ? "sample_needed"
-          : improvements.length
+          : thresholdsPass && improvements.length
             ? "improvements_needed"
             : "review_ready";
     const title = (
@@ -409,6 +415,93 @@ export class OwnerPilotService {
         }),
       ),
       automaticSpendLimitUsd: 0,
+    });
+  }
+  async cohortReport(
+    trust: OwnerJourneyTrustSnapshot,
+    now = Date.now(),
+  ): Promise<OwnerPilotCohortReport> {
+    const review = await this.review(trust, now);
+    const learning = trust.learning;
+    const repeatedFrictionCount = review.rankedFrictions[0]?.count ?? 0;
+    const threshold = (
+      metric: OwnerPilotCohortReport["thresholds"][number]["metric"],
+      direction: "at_least" | "at_most",
+      target: number,
+      observed: number | null,
+    ) => ({
+      metric,
+      direction,
+      target,
+      observed,
+      state:
+        observed === null
+          ? ("not_enough_data" as const)
+          : direction === "at_least"
+            ? observed >= target
+              ? ("passed" as const)
+              : ("failed" as const)
+            : observed <= target
+              ? ("passed" as const)
+              : ("failed" as const),
+    });
+    const thresholds: OwnerPilotCohortReport["thresholds"] = [
+      threshold("completed_sessions", "at_least", 3, learning.completedSessions),
+      threshold("completion_rate_percent", "at_least", 80, learning.completionRatePercent),
+      threshold("trust_at_least_four_percent", "at_least", 67, learning.trustAtLeastFourPercent),
+      threshold("median_time_to_preview_seconds", "at_most", 1_800, learning.medianTimeToPreviewSeconds),
+      threshold("repeated_friction_count", "at_most", 1, repeatedFrictionCount),
+    ];
+    const coreFailed = thresholds.slice(1, 4).some((item) => item.state === "failed");
+    const decision =
+      trust.freshness.state !== "current"
+        ? "certification_needed"
+        : learning.completedSessions < 3
+          ? "sample_needed"
+          : coreFailed
+            ? "pause"
+            : repeatedFrictionCount >= 2
+              ? "improve"
+              : "proceed";
+    const content = {
+      certification_needed: ["Refresh local evidence", "Run the local check before using pilot results.", "Run the local certification check."],
+      sample_needed: ["More real sessions needed", `${Math.max(0, 3 - learning.completedSessions)} more completed consented sessions are required.`, "Complete the next consented project session."],
+      pause: ["Pause and correct the journey", "One or more core outcome thresholds failed.", "Review the failed thresholds before starting more delivery work."],
+      improve: ["Improve before expanding", "Core outcomes passed, but repeated friction needs correction.", "Review the evidence-backed improvement preview."],
+      proceed: ["Evidence supports proceeding", "The bounded real-pilot thresholds passed without repeated material friction.", "Proceed with the next bounded product increment."],
+    } as const;
+    const [title, reason, nextAction] = content[decision];
+    return ownerPilotCohortReportSchema.parse({
+      schemaVersion: 1,
+      provenance: "privacy_safe_real_owner_pilot_cohort",
+      observedAt: now,
+      decision,
+      title,
+      reason,
+      nextAction,
+      thresholds,
+      completedSessions: learning.completedSessions,
+      minimumSampleSize: 3,
+      completionRatePercent: learning.completionRatePercent,
+      medianTimeToPreviewSeconds: learning.medianTimeToPreviewSeconds,
+      trustAtLeastFourPercent: learning.trustAtLeastFourPercent,
+      rankedFrictions: review.rankedFrictions,
+      evidenceDigest: review.evidenceDigest,
+      automaticSpendLimitUsd: 0,
+      privacy: {
+        prompts: false,
+        sourceCode: false,
+        sessionNotes: false,
+        attachments: false,
+        credentials: false,
+        absolutePaths: false,
+        personalIdentifiers: false,
+        privateJiraContent: false,
+      },
+      limitations: [
+        "This bounded pilot evidence is not external adoption or market validation.",
+        "Only aggregate consented session outcomes are included.",
+      ],
     });
   }
   async #read(): Promise<Stored> {
