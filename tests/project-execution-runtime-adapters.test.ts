@@ -28,6 +28,8 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
         assert.equal(input.responseSchema.properties.summary.maxLength, 500);
         assert.match(instruction.toolchainCompatibilityRule, /when it runs node --test, import test from node:test and import assert from node:assert\/strict/);
         assert.match(instruction.toolchainCompatibilityRule, /node:test has no named strict assertion export/);
+        assert.match(instruction.toolchainCompatibilityRule, /react-dom\/client does not export createElement/);
+        assert.match(instruction.toolchainCompatibilityRule, /querySelector may return null/);
         assert.match(instruction.toolchainCompatibilityRule, /Never import a test framework that the configured command does not launch/);
         assert.match(instruction.toolchainCompatibilityRule, /NodeNext and Node16 require the emitted \.js suffix/);
         assert.match(instruction.toolchainCompatibilityRule, /when browser globals are not declared, use globalThis\.document/);
