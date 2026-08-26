@@ -84,6 +84,29 @@ test("provider proposal contract failure rotates automatically before workspace 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("temporary free-provider failure returns the truthful queued state instead of a false terminal error", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-provider-retry-"));
+  try {
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
+    const observed: string[] = [];
+    const { FreeProviderExecutionError } = await import("../apps/core/src/free-provider-execution-model.js");
+    const adapters: ProjectExecutionAdapters = {
+      candidates: async () => [candidate()],
+      implement: async () => { throw new FreeProviderExecutionError("provider_failed", 1_000, "Temporary provider failure"); },
+      validate: async (_project, _task, tier) => ({ tier, commandLabel: tier, passed: true, exitCode: 0, evidenceDigest: evidence }),
+      classifyFailure: async () => "provider", healingPolicy: async () => ({ maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["fast"], requiredReviewRoles: ["functional"], minimumGoldenScore: 90 }),
+      heal: async () => implementation(), review: async () => [], integrate: async () => ({ commitDigest: evidence, integrationDigest: evidence, validation: { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: evidence } }),
+      observe: async (_project, task) => { observed.push(task.status); },
+    };
+    const result = await new ProjectExecutionWorker(service, adapters, "worker-a", 30_000).tick(projectId);
+    assert.equal(result?.state, "running");
+    assert.equal(result?.tasks[0]?.status, "queued");
+    assert.equal(result?.tasks[0]?.lease, null);
+    assert.match(result?.tasks[0]?.safeMessage ?? "", /safely queued/);
+    assert.deepEqual(observed, ["queued"]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("freshly verified quarantine recovery skips model reimplementation and resumes at validation", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-verified-recovery-"));
   try {

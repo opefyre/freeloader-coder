@@ -267,13 +267,15 @@ export class ProjectExecutionWorker {
         (error.code === "capacity_unavailable" ||
           error.code === "provider_failed")
       ) {
-        await this.service.releaseForRetry(
+        const released = await this.service.releaseForRetry(
           projectId,
           task.id,
           lease.leaseId,
           this.workerId,
           "The assigned free provider is temporarily unavailable. The task is safely queued for its next eligible window.",
         );
+        await this.adapters.observe?.(projectId, released).catch(() => undefined);
+        return await this.service.get(projectId);
       } else if (proposalContractFailure && task.assignment) {
         const policy = await this.adapters.healingPolicy(projectId, task);
         if (task.attempt < policy.maxAttempts) {

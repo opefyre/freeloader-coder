@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { eligibleExecutionTasks, projectExecutionRecordSchema, selectExecutionAssignment, type ExecutionTask } from "../packages/orchestration/src/project-execution.js";
+import { eligibleExecutionTasks, projectExecutionRecordSchema, selectExecutionAssignment, summarizeExecutionRecovery, type ExecutionTask } from "../packages/orchestration/src/project-execution.js";
 
 const baseTask: ExecutionTask = { id: "plan_1111111111111111", jiraIssueKey: "PIPE-1", title: "Implement bounded capability", dependsOn: [], allowedFiles: ["src/feature.ts", "tests/feature.test.ts"], validationProfiles: ["typecheck", "unit"], uiChanged: true, requiredCapabilities: ["coding", "vision"], privacyClass: "source_code", status: "queued", revision: 0, attempt: 0, assignment: null, lease: null, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Queued for an eligible worker.", updatedAt: 1 };
 const candidate = { providerId: "groq", modelId: "model", deviceId: "spare-mac", capabilities: ["coding", "vision"], privacyClasses: ["source_code" as const], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 8_000, requiredMemoryMb: 4_000, deviceLoad: 0.2, preference: 10 };
@@ -28,4 +28,15 @@ test("dependency readiness and completion evidence fail closed", () => {
   const record = projectExecutionRecordSchema.parse({ schemaVersion: 1, projectId: "project_abcdef0123456789", planDigest: "d".repeat(64), state: "running", revision: 0, tasks: [dependency, dependent], updatedAt: 1 });
   assert.deepEqual(eligibleExecutionTasks(record, 1).map((task) => task.id), [dependency.id]);
   assert.throws(() => projectExecutionRecordSchema.parse({ ...record, tasks: [{ ...dependency, status: "completed" }] }), /deterministic validation/);
+});
+
+test("owner recovery summary distinguishes automatic retry from owner-gated ambiguity", () => {
+  const retrying = projectExecutionRecordSchema.parse({ schemaVersion: 1, projectId: "project_abcdef0123456789", planDigest: "d".repeat(64), state: "running", revision: 1, tasks: [{ ...baseTask, failureClass: "provider", safeMessage: "The task will resume on a free provider." }], updatedAt: 2 });
+  assert.deepEqual(summarizeExecutionRecovery(retrying), {
+    state: "recovering", completedTasks: 0, totalTasks: 1, activeJiraIssueKey: "PIPE-1", evidenceDigest: null,
+    nextAction: "No action needed; Codkesh will retry on a verified free route.",
+  });
+  const blocked = projectExecutionRecordSchema.parse({ ...retrying, state: "needs_user", tasks: [{ ...baseTask, status: "needs_user", safeMessage: "Preserved evidence requires owner review." }] });
+  assert.equal(summarizeExecutionRecovery(blocked).state, "needs_user");
+  assert.equal(summarizeExecutionRecovery(blocked).nextAction, "Review PIPE-1 before execution continues.");
 });

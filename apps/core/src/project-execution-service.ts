@@ -583,25 +583,51 @@ export class ProjectExecutionService {
   async reconcileExpired(projectId: string) {
     return this.#mutateProject(projectId, (record) => {
       const now = this.now();
-      const tasks = record.tasks.map((task): ExecutionTask =>
-        task.lease && task.lease.expiresAt <= now
-          ? {
-              ...task,
-              status: "needs_user",
-              lease: null,
-              revision: task.revision + 1,
-              safeMessage:
-                "The worker lease expired with an unknown outcome. Inspect preserved evidence before retrying.",
-              updatedAt: now,
-            }
-          : task,
-      );
+      const tasks = record.tasks.map((task): ExecutionTask => {
+        if (!task.lease || task.lease.expiresAt > now) return task;
+        const preMutation =
+          task.status === "running" &&
+          task.implementationEvidence.length === 0 &&
+          task.validations.length === 0 &&
+          task.reviews.length === 0 &&
+          task.commitDigest === null &&
+          task.integrationDigest === null;
+        if (preMutation) {
+          const deferredProviderIds = task.assignment?.providerId
+            ? [...new Set([...(task.deferredProviderIds ?? []), task.assignment.providerId])].slice(-20)
+            : task.deferredProviderIds;
+          return {
+            ...task,
+            status: "queued",
+            attempt: Math.min(20, task.attempt + 1),
+            assignment: null,
+            deferredProviderIds,
+            lease: null,
+            failureClass: "provider",
+            revision: task.revision + 1,
+            safeMessage:
+              "Codkesh restarted before implementation evidence was recorded. The isolated workspace will be reset and the task will resume on an eligible free provider.",
+            updatedAt: now,
+          };
+        }
+        return {
+          ...task,
+          status: "needs_user",
+          lease: null,
+          revision: task.revision + 1,
+          safeMessage:
+            "The worker lease expired after implementation may have begun. Preserved evidence requires owner review before any retry.",
+          updatedAt: now,
+        };
+      });
       return {
         record: projectState(
           { ...record, tasks, revision: record.revision + 1, updatedAt: now },
           now,
         ),
-        result: tasks.filter((task) => task.status === "needs_user"),
+        result: tasks.filter(
+          (task, index) => task.revision !== record.tasks[index]?.revision,
+        ),
       };
     });
   }

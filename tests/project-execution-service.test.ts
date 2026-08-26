@@ -342,6 +342,28 @@ test("failed validation permits only bounded healing and expired outcomes requir
   }
 });
 
+test("expired pre-mutation lease requeues once while evidence-bearing work remains owner-gated", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-restart-classification-"));
+  let now = 100;
+  try {
+    const service = makeService(root, () => now);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate], 10_000);
+    const lease = claimed.task!.lease!;
+    now = lease.expiresAt + 1;
+    const recovered = await service.reconcileExpired(projectId);
+    assert.equal(recovered[0]?.status, "queued");
+    assert.equal(recovered[0]?.attempt, 1);
+    assert.equal(recovered[0]?.lease, null);
+    assert.equal(recovered[0]?.assignment, null);
+    assert.deepEqual(recovered[0]?.deferredProviderIds, ["groq"]);
+    assert.match(recovered[0]?.safeMessage ?? "", /workspace will be reset/);
+    assert.deepEqual(await service.reconcileExpired(projectId), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("owner can resume a pre-implementation environment failure after repair", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "project-execution-environment-retry-"),

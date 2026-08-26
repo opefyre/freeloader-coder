@@ -145,6 +145,43 @@ export type ProjectExecutionRecord = z.infer<typeof projectExecutionRecordSchema
 export type ExecutionTask = z.infer<typeof executionTaskSchema>;
 export type ExecutionCandidate = z.infer<typeof executionCandidateSchema>;
 
+export type ExecutionRecoverySummary = {
+  state: "queued" | "recovering" | "needs_user" | "completed";
+  completedTasks: number;
+  totalTasks: number;
+  activeJiraIssueKey: string | null;
+  evidenceDigest: string | null;
+  nextAction: string;
+};
+
+export function summarizeExecutionRecovery(record: ProjectExecutionRecord): ExecutionRecoverySummary {
+  const completed = record.tasks.filter((task) => task.status === "completed");
+  const needsUser = record.tasks.find((task) => task.status === "needs_user" || task.status === "quarantined");
+  const active = needsUser ?? record.tasks.find((task) => ["running", "validating", "reviewing", "healing", "integrating"].includes(task.status))
+    ?? record.tasks.find((task) => task.status === "queued") ?? null;
+  const evidence = active?.integrationDigest ?? active?.commitDigest ?? active?.validations.at(-1)?.evidenceDigest
+    ?? active?.implementationEvidence.at(-1) ?? completed.at(-1)?.integrationDigest ?? null;
+  if (record.state === "completed") return {
+    state: "completed", completedTasks: completed.length, totalTasks: record.tasks.length,
+    activeJiraIssueKey: null, evidenceDigest: evidence,
+    nextAction: "Review the completed delivery evidence.",
+  };
+  if (needsUser) return {
+    state: "needs_user", completedTasks: completed.length, totalTasks: record.tasks.length,
+    activeJiraIssueKey: needsUser.jiraIssueKey, evidenceDigest: evidence,
+    nextAction: `Review ${needsUser.jiraIssueKey} before execution continues.`,
+  };
+  const recovering = Boolean(active && (active.failureClass === "provider" || /restart|resume|free provider/i.test(active.safeMessage)));
+  return {
+    state: recovering ? "recovering" : "queued",
+    completedTasks: completed.length,
+    totalTasks: record.tasks.length,
+    activeJiraIssueKey: active?.jiraIssueKey ?? null,
+    evidenceDigest: evidence,
+    nextAction: recovering ? "No action needed; Codkesh will retry on a verified free route." : "No action needed; Codkesh will continue automatically.",
+  };
+}
+
 export function selectExecutionAssignment(input: { task: ExecutionTask; candidates: readonly ExecutionCandidate[]; now: number }) {
   const eligible = input.candidates.map((candidate) => executionCandidateSchema.parse(candidate)).filter((candidate) =>
     !candidate.billingEnabled &&

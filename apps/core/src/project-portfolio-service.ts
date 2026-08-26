@@ -5,7 +5,10 @@ import {
   type LocalProjectSnapshot,
 } from "../../../packages/runtime/src/local-projects.js";
 import type { ProjectLifecycleRecord } from "../../../packages/orchestration/src/project-lifecycle.js";
-import type { ProjectExecutionRecord } from "../../../packages/orchestration/src/project-execution.js";
+import {
+  summarizeExecutionRecovery,
+  type ProjectExecutionRecord,
+} from "../../../packages/orchestration/src/project-execution.js";
 import { resolveCurrentJiraCredential } from "./jira-oauth-credential.js";
 import {
   reconcileProjectProgress,
@@ -218,8 +221,9 @@ function executionState(status: ProjectExecutionRecord["tasks"][number]["status"
 function executionLatestUpdate(record: ProjectExecutionRecord): LocalProjectSnapshot["latestUpdate"] {
   const task = [...record.tasks].sort((left, right) => right.updatedAt - left.updatedAt)[0];
   if (!task) return null;
+  const recovery = summarizeExecutionRecovery(record);
   return {
-    summary: `${task.jiraIssueKey} · ${task.safeMessage}`.slice(0, 500),
+    summary: `${recovery.activeJiraIssueKey ?? "Delivery"} · ${recovery.nextAction} ${recovery.completedTasks}/${recovery.totalTasks} tasks complete.`.slice(0, 500),
     source: "pipeline",
     occurredAt: task.updatedAt,
     url: null,

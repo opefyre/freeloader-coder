@@ -51,9 +51,11 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     if (!task.assignment) throw new Error("Implementation requires an exact provider assignment.");
     const root = await this.roots.canonicalRoot(projectId);
     const latestAttempt = task.reviewAttempts?.at(-1);
-    const isRepair = task.implementationEvidence.length === 0 && Boolean(latestAttempt && (
-      latestAttempt.reviews.length > 0 || latestAttempt.implementationEvidence.length === 0
-    ));
+    const isRepair = task.implementationEvidence.length === 0 && (
+      task.attempt > 0 || Boolean(latestAttempt && (
+        latestAttempt.reviews.length > 0 || latestAttempt.implementationEvidence.length === 0
+      ))
+    );
     if (isRepair) this.#workspaces.delete(key(projectId, task.id));
     const workspace = this.#workspaces.get(key(projectId, task.id)) ?? await this.workspaces.prepare(projectId, root, task);
     if (isRepair) await this.workspaces.resetAuthorizedFiles(workspace, task);
