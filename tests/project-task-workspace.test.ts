@@ -332,6 +332,37 @@ test("bounded repair discards rejected authorized changes and restarts from the 
   }
 });
 
+test("bounded repair restores authorized files from baseline after an authorized descendant commit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-workspace-committed-repair-"));
+  const repository = join(root, "repo");
+  try {
+    await mkdir(join(repository, "src"), { recursive: true });
+    await mkdir(join(repository, "tests"), { recursive: true });
+    await writeFile(join(repository, "src", "feature.js"), "export const value = 1;\n");
+    await writeFile(
+      join(repository, "package.json"),
+      JSON.stringify({ type: "module", scripts: { typecheck: "node --check src/feature.js", test: "node --test tests/feature.test.js" } }),
+    );
+    await git(repository, ["init", "-b", "main"]);
+    await git(repository, ["add", "."]);
+    await git(repository, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial"]);
+    const service = new ProjectTaskWorkspaceService(join(root, "state"));
+    const workspace = await service.prepare("project_abcdef0123456789", repository, task());
+    const source = (await service.sources(workspace, task())).find((item) => item.path === "src/feature.js")!;
+    await service.apply(workspace, task(), [
+      { type: "replace", path: "src/feature.js", expectedBeforeDigest: source.digest, content: "export const value = 2;\n" },
+      { type: "create", path: "tests/feature.test.js", expectedBeforeDigest: null, content: "import test from 'node:test'; test('feature', () => {});\n" },
+    ]);
+    await service.commit(workspace, task());
+
+    await service.resetAuthorizedFiles(workspace, task());
+    assert.equal(await readFile(join(workspace.root, "src", "feature.js"), "utf8"), "export const value = 1;\n");
+    await assert.rejects(() => readFile(join(workspace.root, "tests", "feature.test.js"), "utf8"), /ENOENT/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("validation rejects unconditional-success scripts", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-task-noop-"));
   try {

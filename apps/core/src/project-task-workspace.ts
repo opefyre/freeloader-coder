@@ -250,7 +250,12 @@ export class ProjectTaskWorkspaceService {
         "--untracked-files=all",
       ]),
     );
-    if (changed.some((path) => !path.startsWith("node_modules/")))
+    const allowed = new Set(task.allowedFiles);
+    if (
+      changed.some(
+        (path) => !allowed.has(path) && !path.startsWith("node_modules/"),
+      )
+    )
       throw new ProjectTaskWorkspaceError(
         "workspace_conflict",
         "Rejected task evidence could not be isolated from the fresh canonical baseline.",
