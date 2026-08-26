@@ -358,6 +358,8 @@ export const ownerPilotReviewSchema = z.strictObject({
 const ownerPilotThresholdSchema = z.strictObject({
   metric: z.enum([
     "completed_sessions",
+    "distinct_projects",
+    "distinct_scenarios",
     "completion_rate_percent",
     "trust_at_least_four_percent",
     "median_time_to_preview_seconds",
@@ -382,9 +384,18 @@ export const ownerPilotCohortReportSchema = z.strictObject({
   title: z.string().trim().min(1).max(100),
   reason: z.string().trim().min(1).max(240),
   nextAction: z.string().trim().min(1).max(180),
-  thresholds: z.array(ownerPilotThresholdSchema).length(5),
+  thresholds: z.array(ownerPilotThresholdSchema).length(7),
   completedSessions: z.number().int().nonnegative().max(50),
   minimumSampleSize: z.literal(3),
+  distinctProjects: z.number().int().nonnegative().max(50),
+  minimumDistinctProjects: z.literal(2),
+  distinctScenarios: z.number().int().nonnegative().max(3),
+  minimumDistinctScenarios: z.literal(2),
+  nextSession: z.strictObject({
+    action: z.enum(["complete_session", "add_project", "add_scenario", "review_decision"]),
+    scenario: externalLearningScenarioSchema.nullable(),
+    instruction: z.string().trim().min(1).max(180),
+  }),
   completionRatePercent: z.number().int().min(0).max(100).nullable(),
   medianTimeToPreviewSeconds: z.number().int().min(1).max(86_400).nullable(),
   trustAtLeastFourPercent: z.number().int().min(0).max(100).nullable(),

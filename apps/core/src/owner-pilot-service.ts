@@ -96,13 +96,11 @@ export class OwnerPilotService {
       if (replay) return requireSession(state, replay);
       if (
         state.sessions.some(
-          (session) =>
-            session.projectId === value.projectId &&
-            ["active", "interrupted"].includes(session.status),
+          (session) => ["active", "interrupted"].includes(session.status),
         )
       )
         throw new OwnerPilotError(
-          "This project already has an active pilot session.",
+          "A pilot session is already active. Resume or withdraw it before starting another.",
         );
       const id = `pilot_${hash(`${key}:${value.projectId}:${value.startedAt}`).slice(0, 20)}`;
       const session = ownerPilotSessionSchema.parse({
@@ -235,6 +233,10 @@ export class OwnerPilotService {
         throw new OwnerPilotError(
           "Completion time cannot precede the first preview.",
         );
+      if (value.frictions.includes("none") && value.frictions.length > 1)
+        throw new OwnerPilotError(
+          "No friction cannot be combined with another friction.",
+        );
       const next = ownerPilotSessionSchema.parse({
         ...current,
         revision: current.revision + 1,
@@ -327,6 +329,17 @@ export class OwnerPilotService {
     now = Date.now(),
   ): Promise<OwnerPilotReview> {
     const learning = trust.learning;
+    const completedEvidence = (await this.list()).sessions.filter(
+      (session) => session.status === "completed",
+    );
+    const projectCoverageDigests = [
+      ...new Set(completedEvidence.map((session) => hash(session.projectId))),
+    ].sort();
+    const scenarioCoverage = [
+      ...new Set(completedEvidence.map((session) => session.scenario)),
+    ].sort();
+    const representative =
+      projectCoverageDigests.length >= 2 && scenarioCoverage.length >= 2;
     const rankedFrictions = Object.entries(learning.frictionCounts)
       .filter(([category, count]) => category !== "none" && count > 0)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
@@ -365,7 +378,7 @@ export class OwnerPilotService {
     const state =
       trust.freshness.state !== "current"
         ? "certification_needed"
-        : !learning.eligibleForDecision
+        : !learning.eligibleForDecision || !representative
           ? "sample_needed"
           : thresholdsPass && improvements.length
             ? "improvements_needed"
@@ -382,7 +395,9 @@ export class OwnerPilotService {
       state === "certification_needed"
         ? "Current local certification is required before pilot evidence can be reviewed."
         : state === "sample_needed"
-          ? `${Math.max(0, 3 - learning.completedSessions)} more completed consented sessions required.`
+          ? learning.completedSessions < 3
+            ? `${Math.max(0, 3 - learning.completedSessions)} more completed consented sessions required.`
+            : "More representative project or scenario coverage is required."
           : state === "improvements_needed"
             ? `${improvements.length} evidence-backed improvement${improvements.length === 1 ? "" : "s"} are ready for owner review.`
             : "Current certification and bounded pilot thresholds passed without repeated material friction.";
@@ -399,7 +414,7 @@ export class OwnerPilotService {
       medianTimeToPreviewSeconds: learning.medianTimeToPreviewSeconds,
       trustAtLeastFourPercent: learning.trustAtLeastFourPercent,
       rankedFrictions,
-      improvements,
+      improvements: state === "improvements_needed" ? improvements : [],
       limitations: [
         "This bounded pilot evidence is not external adoption or market validation.",
         "Participant identities, prompts, source code, attachments, credentials, and raw notes are excluded.",
@@ -412,6 +427,8 @@ export class OwnerPilotService {
           median: learning.medianTimeToPreviewSeconds,
           trust: learning.trustAtLeastFourPercent,
           rankedFrictions,
+          projectCoverageDigests,
+          scenarioCoverage,
         }),
       ),
       automaticSpendLimitUsd: 0,
@@ -423,6 +440,18 @@ export class OwnerPilotService {
   ): Promise<OwnerPilotCohortReport> {
     const review = await this.review(trust, now);
     const learning = trust.learning;
+    const completed = (await this.list()).sessions.filter(
+      (session) => session.status === "completed",
+    );
+    const distinctProjectDigests = [
+      ...new Set(completed.map((session) => hash(session.projectId))),
+    ].sort();
+    const scenarios = [...new Set(completed.map((session) => session.scenario))].sort();
+    const distinctProjects = distinctProjectDigests.length;
+    const distinctScenarios = scenarios.length;
+    const missingScenario = (["new_product", "existing_product", "major_feature"] as const).find(
+      (scenario) => !scenarios.includes(scenario),
+    ) ?? null;
     const repeatedFrictionCount = review.rankedFrictions[0]?.count ?? 0;
     const threshold = (
       metric: OwnerPilotCohortReport["thresholds"][number]["metric"],
@@ -447,16 +476,19 @@ export class OwnerPilotService {
     });
     const thresholds: OwnerPilotCohortReport["thresholds"] = [
       threshold("completed_sessions", "at_least", 3, learning.completedSessions),
+      threshold("distinct_projects", "at_least", 2, distinctProjects),
+      threshold("distinct_scenarios", "at_least", 2, distinctScenarios),
       threshold("completion_rate_percent", "at_least", 80, learning.completionRatePercent),
       threshold("trust_at_least_four_percent", "at_least", 67, learning.trustAtLeastFourPercent),
       threshold("median_time_to_preview_seconds", "at_most", 1_800, learning.medianTimeToPreviewSeconds),
       threshold("repeated_friction_count", "at_most", 1, repeatedFrictionCount),
     ];
-    const coreFailed = thresholds.slice(1, 4).some((item) => item.state === "failed");
+    const coreFailed = thresholds.slice(3, 6).some((item) => item.state === "failed");
+    const representative = distinctProjects >= 2 && distinctScenarios >= 2;
     const decision =
       trust.freshness.state !== "current"
         ? "certification_needed"
-        : learning.completedSessions < 3
+        : learning.completedSessions < 3 || !representative
           ? "sample_needed"
           : coreFailed
             ? "pause"
@@ -470,7 +502,27 @@ export class OwnerPilotService {
       improve: ["Improve before expanding", "Core outcomes passed, but repeated friction needs correction.", "Review the evidence-backed improvement preview."],
       proceed: ["Evidence supports proceeding", "The bounded real-pilot thresholds passed without repeated material friction.", "Proceed with the next bounded product increment."],
     } as const;
-    const [title, reason, nextAction] = content[decision];
+    const nextSession =
+      learning.completedSessions === 0
+        ? { action: "complete_session" as const, scenario: "new_product" as const, instruction: "Complete one real project journey from idea to first preview." }
+        : distinctProjects < 2
+          ? { action: "add_project" as const, scenario: missingScenario, instruction: "Run the next session on a different project." }
+          : distinctScenarios < 2
+            ? { action: "add_scenario" as const, scenario: missingScenario, instruction: `Run a ${missingScenario ? missingScenario.replaceAll("_", " ") : "different"} scenario next.` }
+            : learning.completedSessions < 3
+              ? { action: "complete_session" as const, scenario: missingScenario, instruction: "Complete one more representative project session." }
+              : { action: "review_decision" as const, scenario: null, instruction: "Review the evidence-backed cohort decision." };
+    const [title, baseReason, baseNextAction] = content[decision];
+    const reason = decision === "sample_needed" && learning.completedSessions >= 3
+      ? "The minimum sample exists, but project or scenario coverage is not representative yet."
+      : baseReason;
+    const nextAction = decision === "sample_needed" ? nextSession.instruction : baseNextAction;
+    const evidenceDigest = hash(JSON.stringify({
+      review: review.evidenceDigest,
+      distinctProjectDigests,
+      scenarios,
+      thresholds,
+    }));
     return ownerPilotCohortReportSchema.parse({
       schemaVersion: 1,
       provenance: "privacy_safe_real_owner_pilot_cohort",
@@ -482,11 +534,16 @@ export class OwnerPilotService {
       thresholds,
       completedSessions: learning.completedSessions,
       minimumSampleSize: 3,
+      distinctProjects,
+      minimumDistinctProjects: 2,
+      distinctScenarios,
+      minimumDistinctScenarios: 2,
+      nextSession,
       completionRatePercent: learning.completionRatePercent,
       medianTimeToPreviewSeconds: learning.medianTimeToPreviewSeconds,
       trustAtLeastFourPercent: learning.trustAtLeastFourPercent,
       rankedFrictions: review.rankedFrictions,
-      evidenceDigest: review.evidenceDigest,
+      evidenceDigest,
       automaticSpendLimitUsd: 0,
       privacy: {
         prompts: false,

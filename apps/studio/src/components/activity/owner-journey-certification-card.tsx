@@ -234,7 +234,12 @@ export function OwnerJourneyCertificationCard({
               ))}
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-medium">Next: {cohort.nextAction}</p>
+              <div>
+                <p className="text-sm font-medium">Next: {cohort.nextAction}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Coverage: {cohort.distinctProjects} projects · {cohort.distinctScenarios} scenarios (2 of each required)
+                </p>
+              </div>
               <Button variant="secondary" onClick={downloadCohortReport}>
                 <DownloadSimple aria-hidden="true" /> Cohort report
               </Button>
@@ -311,6 +316,7 @@ function PilotCapture({
   const [projects, setProjects] = useState<
     readonly { id: string; name: string }[]
   >([]);
+  const [projectsState, setProjectsState] = useState<"loading" | "ready" | "failed">("loading");
   const [projectId, setProjectId] = useState("");
   const [scenario, setScenario] = useState<
     "new_product" | "existing_product" | "major_feature"
@@ -329,13 +335,28 @@ function PilotCapture({
   const storedSession = sessions.find((session) => ["active", "interrupted"].includes(session.status));
   const active = storedSession && observedSession?.id === storedSession.id ? observedSession : storedSession;
   useEffect(() => {
-    void Promise.all([listLocalProjects({ endpoint }), listOwnerPilotImprovements(endpoint)]).then(([value, handoffs]) => {
-      const available = value.projects.map((project) => ({ id: project.id, name: project.displayName }));
-      setProjects(available);
-      setProjectId((current) => current || available[0]?.id || "");
-      setDrafts(handoffs.drafts);
-    });
+    void Promise.all([listLocalProjects({ endpoint }), listOwnerPilotImprovements(endpoint)])
+      .then(([value, handoffs]) => {
+        const available = value.projects.map((project) => ({ id: project.id, name: project.displayName }));
+        setProjects(available);
+        setProjectId((current) => current || available[0]?.id || "");
+        setDrafts(handoffs.drafts);
+        setProjectsState("ready");
+      })
+      .catch((value) => {
+        setProjectsState("failed");
+        setError(value instanceof Error ? value.message : "Projects could not be loaded.");
+      });
   }, [endpoint]);
+  useEffect(() => {
+    if (active || projects.length === 0 || !cohort) return;
+    if (cohort.nextSession.action === "add_project") {
+      const completedProjects = new Set(sessions.filter((session) => session.status === "completed").map((session) => session.projectId));
+      const untested = projects.find((project) => !completedProjects.has(project.id));
+      if (untested) setProjectId(untested.id);
+    }
+    if (cohort.nextSession.scenario) setScenario(cohort.nextSession.scenario);
+  }, [active, cohort?.evidenceDigest, projects, sessions]);
   useEffect(() => {
     if (!active) { setSummary(null); setObservedSession(null); return; }
     let stopped = false;
@@ -375,11 +396,11 @@ function PilotCapture({
       setBusy(false);
     }
   }
-  async function downloadSessionReceipt() {
-    if (!active) return;
+  async function downloadSessionReceipt(id = active?.id) {
+    if (!id) return;
     setBusy(true); setError("");
     try {
-      const receipt = await getOwnerPilotReceipt(endpoint, active.id);
+      const receipt = await getOwnerPilotReceipt(endpoint, id);
       const url = URL.createObjectURL(new Blob([`${JSON.stringify(receipt, null, 2)}\n`], { type: "application/json" }));
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${receipt.receiptId}.json`; anchor.click(); URL.revokeObjectURL(url);
     } catch (value) { setError(value instanceof Error ? value.message : "The session receipt could not be prepared."); }
@@ -431,7 +452,7 @@ function PilotCapture({
       className="rounded-[1.5rem] bg-muted/45 p-4"
     >
       <h3 id="learning-title" className="font-semibold">
-        Start a consented learning session
+        {active ? "Pilot session in progress" : "Start a consented learning session"}
       </h3>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">
         The participant stays anonymous. Prompts, files, names, email, and
@@ -523,6 +544,11 @@ function PilotCapture({
         </div>
       ) : (
         <>
+          {cohort && (
+            <p role="status" className="mt-4 rounded-2xl bg-background px-4 py-3 text-xs">
+              Recommended next test: {cohort.nextSession.instruction}
+            </p>
+          )}
           <label className="mt-4 block text-xs font-medium">
             Project
             <select
@@ -530,6 +556,7 @@ function PilotCapture({
               onChange={(event) => setProjectId(event.target.value)}
               className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
             >
+              {projects.length === 0 && <option value="">No local project available</option>}
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -537,6 +564,8 @@ function PilotCapture({
               ))}
             </select>
           </label>
+          {projectsState === "loading" && <p role="status" className="mt-2 text-xs text-muted-foreground">Loading local projects…</p>}
+          {projectsState === "ready" && projects.length === 0 && <p role="alert" className="mt-2 text-xs text-destructive">Create or open a local project before starting a pilot session.</p>}
           <label className="mt-4 block text-xs font-medium">
             Scenario
             <select
@@ -631,6 +660,23 @@ function PilotCapture({
           )}
         </div>
       )}
+      {sessions.some((session) => session.status !== "active") && (
+        <section className="mt-5" aria-labelledby="pilot-history-title">
+          <h3 id="pilot-history-title" className="text-sm font-semibold">Recent private sessions</h3>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2" aria-label="Privacy-safe pilot session history">
+            {sessions.filter((session) => session.status !== "active").slice(-6).reverse().map((session) => (
+              <li key={session.id} className="rounded-2xl bg-background p-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <strong>Session {session.id.slice(-6)}</strong>
+                  <Badge tone={session.status === "completed" ? "positive" : "neutral"}>{label(session.status)}</Badge>
+                </div>
+                <p className="mt-2 text-muted-foreground">{label(session.scenario)} · {session.milestones.length}/5 verified steps</p>
+                <Button className="mt-2" variant="ghost" onClick={() => void downloadSessionReceipt(session.id)} disabled={busy} aria-label={`Download receipt for session ${session.id.slice(-6)}`}>Receipt</Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {drafts.filter((draft) => draft.projectId === projectId).slice(-1).map((draft) => (
         <ImprovementDecision key={`${draft.id}:${draft.revision}`} endpoint={endpoint} draft={draft} busy={busy} setBusy={setBusy} failed={setError} saved={async (message) => { await reloadDrafts(); await saved(message); }} />
       ))}
@@ -706,6 +752,8 @@ function duration(seconds: number) { return seconds < 60 ? `${seconds}s` : `${Ma
 function thresholdLabel(metric: OwnerPilotCohortReport["thresholds"][number]["metric"]): string {
   return {
     completed_sessions: "Completed sessions",
+    distinct_projects: "Project coverage",
+    distinct_scenarios: "Scenario coverage",
     completion_rate_percent: "Completion rate",
     trust_at_least_four_percent: "Trust 4–5",
     median_time_to_preview_seconds: "Median to preview",

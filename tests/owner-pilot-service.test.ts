@@ -120,6 +120,7 @@ test("owner pilot rejects private notes and preserves corrupt evidence", async (
 test("pilot review is deterministic, aggregated, thresholded, and evidence-linked", async () => {
   const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
   const service = new OwnerPilotService(directory);
+  await seedRepresentativeCohort(service);
   const review = await service.review(trust(), startedAt + 10_000);
   assert.equal(review.state, "improvements_needed");
   assert.equal(review.improvements.length, 1);
@@ -133,9 +134,13 @@ test("pilot review is deterministic, aggregated, thresholded, and evidence-linke
 test("pilot cohort report makes strict, deterministic, privacy-safe product decisions", async () => {
   const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
   const service = new OwnerPilotService(directory);
+  await seedRepresentativeCohort(service);
   const improve = await service.cohortReport(trust(), startedAt + 10_000);
   assert.equal(improve.decision, "improve");
-  assert.equal(improve.thresholds.length, 5);
+  assert.equal(improve.thresholds.length, 7);
+  assert.equal(improve.distinctProjects, 2);
+  assert.equal(improve.distinctScenarios, 2);
+  assert.equal(improve.nextSession.action, "review_decision");
   assert.equal(improve.thresholds.at(-1)?.state, "failed");
   assert.equal(improve.automaticSpendLimitUsd, 0);
   assert.deepEqual(Object.values(improve.privacy), Array(8).fill(false));
@@ -159,6 +164,44 @@ test("pilot cohort report makes strict, deterministic, privacy-safe product deci
   assert.equal((await service.cohortReport(stale)).decision, "certification_needed");
 });
 
+test("repeated project and scenario sessions cannot game representative readiness", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  for (let index = 0; index < 3; index += 1)
+    await completePilot(service, projectId, "new_product", `pilot.coverage.${index.toString().padStart(4, "0")}`, startedAt + index * 10_000);
+  const report = await service.cohortReport(trust(), startedAt + 40_000);
+  const review = await service.review(trust(), startedAt + 40_000);
+  assert.equal(report.decision, "sample_needed");
+  assert.equal(review.state, "sample_needed");
+  assert.equal(review.improvements.length, 0);
+  assert.equal(report.distinctProjects, 1);
+  assert.equal(report.distinctScenarios, 1);
+  assert.equal(report.nextSession.action, "add_project");
+  assert.match(report.nextAction, /different project/i);
+  assert.equal(JSON.stringify(report).includes(projectId), false);
+});
+
+test("completion rejects contradictory no-friction evidence without mutation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  let session = await service.create({ projectId, scenario: "new_product", consent: true, startedAt }, "pilot.friction.create.0001", startedAt);
+  for (const [milestone, offset] of [["context_ready", 1_000], ["solution_approved", 2_000], ["first_preview", 3_000]] as const)
+    session = await service.advance(session.id, { expectedRevision: session.revision, milestone, at: startedAt + offset });
+  await assert.rejects(() => service.complete(session.id, { expectedRevision: session.revision, completedAt: startedAt + 4_000, trustRating: 4, frictions: ["none", "setup"], note: "" }), /cannot be combined/i);
+  assert.equal((await service.list()).sessions[0]?.status, "active");
+});
+
+test("only one pilot can be active across the local owner journey", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  await service.create({ projectId, scenario: "new_product", consent: true, startedAt }, "pilot.single.create.0001", startedAt);
+  await assert.rejects(
+    () => service.create({ projectId: `project_${"b".repeat(16)}`, scenario: "major_feature", consent: true, startedAt: startedAt + 1 }, "pilot.single.create.0002", startedAt + 1),
+    /already active/i,
+  );
+  assert.equal((await service.list()).sessions.length, 1);
+});
+
 test("canonical evidence reconciles milestones in order without manual claims", async () => {
   const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
   const service = new OwnerPilotService(directory);
@@ -180,7 +223,7 @@ test("stale pilot interrupts, resumes from proof, and exports a private receipt"
   session = await service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 31 * 60_000, activityAt: startedAt, contextDigest: null, approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 31 * 60_000);
   assert.equal(session.status, "interrupted");
   assert.match((await service.summary(session.id, startedAt + 31 * 60_000)).nextAction, /resume|withdraw/i);
-  await assert.rejects(() => service.create({ projectId, scenario: "major_feature", consent: true, startedAt: startedAt + 31 * 60_000 }, "pilot.interrupt.create.0002", startedAt + 31 * 60_000), /already has/i);
+  await assert.rejects(() => service.create({ projectId, scenario: "major_feature", consent: true, startedAt: startedAt + 31 * 60_000 }, "pilot.interrupt.create.0002", startedAt + 31 * 60_000), /already active/i);
   const interruptedRevision = session.revision;
   session = await service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 32 * 60_000, activityAt: startedAt + 32 * 60_000, contextDigest: "4".repeat(64), approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 32 * 60_000);
   assert.equal(session.status, "active");
@@ -259,4 +302,17 @@ function trust(): OwnerJourneyTrustSnapshot {
     },
     automaticSpendLimitUsd: 0,
   };
+}
+
+async function seedRepresentativeCohort(service: OwnerPilotService) {
+  await completePilot(service, projectId, "new_product", "pilot.seed.create.0001", startedAt);
+  await completePilot(service, `project_${"b".repeat(16)}`, "major_feature", "pilot.seed.create.0002", startedAt + 10_000);
+  await completePilot(service, projectId, "new_product", "pilot.seed.create.0003", startedAt + 20_000);
+}
+
+async function completePilot(service: OwnerPilotService, selectedProjectId: string, scenario: "new_product" | "existing_product" | "major_feature", key: string, at: number) {
+  let session = await service.create({ projectId: selectedProjectId, scenario, consent: true, startedAt: at }, key, at);
+  for (const [milestone, offset] of [["context_ready", 1_000], ["solution_approved", 2_000], ["first_preview", 3_000]] as const)
+    session = await service.advance(session.id, { expectedRevision: session.revision, milestone, at: at + offset });
+  return service.complete(session.id, { expectedRevision: session.revision, completedAt: at + 4_000, trustRating: 4, frictions: ["clarity"], note: "" });
 }

@@ -111,6 +111,13 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
     "Trust 4–5",
     "Median to preview",
     "Repeated friction",
+    "Project coverage",
+    "Scenario coverage",
+    "Recent private sessions",
+    "Privacy-safe pilot session history",
+    "Recommended next test",
+    "No local project available",
+    "Create or open a local project",
     "Next:",
     "Cohort report",
   ]) assert.match(source, new RegExp(phrase, "i"));
@@ -119,4 +126,10 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
   assert.match(source, /ownerPilotCohortReportFilename/);
   assert.match(client, /\/api\/v1\/owner-pilot\/cohort-report/);
   assert.match(client, /codkesh-pilot-cohort-/);
+  assert.match(source, /cohort\.distinctProjects/);
+  assert.match(source, /cohort\.distinctScenarios/);
+  assert.doesNotMatch(source, /\{session\.projectId\}/);
+  assert.doesNotMatch(source, /session\.note/);
+  assert.match(source, /cohort\.nextSession\.scenario/);
+  assert.match(source, /completedProjects/);
 });
