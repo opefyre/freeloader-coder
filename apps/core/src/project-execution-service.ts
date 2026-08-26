@@ -966,7 +966,8 @@ export class ProjectExecutionService {
       leaseId,
       ownerId,
       (record, task, now) => {
-        const preserveAssignment = hasValidatedImplementationAwaitingReview(task);
+        const preserveAssignment =
+          hasValidatedImplementationAwaitingReview(task);
         const updated: ExecutionTask = {
           ...task,
           status: "queued",
@@ -1136,13 +1137,22 @@ export class ProjectExecutionService {
         task.integrationDigest === null &&
         task.failureClass === "implementation" &&
         task.safeMessage.includes("Clean-checkout validation failed");
+      const verifiedReviewDissentRepair =
+        ["needs_user", "quarantined"].includes(task.status) &&
+        task.reviews.length > 0 &&
+        hasBlockingReviewDissent(task.reviews) &&
+        task.commitDigest === null &&
+        task.integrationDigest === null;
       if (
         (!boundedQuarantine &&
           !legacyDependencyInterruption &&
           !verifiedPreReviewInterruption &&
-          !verifiedCleanCheckoutRepair) ||
+          !verifiedCleanCheckoutRepair &&
+          !verifiedReviewDissentRepair) ||
         task.lease ||
-        (task.reviews.length > 0 && !verifiedCleanCheckoutRepair) ||
+        (task.reviews.length > 0 &&
+          !verifiedCleanCheckoutRepair &&
+          !verifiedReviewDissentRepair) ||
         task.commitDigest ||
         task.integrationDigest
       ) {
@@ -1155,7 +1165,9 @@ export class ProjectExecutionService {
       const evidenceDigest = createHash("sha256")
         .update(JSON.stringify(verification))
         .digest("hex");
-      const archived = verifiedCleanCheckoutRepair
+      const verifiedReviewedRepair =
+        verifiedCleanCheckoutRepair || verifiedReviewDissentRepair;
+      const archived = verifiedReviewedRepair
         ? {
             approvalId: recovery.approvalId,
             priorRevision: task.revision,
@@ -1172,14 +1184,14 @@ export class ProjectExecutionService {
         status: "queued",
         assignment: null,
         verifiedRecoveryEvidenceDigest: evidenceDigest,
-        attempt: verifiedCleanCheckoutRepair ? 0 : task.attempt,
-        validations: verifiedCleanCheckoutRepair ? [] : task.validations,
-        reviews: verifiedCleanCheckoutRepair ? [] : task.reviews,
+        attempt: verifiedReviewedRepair ? 0 : task.attempt,
+        validations: verifiedReviewedRepair ? [] : task.validations,
+        reviews: verifiedReviewedRepair ? [] : task.reviews,
         reviewAttempts: archived
           ? [...(task.reviewAttempts ?? []), archived]
           : task.reviewAttempts,
         revision: task.revision + 1,
-        safeMessage: `Owner approved one freshly verified ${verifiedCleanCheckoutRepair ? "clean-checkout" : "pre-review"} recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`,
+        safeMessage: `Owner approved one freshly verified ${verifiedReviewDissentRepair ? "review-dissent" : verifiedCleanCheckoutRepair ? "clean-checkout" : "pre-review"} recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`,
         updatedAt: now,
       };
       return {

@@ -1203,6 +1203,86 @@ test("freshly verified clean-checkout repair preserves implementation and skips 
   }
 });
 
+test("freshly verified review-dissent repair preserves the committed repair for re-review", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "project-execution-review-dissent-recovery-"),
+  );
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      evidence,
+    );
+    for (const tier of ["fast", "full"] as const)
+      await service.recordValidation(
+        projectId,
+        taskId,
+        lease.leaseId,
+        "worker-a",
+        {
+          tier,
+          commandLabel: tier,
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+      );
+    const dissent = await service.recordReviews(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      [
+        review("functional-reviewer", "gemini", "functional"),
+        {
+          ...review("design-reviewer", "openrouter", "design"),
+          verdict: "fail" as const,
+        },
+      ],
+    );
+    const recovered = await service.authorizeQuarantineRecovery(
+      projectId,
+      {
+        taskId,
+        expectedRevision: dissent.revision,
+        approvalId: "approval_88888888888888888888",
+        rationale:
+          "The bounded descendant addresses every review finding and passes every required profile.",
+      },
+      [
+        {
+          profile: "typecheck",
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+        {
+          profile: "unit",
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+      ],
+    );
+    assert.equal(recovered.status, "queued");
+    assert.equal(recovered.attempt, 0);
+    assert.equal(recovered.implementationEvidence.length, 1);
+    assert.equal(recovered.validations.length, 0);
+    assert.equal(recovered.reviews.length, 0);
+    assert.equal(recovered.reviewAttempts?.at(-1)?.reviews[1]?.verdict, "fail");
+    assert.ok(recovered.verifiedRecoveryEvidenceDigest);
+    assert.match(recovered.safeMessage, /review-dissent recovery/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("owner-authorized completed prerequisite repair preserves proof and reopens execution", async () => {
   const root = await mkdtemp(
     join(tmpdir(), "project-execution-completed-repair-"),

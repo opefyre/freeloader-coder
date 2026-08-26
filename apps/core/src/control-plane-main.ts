@@ -1079,7 +1079,8 @@ const controlPlane = createControlPlaneServer({
           task.safeMessage.includes("Clean-checkout validation failed") &&
           task.reviews.length > 0 &&
           task.reviews.every((review) => review.verdict === "pass");
-        if (cleanCheckoutRepair) {
+        const verifiedReviewRepair = hasBlockingReviewDissent(task.reviews);
+        if (cleanCheckoutRepair || verifiedReviewRepair) {
           const verification = await executionAdapters.verifyQuarantineRepair(
             projectId,
             task,
