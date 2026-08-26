@@ -504,7 +504,9 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
         try {
           const result = await this.model.run({
             projectId,
-            taskId: `${task.id}-${role}`,
+            // Each provider owns a distinct durable attempt. Reusing only the role
+            // would make a failed provider journal shadow every later fallback.
+            taskId: `${task.id}-${role}-${candidate.providerId}`,
             assignment: candidate,
             role: "reviewer",
             permit,

@@ -125,7 +125,7 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
       );
       assert.equal(instruction.validationHistory.length, 3);
       assert.match(input.system, /Historical validation failures.*superseded/);
-      const role = input.taskId.endsWith("security")
+      const role = input.taskId.includes("-security-")
         ? "security"
         : "functional";
       return {
@@ -317,8 +317,8 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
     "prepare",
     `model:implementer:${taskId}`,
     "apply",
-    `model:reviewer:${taskId}-functional`,
-    `model:reviewer:${taskId}-security`,
+    `model:reviewer:${taskId}-functional-gemini`,
+    `model:reviewer:${taskId}-security-cloudflare`,
     "jira",
   ]);
 });
@@ -851,6 +851,7 @@ test("independent review rotates to another eligible free provider when one reje
     "provider:second-compatible-reviewer",
   );
   const attempted: string[] = [];
+  const attemptedTaskIds: string[] = [];
   const reviewSystems: string[] = [];
   const permit = {
     schemaVersion: 1 as const,
@@ -895,6 +896,7 @@ test("independent review rotates to another eligible free provider when one reje
             },
           };
         attempted.push(input.assignment.providerId);
+        attemptedTaskIds.push(input.taskId);
         reviewSystems.push(input.system);
         if (input.assignment.providerId === "kilo")
           return {
@@ -916,7 +918,7 @@ test("independent review rotates to another eligible free provider when one reje
               ],
             },
           };
-        const role = input.taskId.endsWith("security")
+        const role = input.taskId.includes("-security-")
           ? "security"
           : "functional";
         return {
@@ -970,6 +972,11 @@ test("independent review rotates to another eligible free provider when one reje
     ["mistral", "gemini"],
   );
   assert.deepEqual(attempted, ["kilo", "mistral", "gemini"]);
+  assert.deepEqual(attemptedTaskIds, [
+    `${taskId}-functional-kilo`,
+    `${taskId}-functional-mistral`,
+    `${taskId}-security-gemini`,
+  ]);
   assert.ok(
     reviewSystems.every((system) =>
       system.includes(
