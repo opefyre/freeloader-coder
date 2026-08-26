@@ -52,7 +52,7 @@ export class ProjectSolutionCoordinator {
     const attempts = (current?.attempts ?? 0) + 1;
     await this.#set({ schemaVersion: 1, projectId, state: "running", attempts, retryAt: null, safeMessage: "Free-provider specialists are researching and reviewing the solution.", updatedAt: this.now() });
     try {
-      await this.orchestrator.run(projectId);
+      await this.orchestrator.run(projectId, `solution-attempt-${attempts}`);
       await this.#set({ schemaVersion: 1, projectId, state: "completed", attempts, retryAt: null, safeMessage: "Reviewed solution is ready for owner approval.", updatedAt: this.now() });
     } catch (error) {
       console.error(JSON.stringify({

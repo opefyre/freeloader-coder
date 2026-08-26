@@ -63,6 +63,30 @@ test("solution coordinator projects owner-safe consent failures without retry lo
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("an owner retry receives a fresh provider execution identity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-coordinator-fresh-retry-"));
+  const executionIds: string[] = [];
+  try {
+    const coordinator = new ProjectSolutionCoordinator(root, {
+      run: async (_projectId: string, executionId?: string) => {
+        executionIds.push(executionId ?? "");
+        if (executionIds.length === 1) {
+          throw new FreeProviderSolutionUnavailableError(null, "Free-provider evidence was invalid.");
+        }
+        return {} as any;
+      },
+    } as any, () => 100);
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "needs_user");
+    await coordinator.schedule(projectId);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    assert.deepEqual(executionIds, ["solution-attempt-1", "solution-attempt-2"]);
+    await coordinator.shutdown();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("solution coordinator explains safe preparation failures without leaking unknown errors", async () => {
   const contextRoot = await mkdtemp(join(tmpdir(), "solution-coordinator-context-failure-"));
   const unknownRoot = await mkdtemp(join(tmpdir(), "solution-coordinator-unknown-failure-"));

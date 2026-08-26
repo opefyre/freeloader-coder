@@ -28,6 +28,7 @@ export interface RoutedSolutionModel {
     readonly instruction: string;
     readonly sources: readonly { name: string; content: string }[];
     readonly permit: ProjectEgressPermit;
+    readonly executionId?: string | undefined;
   }): Promise<SolutionModelEvidence>;
 }
 
@@ -46,7 +47,7 @@ export class ProjectSolutionOrchestrator {
     private readonly now: () => number = Date.now
   ) {}
 
-  async run(projectId: string): Promise<ProjectLifecycleRecord> {
+  async run(projectId: string, executionId?: string): Promise<ProjectLifecycleRecord> {
     const lifecycle = await this.lifecycles.get(projectId);
     if (!lifecycle) throw new Error("Project lifecycle was not found.");
     if (lifecycle.stage === "awaiting_design_approval") return lifecycle;
@@ -69,13 +70,13 @@ export class ProjectSolutionOrchestrator {
     const baseSources = [{ name: "CONTEXT.md", content: verified.markdown }, { name: "Owner feedback", content: feedback }, ...(existingContent ? [{ name: "Current approved candidate", content: safeJson(existingContent) }] : [])];
     const reviewBaseSources = baseSources.filter((source) => source.name === "CONTEXT.md");
     const revisionScope = existingContent ? solutionRevisionScopeSchema.parse((await this.model.run({
-      projectId, role: "solution_revision_scope", contextDigest: verified.digest,
+      projectId, role: "solution_revision_scope", contextDigest: verified.digest, executionId,
       instruction: revisionScopeInstruction(), sources: baseSources, permit,
     })).response) : null;
 
     const [product, technical] = await Promise.all([
-      this.model.run({ projectId, role: "product_research", contextDigest: verified.digest, instruction: productInstruction(), sources: baseSources, permit }),
-      this.model.run({ projectId, role: "technical_research", contextDigest: verified.digest, instruction: technicalInstruction(), sources: baseSources, permit }),
+      this.model.run({ projectId, role: "product_research", contextDigest: verified.digest, instruction: productInstruction(), sources: baseSources, permit, executionId }),
+      this.model.run({ projectId, role: "technical_research", contextDigest: verified.digest, instruction: technicalInstruction(), sources: baseSources, permit, executionId }),
     ]);
     const researchArtifact = await this.solutions.publishResearch(projectId, {
       contextDigest: verified.digest,
@@ -83,7 +84,7 @@ export class ProjectSolutionOrchestrator {
       technical,
     });
     const reconciled = await this.model.run({
-      projectId, role: "solution_reconciliation", contextDigest: verified.digest,
+      projectId, role: "solution_reconciliation", contextDigest: verified.digest, executionId,
       instruction: reconciliationInstruction(),
       sources: [...baseSources, { name: "RESEARCH.md", content: researchArtifact.body }], permit,
     });
@@ -97,8 +98,8 @@ export class ProjectSolutionOrchestrator {
     for (let round = 0; ; round += 1) {
       const reviewSource = { name: "Candidate solution", content: safeJson(content) };
       [productReviewEvidence, technicalReviewEvidence] = await Promise.all([
-        this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...reviewBaseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
-        this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...reviewBaseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit }),
+        this.model.run({ projectId, role: "product_review", contextDigest: verified.digest, instruction: reviewInstruction("product"), sources: [...reviewBaseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit, executionId }),
+        this.model.run({ projectId, role: "technical_review", contextDigest: verified.digest, instruction: reviewInstruction("technical"), sources: [...reviewBaseSources, { name: "RESEARCH.md", content: researchArtifact.body }, reviewSource], permit, executionId }),
       ]);
       productReview = solutionReviewResultSchema.parse(productReviewEvidence.response);
       technicalReview = solutionReviewResultSchema.parse(technicalReviewEvidence.response);
@@ -110,6 +111,7 @@ export class ProjectSolutionOrchestrator {
       if (round >= maxHealingRounds) throw new SolutionReviewDissentError(findings);
       const healed = await this.model.run({
         projectId, role: "solution_reconciliation", contextDigest: verified.digest,
+        executionId,
         instruction: healingInstruction(),
         sources: [
           ...reviewBaseSources,
