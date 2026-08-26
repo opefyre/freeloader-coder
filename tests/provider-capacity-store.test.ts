@@ -22,7 +22,7 @@ test("capacity and circuits persist exactly once across restart", async () => {
     assert.equal(first.usageByConnectionId["connection-a"]?.requestsToday, 2);
     assert.equal(
       first.circuitOpenUntilByConnectionId["connection-a"],
-      now + 5 * 60_000
+      now + 60_000
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
 
@@ -107,6 +107,28 @@ test("a deterministic request rejection immediately cools down the incompatible 
 
     const snapshot = await new ProviderCapacityStore(path).snapshot(["cohere"], now);
     assert.equal(snapshot.circuitOpenUntilByConnectionId.cohere, now + 10 * 60_000);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a successful explicit provider probe heals a stale runtime circuit", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-probe-healing-"));
+  try {
+    const path = join(root, "provider-capacity.json");
+    const now = 1_800_000_000_000;
+    const store = new ProviderCapacityStore(path);
+    await store.record(
+      projection([{ ...attempt("policy-1", "policy"), failureCode: "request_rejected", retryAt: null }]),
+      { candidate: "cohere" },
+      now,
+    );
+    assert.equal((await store.snapshot(["cohere"], now)).circuitOpenUntilByConnectionId.cohere, now + 10 * 60_000);
+
+    await store.recordProbeSuccess("cohere", now + 1);
+    const healed = await new ProviderCapacityStore(path).snapshot(["cohere"], now + 1);
+    assert.equal(healed.circuitOpenUntilByConnectionId.cohere, 0);
+    assert.equal(healed.usageByConnectionId.cohere?.requestsToday, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

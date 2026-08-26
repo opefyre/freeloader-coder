@@ -42,7 +42,14 @@ test("OpenAI-compatible adapter fixes the verified endpoint and normalizes struc
     messages: [{ role: "user", content: "Return JSON." }],
     maxOutputTokens: 100,
     temperature: 0,
-    responseSchema: { type: "object" },
+    responseSchema: {
+      type: "object",
+      properties: {
+        schemaVersion: { const: 1 },
+        state: { enum: ["ready", "blocked"] },
+        optional: { enum: ["value", null] },
+      },
+    },
     tools: [],
     timeoutMs: 2_000,
   });
@@ -61,6 +68,9 @@ test("OpenAI-compatible adapter fixes the verified endpoint and normalizes struc
   assert.doesNotMatch(JSON.stringify(response), /local-test-secret/);
   const body = JSON.parse(String(requests.at(-1)?.init.body));
   assert.equal(body.response_format.type, "json_schema");
+  assert.deepEqual(body.response_format.json_schema.schema.properties.schemaVersion, { const: 1, type: "integer" });
+  assert.deepEqual(body.response_format.json_schema.schema.properties.state, { enum: ["ready", "blocked"], type: "string" });
+  assert.deepEqual(body.response_format.json_schema.schema.properties.optional, { enum: ["value", null], type: ["string", "null"] });
   assert.deepEqual(body.tools, undefined);
 });
 
@@ -71,6 +81,43 @@ test("model discovery accepts Gemini's models/ identifier prefix", async () => {
   });
   const models = await adapter.discoverModels({ secret: "local-test-secret" });
   assert.deepEqual(models.map((model) => model.id), ["gemini-3.5-flash-lite"]);
+});
+
+test("Cohere receives its portable schema subset while local validation retains authority", async () => {
+  let body: any;
+  const adapter = createOpenAiCompatibleAdapter({
+    providerId: "cohere",
+    fetch: async (_url, init) => {
+      body = JSON.parse(String(init?.body));
+      return json({
+        model: "command-a-03-2025",
+        choices: [{ finish_reason: "stop", message: { content: '{"schemaVersion":1,"items":["safe"]}' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5 },
+      });
+    },
+  });
+  await adapter.chat({ secret: "local-test-secret" }, {
+    requestId: "cohere-portable-schema",
+    modelId: "command-a-03-2025",
+    messages: [{ role: "user", content: "Return JSON." }],
+    maxOutputTokens: 100,
+    temperature: 0,
+    responseSchema: {
+      type: "object",
+      properties: {
+        schemaVersion: { const: 1 },
+        items: { type: "array", minItems: 1, maxItems: 3, items: { type: "string", minLength: 2, pattern: "^[a-z]+$" } },
+      },
+    },
+    tools: [],
+    timeoutMs: 2_000,
+  });
+  const schema = body.response_format.json_schema.schema;
+  assert.deepEqual(schema.properties.schemaVersion, { const: 1, type: "integer" });
+  assert.equal(schema.properties.items.minItems, undefined);
+  assert.equal(schema.properties.items.maxItems, undefined);
+  assert.equal(schema.properties.items.items.minLength, undefined);
+  assert.equal(schema.properties.items.items.pattern, undefined);
 });
 
 test("Zhipu admits its catalog-verified free model when discovery omits it", async () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { FreeProviderSolutionModel, providerIdsForRole } from "../apps/core/src/free-provider-solution-model.js";
-import type { ProviderAdapter } from "../packages/providers/src/index.js";
+import { normalizeProviderFailure, ProviderAdapterFailure, type ProviderAdapter } from "../packages/providers/src/index.js";
 import type { ProviderConnection } from "../packages/schemas/src/index.js";
 
 const now = 1_800_000_000_000;
@@ -15,10 +15,11 @@ test("solution model uses only consented free providers and replays durable outp
   const root = await mkdtemp(join(tmpdir(), "solution-model-"));
   try {
     let calls = 0;
+    let maxOutputTokens = 0;
     const connections = [connection("groq", "openai/gpt-oss-120b"), connection("mistral", "mistral-small-latest")];
     let responseSchema: any;
     const model = new FreeProviderSolutionModel(root, { list: async () => connections } as any, { read: async () => "safe-test-credential" }, {
-      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => { calls += 1; responseSchema = request.responseSchema; return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(researchResponse("product")), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }; } }) as unknown as ProviderAdapter,
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => { calls += 1; responseSchema = request.responseSchema; maxOutputTokens = request.maxOutputTokens; return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(researchResponse("product")), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }; } }) as unknown as ProviderAdapter,
     }, () => now);
     const input = { projectId, role: "product_research" as const, contextDigest, instruction: "Analyze product behavior.", sources: [{ name: "CONTEXT.md", content: "# Context\n\nNon-personal test source." }], permit: { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 } };
     const first = await model.run(input);
@@ -26,6 +27,8 @@ test("solution model uses only consented free providers and replays durable outp
     assert.equal(calls, 1);
     assert.equal(responseSchema.additionalProperties, false);
     assert.equal(responseSchema.properties.discipline.const, "product");
+    assert.ok(maxOutputTokens <= 3_500, "Groq requests leave room for structured-schema overhead inside the free TPM window");
+    assert.ok(maxOutputTokens + Math.ceil(JSON.stringify(input.sources).length / 4) + 1_500 <= 7_500);
     assert.deepEqual(responseSchema.required, ["schemaVersion", "discipline", "questions", "sources", "claims", "contradictions", "gaps"]);
     await model.run(input);
     assert.equal(calls, 1);
@@ -108,9 +111,11 @@ test("solution model performs one bounded same-provider repair for invalid struc
   const root = await mkdtemp(join(tmpdir(), "solution-model-repair-"));
   try {
     let calls = 0;
+    let repairPrompt = "";
     const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
       adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
         calls += 1;
+        if (calls === 2) repairPrompt = request.messages.at(-1)?.content ?? "";
         const content = calls === 1 ? JSON.stringify({ schemaVersion: 1, discipline: "wrong" }) : JSON.stringify(researchResponse("technical"));
         return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content, finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
       } }) as unknown as ProviderAdapter,
@@ -118,8 +123,31 @@ test("solution model performs one bounded same-provider repair for invalid struc
     const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
     const result = await model.run({ projectId, role: "technical_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit });
     assert.equal(calls, 2, "one bounded same-provider repair is attempted");
+    assert.match(repairPrompt, /LOCAL VALIDATION FINDINGS/);
+    assert.match(repairPrompt, /questions/);
     assert.equal((result.response as any).discipline, "technical");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("solution model falls back to JSON-only generation when a provider rejects a complex schema", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-json-fallback-"));
+  try {
+    const schemas: unknown[] = [];
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
+        schemas.push(request.responseSchema);
+        if (schemas.length === 1) throw new ProviderAdapterFailure(normalizeProviderFailure({ status: 400 }));
+        return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(researchResponse("product")), finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
+      } }) as unknown as ProviderAdapter,
+    }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const result = await model.run({ projectId, role: "product_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit });
+    assert.equal(result.providerId, "groq");
+    assert.equal(typeof schemas[0], "object");
+    assert.equal(schemas[1], undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("solution model rejects private research citations at the provider boundary and falls back", async () => {
@@ -159,9 +187,19 @@ test("delivery roles reserve independent provider capacity instead of exhausting
   assert.deepEqual(providerIdsForRole("delivery_review", consented, ["mistral", "huggingface", "cohere", "zhipu", "openrouter", "nvidia-nim", "gemini", "groq"]), ["mistral", "huggingface", "cohere", "zhipu", "openrouter"]);
   assert.deepEqual(providerIdsForRole("technical_delivery_review", consented, ["nvidia-nim", "kilo", "groq", "mistral", "gemini"]), ["nvidia-nim", "kilo", "groq"]);
   assert.deepEqual(providerIdsForRole("delivery_review", ["gemini"], ["mistral", "gemini"]), ["gemini"]);
-  assert.deepEqual(providerIdsForRole("product_research", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), consented);
+  assert.deepEqual(providerIdsForRole("product_research", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), ["gemini", "mistral", "nvidia-nim", "groq"]);
   assert.deepEqual(providerIdsForRole("product_review", consented, ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere"]), ["gemini", "huggingface", "cohere"]);
   assert.deepEqual(providerIdsForRole("technical_review", consented, ["nvidia-nim", "mistral", "gemini", "huggingface", "kilo", "groq", "cohere"]), ["nvidia-nim", "mistral", "kilo", "groq"]);
+});
+
+test("research preserves Groq capacity for the independent technical reviewer", () => {
+  const consented = ["cohere", "groq"];
+  const order = ["cohere", "groq"];
+  assert.deepEqual(providerIdsForRole("product_research", consented, order), ["cohere", "groq"]);
+  assert.deepEqual(providerIdsForRole("technical_research", consented, order), ["cohere", "groq"]);
+  assert.deepEqual(providerIdsForRole("solution_reconciliation", consented, order), ["cohere", "groq"]);
+  assert.deepEqual(providerIdsForRole("technical_review", consented, order), ["groq"]);
+  assert.deepEqual(providerIdsForRole("product_research", ["groq"], ["groq"]), ["groq"]);
 });
 
 test("delivery planning publishes the canonical wire constraints providers must satisfy", async () => {

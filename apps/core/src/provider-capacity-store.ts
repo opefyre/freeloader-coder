@@ -126,7 +126,9 @@ export class ProviderCapacityStore {
               state: entry.circuit,
               now: attempt.finishedAt ?? now,
               threshold: transientFailure ? 2 : 1,
-              cooldownMs: transientFailure ? 5 * 60_000 : 10 * 60_000,
+              cooldownMs: transientFailure
+                ? Math.max(1_000, (attempt.retryAt ?? ((attempt.finishedAt ?? now) + 5 * 60_000)) - (attempt.finishedAt ?? now))
+                : 10 * 60_000,
               // A deterministic rejection is not transient for this route, but it
               // must still be cooled down so the scheduler can try another free
               // provider instead of selecting the same incompatible route forever.
@@ -177,6 +179,18 @@ export class ProviderCapacityStore {
           });
       entry.recordedAttempts.push(input.attemptId);
       document.connections[input.connectionId] = entry;
+      await this.save(document);
+    });
+    this.mutation = operation.catch(() => undefined);
+    return operation;
+  }
+
+  public async recordProbeSuccess(connectionId: string, now: number): Promise<void> {
+    const operation = this.mutation.then(async () => {
+      const document = await this.load();
+      const entry = document.connections[connectionId] ?? freshEntry(now);
+      entry.circuit = recordCircuitSuccess();
+      document.connections[connectionId] = entry;
       await this.save(document);
     });
     this.mutation = operation.catch(() => undefined);

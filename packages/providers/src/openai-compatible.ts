@@ -277,7 +277,7 @@ function toProviderRequest(
             json_schema: {
               name: "pipeline_studio_response",
               strict: true,
-              schema: request.responseSchema,
+              schema: providerCompatibleJsonSchema(request.responseSchema, providerId),
             },
           },
         }
@@ -295,6 +295,64 @@ function toProviderRequest(
         }
       : {}),
   };
+}
+
+/**
+ * Some OpenAI-compatible providers implement the JSON Schema subset more
+ * strictly than the specification and reject `const`/`enum` nodes without an
+ * explicit type. Adding the inferable type is semantics-preserving and keeps
+ * one canonical response contract portable across free providers.
+ */
+function providerCompatibleJsonSchema(
+  value: Readonly<Record<string, unknown>>,
+  providerId: string,
+): Readonly<Record<string, unknown>> {
+  const normalized = normalizeJsonSchemaValue(value, providerId);
+  return record(normalized);
+}
+
+function normalizeJsonSchemaValue(value: unknown, providerId: string): unknown {
+  if (Array.isArray(value)) return value.map((entry) => normalizeJsonSchemaValue(entry, providerId));
+  if (!value || typeof value !== "object") return value;
+  const input = value as Record<string, unknown>;
+  const output = Object.fromEntries(
+    Object.entries(input)
+      .filter(([key]) => providerId !== "cohere" || !COHERE_UNSUPPORTED_SCHEMA_KEYWORDS.has(key))
+      .map(([key, child]) => [key, normalizeJsonSchemaValue(child, providerId)]),
+  );
+  if (!("type" in output)) {
+    const inferred = inferJsonSchemaType(input.const) ?? inferEnumType(input.enum);
+    if (inferred) output.type = inferred;
+  }
+  return output;
+}
+
+// Cohere's structured-output subset rejects validation-only constraints that
+// Codkesh still enforces locally before any evidence becomes canonical.
+const COHERE_UNSUPPORTED_SCHEMA_KEYWORDS = new Set([
+  "minItems",
+  "maxItems",
+  "minLength",
+  "maxLength",
+  "pattern",
+  "minimum",
+  "maximum",
+]);
+
+function inferEnumType(value: unknown): string | readonly string[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const types = [...new Set(value.map(inferJsonSchemaType).filter((type): type is string => Boolean(type)))];
+  return types.length === 1 ? types[0]! : types.length === value.length ? types : null;
+}
+
+function inferJsonSchemaType(value: unknown): string | null {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "string") return "string";
+  if (typeof value === "boolean") return "boolean";
+  if (typeof value === "number") return Number.isInteger(value) ? "integer" : "number";
+  if (typeof value === "object" && value) return "object";
+  return null;
 }
 
 function normalizeResponse(input: {

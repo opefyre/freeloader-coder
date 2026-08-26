@@ -796,12 +796,20 @@ const controlPlane = createControlPlaneServer({
     },
     reProbe: async (connectionId) => {
       const result = await providerConnectionService.reProbe(connectionId);
-      if (result.connection?.admission.admitted)
+      if (result.connection?.admission.admitted) {
+        await intakeCapacity.recordProbeSuccess(connectionId, Date.now());
         await wakeQueuedProjectExecutions();
+      }
       return result;
     },
-    replaceModel: (connectionId, input) =>
-      providerConnectionService.replaceModel(connectionId, input),
+    replaceModel: async (connectionId, input) => {
+      const result = await providerConnectionService.replaceModel(connectionId, input);
+      if (result.connection?.admission.admitted) {
+        await intakeCapacity.recordProbeSuccess(connectionId, Date.now());
+        await wakeQueuedProjectExecutions();
+      }
+      return result;
+    },
     revoke: (connectionId) => providerConnectionService.revoke(connectionId),
     disconnect: (connectionId) =>
       providerConnectionService.disconnect(connectionId),
