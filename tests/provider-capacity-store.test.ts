@@ -112,6 +112,28 @@ test("a deterministic request rejection immediately cools down the incompatible 
   }
 });
 
+test("a role-specific response contract failure does not disable the provider globally", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-contract-local-"));
+  try {
+    const path = join(root, "provider-capacity.json");
+    const now = 1_800_000_000_000;
+    const rejected = {
+      ...attempt("contract-1", "policy"),
+      failureCode: "unsafe-citation",
+      retryAt: null,
+    };
+    const store = new ProviderCapacityStore(path);
+    await store.record(projection([rejected]), { candidate: "gemini" }, now);
+    await store.record(projection([rejected]), { candidate: "gemini" }, now + 1);
+
+    const snapshot = await new ProviderCapacityStore(path).snapshot(["gemini"], now + 1);
+    assert.equal(snapshot.circuitOpenUntilByConnectionId.gemini, 0);
+    assert.equal(snapshot.usageByConnectionId.gemini?.requestsToday, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a successful explicit provider probe heals a stale runtime circuit", async () => {
   const root = await mkdtemp(join(tmpdir(), "provider-probe-healing-"));
   try {

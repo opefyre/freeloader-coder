@@ -83,7 +83,7 @@ export class ProviderCapacityStore {
         continue;
       }
       if (entry.recordedAttempts.includes(attempt.idempotencyKey)) {
-        const deterministicFailure = attempt.status === "failed" && ![
+        const deterministicFailure = attempt.status === "failed" && !isContractLocalFailure(attempt.failureCode) && ![
           "capacity_deferred",
           "gateway_interrupted",
           "rate_limit",
@@ -122,6 +122,8 @@ export class ProviderCapacityStore {
       entry.circuit =
         attempt.status === "succeeded"
           ? recordCircuitSuccess()
+          : isContractLocalFailure(attempt.failureCode)
+            ? entry.circuit
           : recordCircuitFailure({
               state: entry.circuit,
               now: attempt.finishedAt ?? now,
@@ -219,6 +221,10 @@ export class ProviderCapacityStore {
     await rename(temporary, this.path);
     await chmod(this.path, 0o600);
   }
+}
+
+function isContractLocalFailure(code: string | null): boolean {
+  return ["malformed-response", "response-contract-rejected", "unsafe-citation"].includes(code ?? "");
 }
 
 function freshEntry(now: number): z.infer<typeof entrySchema> {

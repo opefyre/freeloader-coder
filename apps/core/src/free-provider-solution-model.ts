@@ -10,7 +10,7 @@ import { deliveryPlanContentSchema } from "../../../packages/orchestration/src/d
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 11;
+const RESPONSE_CONTRACT_VERSION = 12;
 const CONSERVATIVE_FREE_REQUEST_TOKEN_BUDGET = 7_500;
 const REQUEST_ENVELOPE_TOKEN_RESERVE = 1_500;
 
