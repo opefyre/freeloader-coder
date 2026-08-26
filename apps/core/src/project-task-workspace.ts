@@ -628,10 +628,7 @@ export class ProjectTaskWorkspaceService {
         workspace.root,
         task.allowedFiles,
       );
-      if (
-        !task.reviewAttempts?.length ||
-        existing.length !== task.allowedFiles.length
-      ) {
+      if (existing.length !== task.allowedFiles.length) {
         throw new ProjectTaskWorkspaceError(
           "operation_denied",
           "Commit changes do not match exact file authority.",
@@ -682,6 +679,16 @@ export class ProjectTaskWorkspaceService {
             }),
           ),
         };
+      }
+      // An unchanged baseline is reusable only for an explicit reopened review.
+      // A clean authorized descendant, handled above, is independently proven
+      // by its ancestry and exact changed-file set and does not require stale
+      // review-attempt metadata to survive a controller restart.
+      if (!task.reviewAttempts?.length) {
+        throw new ProjectTaskWorkspaceError(
+          "operation_denied",
+          "Commit changes do not match exact file authority.",
+        );
       }
       return {
         commitDigest: workspace.baseline,
