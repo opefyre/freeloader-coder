@@ -41,7 +41,7 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
       assert.equal(instruction.validationHistory.length, 3);
       assert.match(input.system, /Historical validation failures.*superseded/);
       const role = input.taskId.endsWith("security") ? "security" : "functional";
-      return { providerId: input.assignment.providerId, modelId: "reviewer", artifactDigest: "b".repeat(64), response: { reviewerId: `${role}-reviewer`, verdict: "pass", findings: [{ id: `${role}-1`, severity: "info", evidenceRef: digest, confidence: 0.99, acceptanceCriterion: "Approved behavior is present.", recommendedRepair: "No repair is required." }] } };
+      return { providerId: input.assignment.providerId, modelId: "reviewer", artifactDigest: "b".repeat(64), response: { reviewerId: `${role}-reviewer`, verdict: "pass", findings: [{ id: `${role}-1`, severity: "info", evidenceRef: digest, confidence: 0.99, acceptanceCriterion: "Approved behavior is present.", recommendedRepair: role === "functional" ? "" : "No repair is required." }] } };
     },
   };
   const workspaces = {
@@ -74,6 +74,7 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
   const reviews = await adapters.review(projectId, { ...task, validations: [{ tier: "fast", commandLabel: "unit", passed: false, exitCode: 1, evidenceDigest: "e".repeat(64), observedAt: 1 }, { tier: "fast", commandLabel: "unit", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 2 }, { tier: "full", commandLabel: "unit", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 3 }] });
   assert.deepEqual(reviews.map((item) => item.role), ["functional", "security"]);
   assert.deepEqual(reviews.map((item) => item.providerId), ["gemini", "cloudflare"]);
+  assert.equal(reviews[0]?.findings[0]?.recommendedRepair, "No repair required.");
   assert.equal((await adapters.integrate(projectId, task)).validation.passed, true);
   await adapters.observe(projectId);
   assert.equal(sawToolchainContext, true);
