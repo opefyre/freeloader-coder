@@ -8,6 +8,7 @@ import type { DeliveryPlanDraft } from "../../../packages/orchestration/src/deli
 import type { ProjectEgressPermit } from "../../../packages/orchestration/src/solution-design.js";
 import type { ProjectExecutionAdapters, WorkerValidation } from "./project-execution-worker.js";
 import type { PreparedTaskWorkspace, ProjectTaskWorkspaceService, WorkspaceOperation } from "./project-task-workspace.js";
+import { FreeProviderExecutionError } from "./free-provider-execution-model.js";
 
 const implementationSchema = z.strictObject({
   summary: z.string().trim().min(1).max(500),
@@ -157,13 +158,13 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     const independent = candidates
       .filter((candidate) => candidate.providerId !== task.assignment?.providerId)
       .sort((left, right) => reviewProviderRank(left.providerId) - reviewProviderRank(right.providerId));
-    if (independent.length === 0) throw new Error("Independent review requires a second eligible provider.");
+    if (independent.length === 0) throw reviewCapacityUnavailable("Independent review is waiting for a second eligible free provider.");
     const roles: ReviewRole[] = task.uiChanged ? ["functional", "design"] : ["functional", "security"];
     const item = plan.draft.items.find((candidate) => candidate.id === task.id);
     const reviews: QualityReview[] = [];
     for (const [index, role] of roles.entries()) {
       const unused = independent.filter((candidate) => !reviews.some((review) => review.providerId === candidate.providerId));
-      if (unused.length === 0) throw new Error("Independent review quorum requires a distinct eligible provider for every review role.");
+      if (unused.length === 0) throw reviewCapacityUnavailable("Independent review quorum is waiting for another distinct eligible free provider.");
       const offset = index % unused.length;
       const ordered = [...unused.slice(offset), ...unused.slice(0, offset)];
       let lastError: unknown = new Error("No compatible independent reviewer completed the request.");
@@ -225,6 +226,10 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
   async observe(projectId: string) { await this.jira.synchronize(projectId); }
   private async permit(projectId: string) { const context = await this.contexts.readVerified(projectId); return this.egress.authorize(projectId, context.digest); }
   private requireWorkspace(projectId: string, taskId: string) { const workspace = this.#workspaces.get(key(projectId, taskId)); if (!workspace) throw new Error("Task workspace is not active in this controller process."); return workspace; }
+}
+
+function reviewCapacityUnavailable(message: string) {
+  return new FreeProviderExecutionError("capacity_unavailable", Date.now() + 60_000, message);
 }
 
 function implementationResponseSchema(allowedFiles: readonly string[], citationNames: readonly string[]) { return { type: "object", additionalProperties: false, required: ["summary", "operations"], properties: { summary: { type: "string", minLength: 1, maxLength: 500 }, operations: { type: "array", minItems: 1, maxItems: allowedFiles.length, items: { type: "object", additionalProperties: false, required: ["type", "path", "content", "citations", "rationale"], properties: { type: { enum: ["create", "replace"] }, path: { type: "string", enum: [...allowedFiles] }, content: { type: "string" }, citations: { type: "array", minItems: 1, items: { type: "string", enum: [...citationNames] } }, rationale: { type: "string" } } } } } } as const; }

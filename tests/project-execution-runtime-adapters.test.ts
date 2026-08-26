@@ -254,5 +254,29 @@ test("independent review rotates to another eligible free provider when one reje
   assert.ok(reviewSystems.every((system) => system.includes("tsconfig.json is TypeScript JSONC")));
 });
 
+test("temporary review-quorum shortage remains retryable instead of becoming owner work", async () => {
+  const permit = { schemaVersion: 1 as const, projectId, contextDigest: "a".repeat(64), dataClass: "source_code" as const, providerIds: ["groq", "gemini"], approvedAt: 1, expiresAt: 999_999 };
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: { ...completeDeliveryPlan(), revision: 1, reviews: [] } as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    {
+      candidates: async (_permit: unknown, role: string) => role === "implementer" ? [implementer] : [reviewer],
+      run: async (input: any) => input.role === "implementer"
+        ? ({ providerId: input.assignment.providerId, modelId: "coder", artifactDigest: digest, response: { summary: "Prepare review fixture", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Prepare the reviewed change." }] } })
+        : ({ providerId: input.assignment.providerId, modelId: "reviewer", artifactDigest: digest, response: { reviewerId: "functional-reviewer", verdict: "pass", findings: [] } }),
+    },
+    { prepare: async () => ({ projectId, taskId, root: "/isolated", branch: "studio/task", baseline: "a".repeat(40), authorityDigest: digest }), sources: async () => [{ path: "src/workflow.ts", content: "export const value = 1;", digest }], apply: async () => ({ changedFiles: ["src/workflow.ts"], evidenceDigest: digest }) } as any,
+    { synchronize: async () => undefined },
+  );
+  const task = executionTask();
+  await adapters.implement(projectId, task, 0);
+  await assert.rejects(
+    () => adapters.review(projectId, { ...task, validations: [{ tier: "full", commandLabel: "unit", passed: true, exitCode: 0, evidenceDigest: digest, observedAt: 1 }] }),
+    (error: unknown) => error instanceof Error && "code" in error && error.code === "capacity_unavailable" && /review quorum/i.test(error.message),
+  );
+});
+
 function candidate(providerId: string, deviceId: string): ExecutionCandidate { return { providerId, modelId: providerId === "groq" ? "coder" : "reviewer", deviceId, capabilities: ["chat", "structured_output"], privacyClasses: ["source_code"], quotaAvailable: true, billingEnabled: false, activeRequests: 0, safeConcurrency: 1, availableMemoryMb: 1, requiredMemoryMb: 0, deviceLoad: 0, preference: 10 }; }
 function executionTask(): ExecutionTask { return { id: taskId, jiraIssueKey: "PIPE-4", title: "Implement workflow contract", dependsOn: [], allowedFiles: ["src/workflow.ts"], validationProfiles: ["unit"], uiChanged: false, requiredCapabilities: ["chat", "structured_output"], privacyClass: "source_code", status: "running", revision: 1, attempt: 0, assignment: { providerId: "groq", modelId: "coder", deviceId: "provider:implementation", selectedAt: 1, reasons: ["All gates passed."] }, lease: { leaseId: "execlease_11111111111111111111", ownerId: "worker", acquiredAt: 1, heartbeatAt: 1, expiresAt: 999_999 }, implementationEvidence: [], validations: [], reviews: [], commitDigest: null, integrationDigest: null, failureClass: null, safeMessage: "Running.", updatedAt: 1 }; }
