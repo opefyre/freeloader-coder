@@ -26,7 +26,8 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
         assert.deepEqual(input.responseSchema.properties.operations.items.properties.path.enum, ["src/workflow.ts"]);
         assert.deepEqual(input.responseSchema.properties.operations.items.properties.citations.items.enum, ["src/workflow.ts", `delivery-plan://${taskId}`]);
         assert.equal(input.responseSchema.properties.summary.maxLength, 500);
-        assert.match(instruction.toolchainCompatibilityRule, /when it runs node --test, import from node:test/);
+        assert.match(instruction.toolchainCompatibilityRule, /when it runs node --test, import test from node:test and import assert from node:assert\/strict/);
+        assert.match(instruction.toolchainCompatibilityRule, /node:test has no named strict assertion export/);
         assert.match(instruction.toolchainCompatibilityRule, /Never import a test framework that the configured command does not launch/);
         assert.match(instruction.toolchainCompatibilityRule, /NodeNext and Node16 require the emitted \.js suffix/);
         assert.match(instruction.toolchainCompatibilityRule, /when browser globals are not declared, use globalThis\.document/);
