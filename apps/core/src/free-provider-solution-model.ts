@@ -140,10 +140,19 @@ export function providerIdsForRole(
     // Independent review means independent provider/model infrastructure, not
     // two personas declared by the same model. Reserve disjoint provider pools
     // and fail closed until one member of each pool is available.
-    const reserved = role === "product_review"
-      ? new Set(["gemini", "huggingface", "cohere"])
-      : new Set(["nvidia-nim", "mistral", "kilo", "groq"]);
-    return ordered.filter((providerId) => reserved.has(providerId));
+    const productPrimary = new Set(["gemini", "huggingface", "openrouter"]);
+    const hasPrimaryProductReviewer = ordered.some((providerId) => productPrimary.has(providerId));
+    if (role === "product_review") {
+      const primary = ordered.filter((providerId) => productPrimary.has(providerId));
+      return primary.length > 0 ? primary : ordered.filter((providerId) => providerId === "cohere");
+    }
+    const technical = new Set(["nvidia-nim", "mistral", "kilo", "groq"]);
+    // Cohere remains the product reviewer for the minimal Cohere/Groq pair.
+    // Once a separately consented primary product route exists, Cohere moves
+    // into the disjoint technical pool so Groq is no longer a single point of
+    // failure for mandatory independent review.
+    if (hasPrimaryProductReviewer) technical.add("cohere");
+    return ordered.filter((providerId) => technical.has(providerId));
   }
   if (["product_research", "technical_research", "solution_reconciliation", "solution_revision_scope"].includes(role)) {
     // Prefer every non-Groq route before Groq so successful research preserves

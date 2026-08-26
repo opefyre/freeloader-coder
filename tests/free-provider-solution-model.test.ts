@@ -188,8 +188,8 @@ test("delivery roles reserve independent provider capacity instead of exhausting
   assert.deepEqual(providerIdsForRole("technical_delivery_review", consented, ["nvidia-nim", "kilo", "groq", "mistral", "gemini"]), ["nvidia-nim", "kilo", "groq"]);
   assert.deepEqual(providerIdsForRole("delivery_review", ["gemini"], ["mistral", "gemini"]), ["gemini"]);
   assert.deepEqual(providerIdsForRole("product_research", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), ["gemini", "mistral", "nvidia-nim", "groq"]);
-  assert.deepEqual(providerIdsForRole("product_review", consented, ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere"]), ["gemini", "huggingface", "cohere"]);
-  assert.deepEqual(providerIdsForRole("technical_review", consented, ["nvidia-nim", "mistral", "gemini", "huggingface", "kilo", "groq", "cohere"]), ["nvidia-nim", "mistral", "kilo", "groq"]);
+  assert.deepEqual(providerIdsForRole("product_review", consented, ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere", "openrouter"]), ["gemini", "huggingface", "openrouter"]);
+  assert.deepEqual(providerIdsForRole("technical_review", consented, ["nvidia-nim", "mistral", "gemini", "huggingface", "kilo", "groq", "cohere", "openrouter"]), ["nvidia-nim", "mistral", "kilo", "groq", "cohere"]);
 });
 
 test("research preserves Groq capacity for the independent technical reviewer", () => {
@@ -198,6 +198,7 @@ test("research preserves Groq capacity for the independent technical reviewer", 
   assert.deepEqual(providerIdsForRole("product_research", consented, order), ["cohere", "groq"]);
   assert.deepEqual(providerIdsForRole("technical_research", consented, order), ["cohere", "groq"]);
   assert.deepEqual(providerIdsForRole("solution_reconciliation", consented, order), ["cohere", "groq"]);
+  assert.deepEqual(providerIdsForRole("product_review", consented, order), ["cohere"]);
   assert.deepEqual(providerIdsForRole("technical_review", consented, order), ["groq"]);
   assert.deepEqual(providerIdsForRole("product_research", ["groq"], ["groq"]), ["groq"]);
 });
