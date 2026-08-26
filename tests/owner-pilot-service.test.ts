@@ -130,6 +130,49 @@ test("pilot review is deterministic, aggregated, thresholded, and evidence-linke
   assert.deepEqual(review, await service.review(trust(), startedAt + 10_000));
 });
 
+test("canonical evidence reconciles milestones in order without manual claims", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  let session = await service.create({ projectId, scenario: "new_product", consent: true, startedAt }, "pilot.reconcile.create.0001", startedAt);
+  const contextDigest = "1".repeat(64);
+  session = await service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 2_000, activityAt: startedAt + 1_000, contextDigest, approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 2_000);
+  assert.equal(session.milestones.at(-1)?.name, "context_ready");
+  const replay = await service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 2_000, activityAt: startedAt + 1_000, contextDigest, approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 2_000);
+  assert.equal(replay.revision, session.revision);
+  session = await service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 4_000, activityAt: startedAt + 3_000, contextDigest, approvedDesignDigest: "2".repeat(64), previewEvidenceDigest: "3".repeat(64) }, startedAt + 4_000);
+  assert.deepEqual(session.milestones.map((milestone) => milestone.name), ["session_started", "context_ready", "solution_approved", "first_preview"]);
+  assert.equal((await service.summary(session.id, startedAt + 5_000)).state, "preview_ready");
+});
+
+test("stale pilot interrupts, resumes from proof, and exports a private receipt", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  let session = await service.create({ projectId, scenario: "major_feature", consent: true, startedAt }, "pilot.interrupt.create.0001", startedAt);
+  session = await service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 31 * 60_000, activityAt: startedAt, contextDigest: null, approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 31 * 60_000);
+  assert.equal(session.status, "interrupted");
+  assert.match((await service.summary(session.id, startedAt + 31 * 60_000)).nextAction, /resume|withdraw/i);
+  await assert.rejects(() => service.create({ projectId, scenario: "major_feature", consent: true, startedAt: startedAt + 31 * 60_000 }, "pilot.interrupt.create.0002", startedAt + 31 * 60_000), /already has/i);
+  const interruptedRevision = session.revision;
+  session = await service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 32 * 60_000, activityAt: startedAt + 32 * 60_000, contextDigest: "4".repeat(64), approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 32 * 60_000);
+  assert.equal(session.status, "active");
+  assert.equal(session.revision > interruptedRevision, true);
+  const receipt = await service.receipt(session.id);
+  assert.equal(receipt.automaticSpendLimitUsd, 0);
+  assert.equal(receipt.privacy.sourceCode, false);
+  assert.equal(JSON.stringify(receipt).includes("/Users/"), false);
+  assert.equal(receipt.projectIdDigest.length, 64);
+  assert.equal(JSON.stringify(receipt).includes(projectId), false);
+});
+
+test("pilot reconciliation rejects cross-project, future, and malformed evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  const session = await service.create({ projectId, scenario: "existing_product", consent: true, startedAt }, "pilot.invalid.create.0001", startedAt);
+  await assert.rejects(() => service.reconcile(session.id, { schemaVersion: 1, projectId: `project_${"b".repeat(16)}`, observedAt: startedAt + 1, activityAt: startedAt, contextDigest: null, approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 1), /different project/i);
+  await assert.rejects(() => service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt, activityAt: startedAt + 1, contextDigest: null, approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 1));
+  await assert.rejects(() => service.reconcile(session.id, { schemaVersion: 1, projectId, observedAt: startedAt + 1, activityAt: startedAt, contextDigest: "bad", approvedDesignDigest: null, previewEvidenceDigest: null }, startedAt + 1));
+});
+
 function trust(): OwnerJourneyTrustSnapshot {
   return {
     schemaVersion: 1,

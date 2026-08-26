@@ -9,11 +9,11 @@ import type {
   OwnerJourneyTrustSnapshot,
   OwnerPilotReview,
   OwnerPilotSession,
+  OwnerPilotSummary,
   OwnerPilotImprovementDraft,
 } from "../../../../../packages/runtime/src/owner-journey-certification.js";
 import {
   approveOwnerPilotImprovements,
-  advanceOwnerPilot,
   completeOwnerPilot,
   createOwnerPilot,
   getOwnerPilotReview,
@@ -29,6 +29,9 @@ import {
   editOwnerPilotImprovements,
   withdrawOwnerPilot,
   getOwnerCertificationEvidence,
+  getOwnerPilotReceipt,
+  getOwnerPilotSummary,
+  reconcileOwnerPilot,
   ownerCertificationEvidenceFilename,
 } from "../../owner-journey-certification-client.js";
 import { listLocalProjects } from "../../local-project-client.js";
@@ -356,7 +359,10 @@ function PilotCapture({
     "none",
   ]);
   const [drafts, setDrafts] = useState<readonly OwnerPilotImprovementDraft[]>([]);
-  const active = sessions.find((session) => session.status === "active");
+  const [summary, setSummary] = useState<OwnerPilotSummary | null>(null);
+  const [observedSession, setObservedSession] = useState<OwnerPilotSession | null>(null);
+  const storedSession = sessions.find((session) => ["active", "interrupted"].includes(session.status));
+  const active = storedSession && observedSession?.id === storedSession.id ? observedSession : storedSession;
   useEffect(() => {
     void Promise.all([listLocalProjects({ endpoint }), listOwnerPilotImprovements(endpoint)]).then(([value, handoffs]) => {
       const available = value.projects.map((project) => ({ id: project.id, name: project.displayName }));
@@ -365,6 +371,22 @@ function PilotCapture({
       setDrafts(handoffs.drafts);
     });
   }, [endpoint]);
+  useEffect(() => {
+    if (!active) { setSummary(null); setObservedSession(null); return; }
+    let stopped = false;
+    const reconcile = async () => {
+      try {
+        const reconciled = await reconcileOwnerPilot(endpoint, active.id);
+        const next = await getOwnerPilotSummary(endpoint, active.id);
+        if (!stopped) { setObservedSession(reconciled); setSummary(next); }
+      } catch (value) {
+        if (!stopped) setError(value instanceof Error ? value.message : "Pilot evidence could not be refreshed.");
+      }
+    };
+    void reconcile();
+    const interval = window.setInterval(() => void reconcile(), 15_000);
+    return () => { stopped = true; window.clearInterval(interval); };
+  }, [active?.id, active?.revision, endpoint]);
   async function reloadDrafts() {
     setDrafts((await listOwnerPilotImprovements(endpoint)).drafts);
   }
@@ -388,41 +410,15 @@ function PilotCapture({
       setBusy(false);
     }
   }
-  async function advance() {
+  async function downloadSessionReceipt() {
     if (!active) return;
-    const next = (
-      {
-        session_started: "context_ready",
-        context_ready: "solution_approved",
-        solution_approved: "first_preview",
-      } as const
-    )[
-      active.milestones.at(-1)!.name as
-        "session_started" | "context_ready" | "solution_approved"
-    ];
-    if (!next) return;
-    setBusy(true);
-    setError("");
+    setBusy(true); setError("");
     try {
-      await advanceOwnerPilot(endpoint, active.id, {
-        expectedRevision: active.revision,
-        milestone: next,
-        at: Date.now(),
-      });
-      await saved(
-        next === "first_preview"
-          ? "First preview recorded."
-          : "Pilot milestone recorded.",
-      );
-    } catch (value) {
-      setError(
-        value instanceof Error
-          ? value.message
-          : "Pilot milestone was not saved.",
-      );
-    } finally {
-      setBusy(false);
-    }
+      const receipt = await getOwnerPilotReceipt(endpoint, active.id);
+      const url = URL.createObjectURL(new Blob([`${JSON.stringify(receipt, null, 2)}\n`], { type: "application/json" }));
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${receipt.receiptId}.json`; anchor.click(); URL.revokeObjectURL(url);
+    } catch (value) { setError(value instanceof Error ? value.message : "The session receipt could not be prepared."); }
+    finally { setBusy(false); }
   }
   async function complete() {
     if (!active) return;
@@ -478,24 +474,13 @@ function PilotCapture({
       </p>
       {active ? (
         <div className="mt-4 space-y-4">
-          <div className="grid gap-2 sm:grid-cols-4">
-            {["Started", "Context", "Approved", "Preview"].map(
-              (milestone, index) => (
-                <Fact
-                  key={milestone}
-                  label={`Step ${index + 1}`}
-                  value={
-                    active.milestones.length > index ? milestone : "Waiting"
-                  }
-                />
-              ),
-            )}
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Fact label="Verified progress" value={summary ? `${summary.provenMilestones}/5` : "Checking…"} />
+            <Fact label="Elapsed" value={summary ? duration(summary.elapsedSeconds) : "Checking…"} />
+            <Fact label="First preview" value={summary?.timeToPreviewSeconds ? duration(summary.timeToPreviewSeconds) : "Waiting"} />
           </div>
-          {active.previewAt === null ? (
-            <Button onClick={() => void advance()} disabled={busy}>
-              {busy ? "Saving…" : nextMilestoneLabel(active)}
-            </Button>
-          ) : (
+          {summary && <p role="status" className="rounded-2xl bg-background px-4 py-3 text-xs">{summary.nextAction}</p>}
+          {active.previewAt !== null && active.status === "active" && (
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="text-xs font-medium">
                 Trust rating
@@ -566,15 +551,10 @@ function PilotCapture({
               </div>
             </div>
           )}
-          {active.previewAt === null && (
-            <Button
-              variant="ghost"
-              onClick={() => void withdraw()}
-              disabled={busy}
-            >
-              Withdraw consent
-            </Button>
-          )}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => void downloadSessionReceipt()} disabled={busy}>Session receipt</Button>
+            <Button variant="ghost" onClick={() => void withdraw()} disabled={busy}>Withdraw consent</Button>
+          </div>
         </div>
       ) : (
         <>
@@ -756,18 +736,7 @@ function ImprovementDecision({ endpoint, draft, busy, setBusy, failed, saved }: 
   );
 }
 
-function nextMilestoneLabel(session: OwnerPilotSession) {
-  return (
-    {
-      session_started: "Mark context ready",
-      context_ready: "Mark solution approved",
-      solution_approved: "Record first preview",
-    } as const
-  )[
-    session.milestones.at(-1)!.name as
-      "session_started" | "context_ready" | "solution_approved"
-  ];
-}
+function duration(seconds: number) { return seconds < 60 ? `${seconds}s` : `${Math.round(seconds / 60)}m`; }
 
 function toggleFriction(
   current: OwnerPilotSession["frictions"],

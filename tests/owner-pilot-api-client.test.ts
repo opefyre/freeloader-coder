@@ -7,7 +7,10 @@ import {
   completeOwnerPilot,
   createOwnerPilot,
   getOwnerPilotReview,
+  getOwnerPilotReceipt,
+  getOwnerPilotSummary,
   listOwnerPilot,
+  reconcileOwnerPilot,
   withdrawOwnerPilot,
 } from "../apps/studio/src/owner-journey-certification-client.js";
 
@@ -110,6 +113,9 @@ test("owner pilot loopback API is method-safe, idempotent, bounded, and zero-cos
         evidenceDigest: "d".repeat(64),
         automaticSpendLimitUsd: 0,
       }),
+      reconcile: () => ({ ...base, revision: 2, milestones: [...base.milestones, { name: "context_ready" as const, at: now + 1 }] }),
+      summary: () => ({ schemaVersion: 1, state: "active", provenMilestones: 1, totalMilestones: 5, elapsedSeconds: 2, timeToPreviewSeconds: null, nextAction: "No action needed; Codkesh is measuring verified project progress.", evidenceDigest: "c".repeat(64), automaticSpendLimitUsd: 0 }),
+      receipt: () => ({ schemaVersion: 1, provenance: "privacy_safe_real_owner_pilot", receiptId: `pilot_receipt_${"e".repeat(20)}`, sessionId: id, projectIdDigest: "f".repeat(64), scenario: "new_product", status: "active", milestones: [{ name: "session_started", elapsedSeconds: 0 }], timeToPreviewSeconds: null, trustRating: null, frictions: [], evidenceDigest: "c".repeat(64), automaticSpendLimitUsd: 0, privacy: { prompts: false, sourceCode: false, attachments: false, credentials: false, absolutePaths: false, personalIdentifiers: false, privateJiraContent: false }, limitations: ["Pilot evidence only."] }),
     },
   });
   const port = await server.listen();
@@ -154,6 +160,10 @@ test("owner pilot loopback API is method-safe, idempotent, bounded, and zero-cos
       (await withdrawOwnerPilot(endpoint, id, 1)).status,
       "withdrawn",
     );
+    assert.equal((await reconcileOwnerPilot(endpoint, id)).revision, 2);
+    assert.equal((await getOwnerPilotSummary(endpoint, id)).totalMilestones, 5);
+    assert.equal((await getOwnerPilotReceipt(endpoint, id)).privacy.sourceCode, false);
+    assert.equal((await fetch(`${endpoint}/api/v1/owner-pilot/${id}/summary`, { method: "POST" })).status, 405);
     assert.equal(
       (await fetch(`${endpoint}/api/v1/owner-pilot?bad=1`)).status,
       400,

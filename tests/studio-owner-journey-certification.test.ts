@@ -49,6 +49,16 @@ test("Action Center owns a minimal honest certification and consented-learning e
   assert.doesNotMatch(source, /participantAlias.*trust\.learning|trust\.learning.*note/);
 });
 
+test("real pilot UI uses canonical reconciliation, one status, and local receipts instead of manual milestone claims", () => {
+  assert.match(source, /reconcileOwnerPilot/);
+  assert.match(source, /Verified progress/);
+  assert.match(source, /Session receipt/);
+  assert.doesNotMatch(source, /Mark context ready|Mark solution approved|Record first preview/);
+  assert.match(client, /\/reconcile/);
+  assert.match(client, /\/summary/);
+  assert.match(client, /\/receipt/);
+});
+
 test("certification UI and client preserve accessibility, responsive layout, privacy, and loopback boundaries", () => {
   for (const token of [
     'role="status"',

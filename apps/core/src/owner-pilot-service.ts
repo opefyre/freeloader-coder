@@ -9,11 +9,16 @@ import {
   ownerPilotCompleteSchema,
   ownerPilotCreateSchema,
   ownerPilotReviewSchema,
+  ownerPilotObservationSchema,
+  ownerPilotReceiptSchema,
+  ownerPilotSummarySchema,
   ownerPilotSessionSchema,
   type ExternalLearningCollection,
   type OwnerJourneyTrustSnapshot,
   type OwnerPilotCollection,
   type OwnerPilotReview,
+  type OwnerPilotReceipt,
+  type OwnerPilotSummary,
   type OwnerPilotSession,
 } from "../../../packages/runtime/src/owner-journey-certification.js";
 
@@ -29,6 +34,7 @@ const order = [
   "first_preview",
   "session_completed",
 ] as const;
+const INTERRUPTION_AFTER_MS = 30 * 60_000;
 const labels = {
   setup: [
     "Simplify pilot setup",
@@ -90,7 +96,7 @@ export class OwnerPilotService {
         state.sessions.some(
           (session) =>
             session.projectId === value.projectId &&
-            session.status === "active",
+            ["active", "interrupted"].includes(session.status),
         )
       )
         throw new OwnerPilotError(
@@ -158,6 +164,50 @@ export class OwnerPilotService {
       await this.#write(state);
       return next;
     });
+  }
+  reconcile(id: string, input: unknown, now = Date.now()) {
+    return this.#serialize(async () => {
+      const observation = ownerPilotObservationSchema.parse(input);
+      const state = await this.#read();
+      let current = requireSession(state, id);
+      if (current.projectId !== observation.projectId) throw new OwnerPilotError("Pilot evidence belongs to a different project.");
+      if (["completed", "withdrawn"].includes(current.status)) return current;
+      const evidence = [
+        ["context_ready", observation.contextDigest],
+        ["solution_approved", observation.approvedDesignDigest],
+        ["first_preview", observation.previewEvidenceDigest],
+      ] as const;
+      let changed = false;
+      for (const [milestone, digest] of evidence) {
+        if (current.milestones.some((value) => value.name === milestone)) continue;
+        const expected = order[current.milestones.length];
+        if (expected !== milestone || digest === null) break;
+        const at = Math.max(current.milestones.at(-1)!.at, observation.activityAt);
+        current = ownerPilotSessionSchema.parse({
+          ...current, status: "active", revision: current.revision + 1,
+          milestones: [...current.milestones, { name: milestone, at }],
+          previewAt: milestone === "first_preview" ? at : current.previewAt,
+          evidenceDigest: hash(`${current.evidenceDigest}:${milestone}:${at}:${digest}`),
+        });
+        changed = true;
+      }
+      const lastActivityAt = Math.max(current.startedAt, observation.activityAt);
+      if (!changed && current.status === "active" && now - lastActivityAt > INTERRUPTION_AFTER_MS) {
+        current = ownerPilotSessionSchema.parse({ ...current, status: "interrupted", revision: current.revision + 1, evidenceDigest: hash(`${current.evidenceDigest}:interrupted:${observation.activityAt}`) });
+        changed = true;
+      } else if (current.status === "interrupted" && observation.activityAt > current.milestones.at(-1)!.at) {
+        current = ownerPilotSessionSchema.parse({ ...current, status: "active", revision: current.revision + 1, evidenceDigest: hash(`${current.evidenceDigest}:resumed:${observation.activityAt}`) });
+        changed = true;
+      }
+      if (changed) { state.sessions = replace(state.sessions, current); await this.#write(state); }
+      return current;
+    });
+  }
+  summary(id: string, now = Date.now()): Promise<OwnerPilotSummary> {
+    return this.#read().then((state) => summarize(requireSession(state, id), now));
+  }
+  receipt(id: string): Promise<OwnerPilotReceipt> {
+    return this.#read().then((state) => receipt(requireSession(state, id)));
   }
   complete(id: string, input: unknown) {
     return this.#serialize(async () => {
@@ -424,4 +474,25 @@ function validateNote(value: string) {
 }
 function hash(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+function summarize(session: OwnerPilotSession, now: number): OwnerPilotSummary {
+  const preview = session.previewAt === null ? null : Math.max(1, Math.round((session.previewAt - session.startedAt) / 1_000));
+  const state = session.status === "active" && preview !== null ? "preview_ready" : session.status;
+  const nextAction = session.status === "completed" ? "Review the privacy-safe session receipt."
+    : session.status === "withdrawn" ? "No action is needed; consent was withdrawn."
+      : session.status === "interrupted" ? "Resume the project or withdraw this pilot session."
+        : preview !== null ? "Complete the session with a trust rating and friction feedback."
+          : "No action needed; Codkesh is measuring verified project progress.";
+  return ownerPilotSummarySchema.parse({ schemaVersion: 1, state, provenMilestones: session.milestones.length, totalMilestones: 5, elapsedSeconds: Math.min(604_800, Math.max(0, Math.round(((session.completedAt ?? now) - session.startedAt) / 1_000))), timeToPreviewSeconds: preview, nextAction, evidenceDigest: session.evidenceDigest, automaticSpendLimitUsd: 0 });
+}
+function receipt(session: OwnerPilotSession): OwnerPilotReceipt {
+  return ownerPilotReceiptSchema.parse({
+    schemaVersion: 1, provenance: "privacy_safe_real_owner_pilot", receiptId: `pilot_receipt_${hash(session.id).slice(0, 20)}`,
+    sessionId: session.id, projectIdDigest: hash(session.projectId), scenario: session.scenario, status: session.status,
+    milestones: session.milestones.map((milestone) => ({ name: milestone.name, elapsedSeconds: Math.max(0, Math.round((milestone.at - session.startedAt) / 1_000)) })),
+    timeToPreviewSeconds: session.previewAt === null ? null : Math.max(1, Math.round((session.previewAt - session.startedAt) / 1_000)),
+    trustRating: session.trustRating, frictions: session.frictions, evidenceDigest: session.evidenceDigest, automaticSpendLimitUsd: 0,
+    privacy: { prompts: false, sourceCode: false, attachments: false, credentials: false, absolutePaths: false, personalIdentifiers: false, privateJiraContent: false },
+    limitations: ["This receipt measures one consented owner journey; it is not market validation.", "Raw project content and participant identity are excluded."],
+  });
 }

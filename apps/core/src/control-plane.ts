@@ -130,6 +130,8 @@ import {
   ownerPilotCompleteSchema,
   ownerPilotCreateSchema,
   ownerPilotReviewSchema,
+  ownerPilotReceiptSchema,
+  ownerPilotSummarySchema,
   ownerPilotSessionSchema,
   ownerPilotImprovementCollectionSchema,
   ownerPilotImprovementDecisionInputSchema,
@@ -306,6 +308,9 @@ export type ControlPlaneServerOptions = {
       expectedRevision: number,
     ) => OwnerPilotSession | Promise<OwnerPilotSession>;
     review: () => OwnerPilotReview | Promise<OwnerPilotReview>;
+    reconcile?: (id: string) => OwnerPilotSession | Promise<OwnerPilotSession>;
+    summary?: (id: string) => unknown | Promise<unknown>;
+    receipt?: (id: string) => unknown | Promise<unknown>;
   };
   ownerPilotImprovements?: {
     list: () => OwnerPilotImprovementCollection | Promise<OwnerPilotImprovementCollection>;
@@ -1352,11 +1357,15 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       if (
-        /^\/api\/v1\/owner-pilot\/pilot_[a-f0-9]{20}\/(advance|complete|withdraw)$/.test(
+        /^\/api\/v1\/owner-pilot\/pilot_[a-f0-9]{20}\/(advance|complete|withdraw|reconcile)$/.test(
           url.pathname,
         ) &&
         request.method !== "POST"
       ) {
+        sendJson(response, 405, { error: "Method is not allowed." });
+        return;
+      }
+      if (/^\/api\/v1\/owner-pilot\/pilot_[a-f0-9]{20}\/(summary|receipt)$/.test(url.pathname) && request.method !== "GET") {
         sendJson(response, 405, { error: "Method is not allowed." });
         return;
       }
@@ -1441,13 +1450,15 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
         return;
       }
       const pilotMutation = url.pathname.match(
-        /^\/api\/v1\/owner-pilot\/(pilot_[a-f0-9]{20})\/(advance|complete|withdraw)$/,
+        /^\/api\/v1\/owner-pilot\/(pilot_[a-f0-9]{20})\/(advance|complete|withdraw|reconcile)$/,
       );
       if (request.method === "POST" && pilotMutation && options.ownerPilot) {
         const [, id, action] = pilotMutation;
-        const body = await readJsonBody(request);
+        const body = action === "reconcile" ? {} : await readJsonBody(request);
         const session =
-          action === "advance"
+          action === "reconcile"
+            ? await requirePilotOperation(options.ownerPilot.reconcile, "Pilot reconciliation is unavailable.")(id!)
+            : action === "advance"
             ? await options.ownerPilot.advance(
                 id!,
                 ownerPilotAdvanceSchema.parse(body),
@@ -1466,6 +1477,13 @@ export function createControlPlaneServer(options: ControlPlaneServerOptions): {
                     .parse(body).expectedRevision,
                 );
         sendJson(response, 200, ownerPilotSessionSchema.parse(session));
+        return;
+      }
+      const pilotRead = url.pathname.match(/^\/api\/v1\/owner-pilot\/(pilot_[a-f0-9]{20})\/(summary|receipt)$/);
+      if (request.method === "GET" && pilotRead && options.ownerPilot) {
+        if (requestBodyDeclared(request) || url.search) throw new ControlPlaneRequestError("Pilot evidence does not accept input.");
+        const [, id, kind] = pilotRead;
+        sendJson(response, 200, kind === "summary" ? ownerPilotSummarySchema.parse(await requirePilotOperation(options.ownerPilot.summary, "Pilot summary is unavailable.")(id!)) : ownerPilotReceiptSchema.parse(await requirePilotOperation(options.ownerPilot.receipt, "Pilot receipt is unavailable.")(id!)));
         return;
       }
       if (request.method === "GET" && url.pathname === "/api/v1/owner-pilot/improvements" && options.ownerPilotImprovements) {
@@ -3807,6 +3825,10 @@ async function readJsonBody(
 }
 
 class ControlPlaneRequestError extends Error {}
+function requirePilotOperation<T extends (...args: never[]) => unknown>(operation: T | undefined, message: string): T {
+  if (!operation) throw new ControlPlaneRequestError(message);
+  return operation;
+}
 
 async function bodylessProviderAction(
   request: IncomingMessage,

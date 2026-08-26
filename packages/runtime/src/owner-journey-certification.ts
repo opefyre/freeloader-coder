@@ -263,6 +263,47 @@ export const ownerPilotAdvanceSchema = z.strictObject({
   ]),
   at: z.number().int().nonnegative(),
 });
+export const ownerPilotObservationSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  projectId: z.string().regex(/^project_[a-f0-9]{16}$/),
+  observedAt: z.number().int().nonnegative(),
+  activityAt: z.number().int().nonnegative(),
+  contextDigest: digest.nullable(),
+  approvedDesignDigest: digest.nullable(),
+  previewEvidenceDigest: digest.nullable(),
+}).superRefine((value, context) => {
+  if (value.activityAt > value.observedAt) context.addIssue({ code: "custom", path: ["activityAt"], message: "Pilot activity cannot be observed in the future." });
+});
+export const ownerPilotSummarySchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  state: z.enum(["active", "interrupted", "preview_ready", "completed", "withdrawn"]),
+  provenMilestones: z.number().int().min(1).max(5),
+  totalMilestones: z.literal(5),
+  elapsedSeconds: z.number().int().nonnegative().max(604_800),
+  timeToPreviewSeconds: z.number().int().min(1).max(604_800).nullable(),
+  nextAction: z.string().trim().min(1).max(180),
+  evidenceDigest: digest,
+  automaticSpendLimitUsd: z.literal(0),
+});
+export const ownerPilotReceiptSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("privacy_safe_real_owner_pilot"),
+  receiptId: z.string().regex(/^pilot_receipt_[a-f0-9]{20}$/),
+  sessionId: z.string().regex(/^pilot_[a-f0-9]{20}$/),
+  projectIdDigest: digest,
+  scenario: externalLearningScenarioSchema,
+  status: z.enum(["active", "completed", "withdrawn", "interrupted"]),
+  milestones: z.array(z.strictObject({ name: ownerPilotMilestoneSchema, elapsedSeconds: z.number().int().nonnegative().max(604_800) })).min(1).max(5),
+  timeToPreviewSeconds: z.number().int().min(1).max(604_800).nullable(),
+  trustRating: z.number().int().min(1).max(5).nullable(),
+  frictions: z.array(externalLearningFrictionSchema).max(6),
+  evidenceDigest: digest,
+  automaticSpendLimitUsd: z.literal(0),
+  privacy: z.strictObject({ prompts: z.literal(false), sourceCode: z.literal(false), attachments: z.literal(false), credentials: z.literal(false), absolutePaths: z.literal(false), personalIdentifiers: z.literal(false), privateJiraContent: z.literal(false) }),
+  limitations: z.array(z.string().trim().min(1).max(200)).min(1).max(4),
+});
+export type OwnerPilotSummary = z.infer<typeof ownerPilotSummarySchema>;
+export type OwnerPilotReceipt = z.infer<typeof ownerPilotReceiptSchema>;
 export const ownerPilotCompleteSchema = z.strictObject({
   expectedRevision: z.number().int().positive(),
   completedAt: z.number().int().nonnegative(),

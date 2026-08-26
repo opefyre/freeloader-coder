@@ -61,6 +61,7 @@ import { OwnerJourneyCertificationService } from "./owner-journey-certification-
 import { ExternalOwnerLearningService } from "./external-owner-learning-service.js";
 import { OwnerJourneyTrustService } from "./owner-journey-trust-service.js";
 import { OwnerPilotService } from "./owner-pilot-service.js";
+import { OwnerPilotObserver } from "./owner-pilot-observer.js";
 import { OwnerPilotImprovementService } from "./owner-pilot-improvement-service.js";
 import { OwnerCertificationEvidenceService } from "./owner-certification-evidence-service.js";
 import { ProjectPortfolioService } from "./project-portfolio-service.js";
@@ -291,6 +292,7 @@ const projectExecutions = new ProjectExecutionService(
   Date.now,
   projectLifecycles,
 );
+const ownerPilotObserver = new OwnerPilotObserver(localProjects, projectLifecycles, projectExecutions);
 const projectPortfolio = new ProjectPortfolioService(
   localProjects,
   projectLifecycles,
@@ -754,6 +756,13 @@ const controlPlane = createControlPlaneServer({
     withdraw: (id, expectedRevision) =>
       ownerPilot.withdraw(id, expectedRevision),
     review: async () => ownerPilot.review(await ownerJourneyTrust.snapshot()),
+    reconcile: async (id) => {
+      const session = (await ownerPilot.list()).sessions.find((candidate) => candidate.id === id);
+      if (!session) throw new Error("Pilot session is unavailable.");
+      return ownerPilot.reconcile(id, await ownerPilotObserver.observe(session.projectId));
+    },
+    summary: (id) => ownerPilot.summary(id),
+    receipt: (id) => ownerPilot.receipt(id),
   },
   ownerPilotImprovements: {
     list: () => ownerPilotImprovements.list(),

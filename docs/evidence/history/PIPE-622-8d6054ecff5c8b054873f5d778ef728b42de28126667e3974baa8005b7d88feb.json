@@ -1,83 +1,83 @@
 {
   "schemaVersion": 1,
-  "certificationId": "66ecbf406fdb64d1b79af3714790a4008dccc15aca4eb3039b7b79b07872ce4b",
+  "certificationId": "8d6054ecff5c8b054873f5d778ef728b42de28126667e3974baa8005b7d88feb",
   "mode": "synthetic_zero_cost",
   "outcome": "passed",
-  "startedAt": "2026-08-26T08:46:24.906Z",
-  "completedAt": "2026-08-26T08:46:25.655Z",
-  "durationMs": 749,
+  "startedAt": "2026-08-26T08:11:42.631Z",
+  "completedAt": "2026-08-26T08:11:43.521Z",
+  "durationMs": 890,
   "suites": [
     {
       "id": "owner_mvp",
       "outcome": "passed",
-      "evidenceDigest": "2ea8757ee5ece550a023df7c2e008484d1f5c2ecef895f63ae0ec52f13a3ebe8"
+      "evidenceDigest": "1318e9264f7882fe536c97932301f899c15321f7813fdb64e8ed9cd881ba1c04"
     },
     {
       "id": "new_product",
       "outcome": "passed",
-      "evidenceDigest": "e222756329c24ad4b7d50d537148174b5cf58a481ed7fca06f6ca8f6e8109b7d"
+      "evidenceDigest": "57d971d05555df9cf6dfbf7fdd060aae3d4d7fb8db719d7efcaec219e7804341"
     },
     {
       "id": "existing_product",
       "outcome": "passed",
-      "evidenceDigest": "59c20d5c87b1ad91f86858a7961be4f77fbb6af6ae52d0574c0bbb9d9271d213"
+      "evidenceDigest": "ae545dd6f1c5559c44ef72be36792c93ae317bf80f84f93bd59d083f42959953"
     }
   ],
   "stages": [
     {
       "name": "plain_language_intake",
       "outcome": "passed",
-      "evidenceDigest": "f150768c4d9d11fb0e419dce369b320702b424763f498b202cfb05fd8218fd86"
+      "evidenceDigest": "eb1df831b4702d6e12ca6268b38e07a2def400b90919f056ba06b03bf630b58f"
     },
     {
       "name": "workspace_and_resources",
       "outcome": "passed",
-      "evidenceDigest": "d33064cb5c43bc1f2602f779f09198c9548bc5487017d01e369173d3cee7a256"
+      "evidenceDigest": "b0c849974290f21705a305dbe3c008e9a5b59b890155bcfdc0e387a4fa7de595"
     },
     {
       "name": "governed_artifacts",
       "outcome": "passed",
-      "evidenceDigest": "214534c32c5821d6ec98a27648611eb7adc03e85c4edac406a582f30a1fc4a4e"
+      "evidenceDigest": "e6f8e0fcb2f81cd929976edd8d83d9bb6580187381b911b7b598f22b14ce1bdd"
     },
     {
       "name": "context_and_eligibility",
       "outcome": "passed",
-      "evidenceDigest": "2f5ae68b02559b05fa372db7c5c13e914d85075e375995d8addfb99b1acdfb02"
+      "evidenceDigest": "133953b5d1ffbb56361444ab4994c14027560b84a5ffeed82d56bfd31afef502"
     },
     {
       "name": "solution_approval",
       "outcome": "passed",
-      "evidenceDigest": "e16ae31b597c0e3dc7a1f182380b54098ff9b7b9d85476a25edf07f04e9424db"
+      "evidenceDigest": "dad12bd85dad5bdfe461558d05913140329b4e3ae7caa1224f989b0b27ffbef5"
     },
     {
       "name": "jira_backlog",
       "outcome": "passed",
-      "evidenceDigest": "be22c25996dd98508cb69acf953d363ac88f25a997caa07f616da27990c33871"
+      "evidenceDigest": "c1e23ba3005879a191f2d9b318f9532dc1b61441eb9ca80536fd6d710c57fe10"
     },
     {
       "name": "isolated_implementation",
       "outcome": "passed",
-      "evidenceDigest": "106f8cdcd502b7561ac723314542ffbbaf2d43e1e594e7a2669e45a2e10abe8c"
+      "evidenceDigest": "c0057fbc345a9e69841bfca8263d0ad309f99d046b2fb208294f93df1961ccde"
     },
     {
       "name": "deterministic_validation",
       "outcome": "passed",
-      "evidenceDigest": "75ed975be5e2f1a846ecc492be6e7fce4b51c91386dc768f448142501264c9da"
+      "evidenceDigest": "fd514081e6cae699442092f6d9ae3959686d61df848369eb71ac6c923eb2e1ea"
     },
     {
       "name": "independent_review",
       "outcome": "passed",
-      "evidenceDigest": "fa2b1a0dc862986b820d1764ef9be2802f9359a9824b63aa8817376a441697a2"
+      "evidenceDigest": "4654e75f36c3a1d48c7d42cac0e6323e6c3cd4310a1ec43271debc84becf1218"
     },
     {
       "name": "integration",
       "outcome": "passed",
-      "evidenceDigest": "5d84fcdf381296a51569db2c4208c2ca8c85ed21dbbb6a7612f2122c4ecbd893"
+      "evidenceDigest": "d60fe745ff50eb8f12c6b5c4fd0f45b810f0662b1b5f00343714bed3bf0b0229"
     },
     {
       "name": "durable_completion",
       "outcome": "passed",
-      "evidenceDigest": "4d8e9d630c10ef645570302701a98486435794d5aa6491c26e73cafbdf3aec3e"
+      "evidenceDigest": "f0c056b037406c84db9339277d1506c0e3584ea8b447917506a737871dd5a106"
     }
   ],
   "paidCalls": 0,

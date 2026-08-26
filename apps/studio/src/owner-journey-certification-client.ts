@@ -1,4 +1,6 @@
 import {
+  ownerPilotReceiptSchema,
+  ownerPilotSummarySchema,
   externalLearningCollectionSchema,
   externalLearningSessionSchema,
   ownerJourneyCertificationPreviewSchema,
@@ -176,6 +178,15 @@ export async function advanceOwnerPilot(
       json(input),
     ),
   );
+}
+export async function reconcileOwnerPilot(endpoint: string, id: string): Promise<OwnerPilotSession> {
+  return ownerPilotSessionSchema.parse(await request(new URL(`/api/v1/owner-pilot/${id}/reconcile`, loopback(endpoint)), json({})));
+}
+export async function getOwnerPilotSummary(endpoint: string, id: string) {
+  return ownerPilotSummarySchema.parse(await request(new URL(`/api/v1/owner-pilot/${id}/summary`, loopback(endpoint)), { method: "GET" }));
+}
+export async function getOwnerPilotReceipt(endpoint: string, id: string) {
+  return ownerPilotReceiptSchema.parse(await request(new URL(`/api/v1/owner-pilot/${id}/receipt`, loopback(endpoint)), { method: "GET" }));
 }
 export async function completeOwnerPilot(
   endpoint: string,
