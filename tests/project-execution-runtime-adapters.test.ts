@@ -472,7 +472,7 @@ test("a rejected implementation cycle rotates to another eligible free provider"
     projectId,
     contextDigest: "a".repeat(64),
     dataClass: "source_code" as const,
-    providerIds: ["groq", "gemini"],
+    providerIds: ["groq", "gemini", "cloudflare"],
     approvedAt: 1,
     expiresAt: 999_999,
   };
@@ -482,7 +482,10 @@ test("a rejected implementation cycle rotates to another eligible free provider"
     { readVerified: async () => ({ digest: permit.contextDigest }) },
     { authorize: async () => permit },
     {
-      candidates: async () => [implementer, reviewer],
+      candidates: async (_permit: unknown, role: string) =>
+        role === "implementer"
+          ? [implementer, reviewer]
+          : [implementer, reviewer, secondReviewer],
       run: async () => {
         throw new Error("not used");
       },
@@ -507,6 +510,71 @@ test("a rejected implementation cycle rotates to another eligible free provider"
   assert.deepEqual(
     candidates.map((candidate) => candidate.providerId),
     ["gemini"],
+  );
+});
+
+test("implementation waits when no assignment preserves two independent reviewers", async () => {
+  const permit = {
+    schemaVersion: 1 as const,
+    projectId,
+    contextDigest: "a".repeat(64),
+    dataClass: "source_code" as const,
+    providerIds: ["groq", "gemini"],
+    approvedAt: 1,
+    expiresAt: 999_999,
+  };
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: completeDeliveryPlan() as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    {
+      candidates: async () => [implementer, reviewer],
+      run: async () => {
+        throw new Error("not used");
+      },
+    },
+    {} as any,
+    { synchronize: async () => undefined },
+  );
+
+  assert.deepEqual(await adapters.candidates(projectId, executionTask()), []);
+});
+
+test("implementation prefers the provider that preserves the largest review quorum", async () => {
+  const permit = {
+    schemaVersion: 1 as const,
+    projectId,
+    contextDigest: "a".repeat(64),
+    dataClass: "source_code" as const,
+    providerIds: ["groq", "gemini", "cloudflare", "mistral"],
+    approvedAt: 1,
+    expiresAt: 999_999,
+  };
+  const mistral = candidate("mistral", "provider:mistral");
+  const adapters = new ProjectExecutionRuntimeAdapters(
+    { canonicalRoot: async () => "/canonical" },
+    { readDraft: async () => ({ draft: completeDeliveryPlan() as any }) },
+    { readVerified: async () => ({ digest: permit.contextDigest }) },
+    { authorize: async () => permit },
+    {
+      candidates: async (_permit: unknown, role: string) =>
+        role === "implementer"
+          ? [reviewer, implementer]
+          : [reviewer, secondReviewer, mistral],
+      run: async () => {
+        throw new Error("not used");
+      },
+    },
+    {} as any,
+    { synchronize: async () => undefined },
+  );
+
+  assert.deepEqual(
+    (await adapters.candidates(projectId, executionTask())).map(
+      (item) => item.providerId,
+    ),
+    ["groq", "gemini"],
   );
 });
 

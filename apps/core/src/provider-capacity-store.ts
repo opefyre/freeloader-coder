@@ -129,7 +129,9 @@ export class ProviderCapacityStore {
           : recordCircuitFailure({
               state: entry.circuit,
               now: attempt.finishedAt ?? now,
-              threshold: transientFailure ? 2 : 1,
+              // A provider-declared rate limit is authoritative capacity
+              // evidence. Do not spend a second task cycle proving it again.
+              threshold: attempt.failureClass === "rate_limit" ? 1 : transientFailure ? 2 : 1,
               cooldownMs: transientFailure
                 ? Math.max(1_000, (attempt.retryAt ?? ((attempt.finishedAt ?? now) + 5 * 60_000)) - (attempt.finishedAt ?? now))
                 : 10 * 60_000,
@@ -176,7 +178,7 @@ export class ProviderCapacityStore {
         : recordCircuitFailure({
             state: entry.circuit,
             now: input.now,
-            threshold: 2,
+            threshold: input.failureCode === "rate_limited" ? 1 : 2,
             cooldownMs: Math.max(60_000, (input.retryAt ?? 0) - input.now),
             transient: ["rate_limited", "timeout", "provider_unavailable", "unknown"].includes(input.failureCode ?? ""),
             ...(input.failureCode ? { code: input.failureCode } : {}),
@@ -193,7 +195,15 @@ export class ProviderCapacityStore {
     const operation = this.mutation.then(async () => {
       const document = await this.load();
       const entry = document.connections[connectionId] ?? freshEntry(now);
-      entry.circuit = recordCircuitSuccess();
+      // A tiny canary can succeed even when the account lacks enough remaining
+      // quota for a real implementation or review request. Preserve an active
+      // provider-declared rate-limit circuit until its advertised cooldown.
+      const activeRateLimit =
+        entry.circuit.openUntil > now &&
+        ["rate_limited", "quota_exhausted"].includes(
+          entry.circuit.lastFailureCode ?? "",
+        );
+      if (!activeRateLimit) entry.circuit = recordCircuitSuccess();
       document.connections[connectionId] = entry;
       await this.save(document);
     });

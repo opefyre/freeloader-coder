@@ -56,27 +56,25 @@ test("capacity and circuits persist exactly once across restart", async () => {
   }
 });
 
-test("Agent Canvas gateway attempts update durable usage and open the circuit on repeated rate limits", async () => {
+test("a provider-declared rate limit opens the circuit on the first failed request", async () => {
   const root = await mkdtemp(join(tmpdir(), "provider-gateway-capacity-"));
   try {
     const path = join(root, "provider-capacity.json");
     const store = new ProviderCapacityStore(path);
     const now = 1_800_000_000_000;
-    for (const attemptId of ["gateway-1", "gateway-2"]) {
-      await store.recordGatewayAttempt({
-        connectionId: "groq-main",
-        attemptId,
-        now,
-        succeeded: false,
-        inputTokens: 500,
-        outputTokens: 0,
-        failureCode: "rate_limited",
-        retryAt: now + 90_000,
-      });
-    }
     await store.recordGatewayAttempt({
       connectionId: "groq-main",
-      attemptId: "gateway-2",
+      attemptId: "gateway-1",
+      now,
+      succeeded: false,
+      inputTokens: 500,
+      outputTokens: 0,
+      failureCode: "rate_limited",
+      retryAt: now + 90_000,
+    });
+    await store.recordGatewayAttempt({
+      connectionId: "groq-main",
+      attemptId: "gateway-1",
       now,
       succeeded: false,
       inputTokens: 500,
@@ -85,9 +83,44 @@ test("Agent Canvas gateway attempts update durable usage and open the circuit on
       retryAt: now + 90_000,
     });
     const snapshot = await new ProviderCapacityStore(path).snapshot(["groq-main"], now);
-    assert.equal(snapshot.usageByConnectionId["groq-main"]?.requestsToday, 2);
-    assert.equal(snapshot.usageByConnectionId["groq-main"]?.tokensToday, 1_000);
+    assert.equal(snapshot.usageByConnectionId["groq-main"]?.requestsToday, 1);
+    assert.equal(snapshot.usageByConnectionId["groq-main"]?.tokensToday, 500);
     assert.equal(snapshot.circuitOpenUntilByConnectionId["groq-main"], now + 90_000);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a successful tiny probe cannot reopen an active rate-limited route", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-probe-quota-"));
+  try {
+    const path = join(root, "provider-capacity.json");
+    const now = 1_800_000_000_000;
+    const store = new ProviderCapacityStore(path);
+    await store.recordGatewayAttempt({
+      connectionId: "groq-main",
+      attemptId: "gateway-rate-limit",
+      now,
+      succeeded: false,
+      inputTokens: 500,
+      outputTokens: 0,
+      failureCode: "rate_limited",
+      retryAt: now + 90_000,
+    });
+
+    await store.recordProbeSuccess("groq-main", now + 1);
+    assert.equal(
+      (await store.snapshot(["groq-main"], now + 1))
+        .circuitOpenUntilByConnectionId["groq-main"],
+      now + 90_000,
+    );
+
+    await store.recordProbeSuccess("groq-main", now + 90_001);
+    assert.equal(
+      (await store.snapshot(["groq-main"], now + 90_001))
+        .circuitOpenUntilByConnectionId["groq-main"],
+      0,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

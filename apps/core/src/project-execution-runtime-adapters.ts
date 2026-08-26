@@ -107,15 +107,35 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
   ) {}
 
   async candidates(projectId: string, task: ExecutionTask) {
-    const candidates = await this.model.candidates(
-      await this.permit(projectId),
-      "implementer",
-    );
-    const withoutDeferred = candidates.filter(
+    const permit = await this.permit(projectId);
+    const [candidates, reviewers] = await Promise.all([
+      this.model.candidates(permit, "implementer"),
+      this.model.candidates(permit, "reviewer"),
+    ]);
+    // Implementation must never consume the only provider that could satisfy
+    // the two-provider review quorum. Reject unsafe assignments before source
+    // changes are generated instead of discovering the shortage at review time.
+    const withReviewQuorum = candidates
+      .map((candidate) => ({
+        candidate,
+        independentReviewerCount: new Set(
+          reviewers
+            .filter((reviewer) => reviewer.providerId !== candidate.providerId)
+            .map((reviewer) => reviewer.providerId),
+        ).size,
+      }))
+      .filter(({ independentReviewerCount }) => independentReviewerCount >= 2)
+      .sort(
+        (left, right) =>
+          right.independentReviewerCount - left.independentReviewerCount,
+      )
+      .map(({ candidate }) => candidate);
+    const withoutDeferred = withReviewQuorum.filter(
       (candidate) =>
         !(task.deferredProviderIds ?? []).includes(candidate.providerId),
     );
-    const available = withoutDeferred.length > 0 ? withoutDeferred : candidates;
+    const available =
+      withoutDeferred.length > 0 ? withoutDeferred : withReviewQuorum;
     const rejected = task.reviewAttempts?.at(-1);
     if (!rejected?.implementerProviderId) return available;
     const priorPassedEveryGate =
