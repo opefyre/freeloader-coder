@@ -233,6 +233,28 @@ test("restarted workspace accepts only descendant commits inside exact task auth
       task(),
     );
     assert.equal(recovered.root, workspace.root);
+    const recommitted = await restarted.commit(recovered, {
+      ...task(),
+      reviewAttempts: [
+        {
+          approvalId: "approval_22222222222222222222",
+          priorRevision: 1,
+          implementerProviderId: "gemini",
+          implementationEvidence: ["a".repeat(64)],
+          validations: [],
+          reviews: [],
+          rationale: "Revalidate the authorized descendant.",
+          decidedAt: 2,
+        },
+      ],
+    });
+    assert.equal(
+      recommitted.commitDigest,
+      (
+        await run("git", ["rev-parse", "HEAD"], { cwd: workspace.root })
+      ).stdout.trim(),
+    );
+    assert.notEqual(recommitted.commitDigest, workspace.baseline);
     await writeFile(
       join(workspace.root, "package.json"),
       JSON.stringify({ scripts: {} }),

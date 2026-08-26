@@ -1279,12 +1279,30 @@ test("owner-authorized completed prerequisite repair preserves proof and reopens
         },
       },
     );
-    const repaired = await service.authorizeCompletedRepair(projectId, taskId, {
-      approvalId: "approval_44444444444444444444",
-      expectedRevision: completed.revision,
-      rationale:
-        "Downstream deterministic evidence invalidated the accepted TypeScript toolchain contract.",
-    });
+    const repaired = await service.authorizeCompletedRepair(
+      projectId,
+      taskId,
+      {
+        approvalId: "approval_44444444444444444444",
+        expectedRevision: completed.revision,
+        rationale:
+          "Downstream deterministic evidence invalidated the accepted TypeScript toolchain contract.",
+      },
+      [
+        {
+          profile: "typecheck",
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+        {
+          profile: "unit",
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+      ],
+    );
     assert.equal(repaired.status, "queued");
     assert.equal(repaired.commitDigest, null);
     assert.equal(
@@ -1293,6 +1311,11 @@ test("owner-authorized completed prerequisite repair preserves proof and reopens
       "an explicitly reopened completed prerequisite starts a new bounded repair cycle",
     );
     assert.equal(repaired.reviewAttempts?.at(-1)?.reviews.length, 2);
+    assert.equal(repaired.implementationEvidence.length, 1);
+    assert.match(
+      repaired.verifiedRecoveryEvidenceDigest ?? "",
+      /^[a-f0-9]{64}$/,
+    );
     assert.equal((await service.get(projectId))?.state, "running");
   } finally {
     await rm(root, { recursive: true, force: true });

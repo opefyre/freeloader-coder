@@ -637,6 +637,52 @@ export class ProjectTaskWorkspaceService {
           "Commit changes do not match exact file authority.",
         );
       }
+      const observed = (
+        await git(workspace.root, ["rev-parse", "--verify", "HEAD"])
+      ).trim();
+      if (observed !== workspace.baseline) {
+        const descendant = await run(
+          "git",
+          ["merge-base", "--is-ancestor", workspace.baseline, observed],
+          workspace.root,
+          GIT_TIMEOUT_MS,
+        ).then(
+          () => true,
+          () => false,
+        );
+        const committed = descendant
+          ? parseNames(
+              await git(workspace.root, [
+                "diff",
+                "--name-only",
+                "-z",
+                workspace.baseline,
+                observed,
+              ]),
+            )
+          : [];
+        if (
+          !descendant ||
+          committed.length === 0 ||
+          committed.some((path) => !task.allowedFiles.includes(path))
+        ) {
+          throw new ProjectTaskWorkspaceError(
+            "operation_denied",
+            "Existing commit does not match exact file authority.",
+          );
+        }
+        return {
+          commitDigest: observed,
+          evidenceDigest: hash(
+            JSON.stringify({
+              commitDigest: observed,
+              changed: committed,
+              authorityDigest: workspace.authorityDigest,
+              revalidatedAuthorizedDescendant: true,
+            }),
+          ),
+        };
+      }
       return {
         commitDigest: workspace.baseline,
         evidenceDigest: hash(

@@ -784,6 +784,7 @@ export class ProjectExecutionService {
     projectId: string,
     taskId: string,
     input: unknown,
+    verification?: QuarantineRepairEvidence,
   ) {
     const approval = reviewRepairSchema.parse(input);
     return this.#mutateProject(projectId, (record) => {
@@ -820,6 +821,27 @@ export class ProjectExecutionService {
           "The bounded repair history is full; create a revised delivery plan instead.",
         );
       const now = this.now();
+      const verifiedRecoveryEvidenceDigest = verification
+        ? createHash("sha256")
+            .update(JSON.stringify(verification))
+            .digest("hex")
+        : null;
+      if (verification) {
+        const passedProfiles = new Set(
+          verification
+            .filter((item) => item.passed && item.exitCode === 0)
+            .map((item) => item.profile),
+        );
+        if (
+          task.validationProfiles.some(
+            (profile) => !passedProfiles.has(profile),
+          )
+        )
+          throw new ProjectExecutionError(
+            "retry_denied",
+            "Completed recovery requires fresh passing evidence for every reviewed validation profile.",
+          );
+      }
       const archived = {
         approvalId: approval.approvalId,
         priorRevision: task.revision,
@@ -855,15 +877,19 @@ export class ProjectExecutionService {
             attempt: 0,
             assignment: null,
             lease: null,
-            implementationEvidence: [],
+            verifiedRecoveryEvidenceDigest,
+            implementationEvidence: verification
+              ? candidate.implementationEvidence
+              : [],
             validations: [],
             reviews: [],
             reviewAttempts: [...(candidate.reviewAttempts ?? []), archived],
             commitDigest: null,
             integrationDigest: null,
             failureClass: "implementation",
-            safeMessage:
-              "The owner reopened this completed prerequisite after downstream deterministic evidence invalidated its toolchain contract.",
+            safeMessage: verification
+              ? "The owner reopened this completed prerequisite with fresh deterministic recovery evidence; model reimplementation is not required."
+              : "The owner reopened this completed prerequisite after downstream deterministic evidence invalidated its toolchain contract.",
             updatedAt: now,
           };
         if (!invalidated.has(candidate.id)) return candidate;

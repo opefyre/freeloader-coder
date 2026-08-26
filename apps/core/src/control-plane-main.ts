@@ -976,11 +976,22 @@ const controlPlane = createControlPlaneServer({
           expectedRevision?: unknown;
           rationale?: unknown;
         };
-        await projectExecutions.authorizeCompletedRepair(projectId, task.id, {
-          approvalId: repair.approvalId,
-          expectedRevision: repair.expectedRevision,
-          rationale: repair.rationale,
-        });
+        const verification = await executionAdapters.verifyQuarantineRepair(
+          projectId,
+          task,
+        );
+        await projectExecutions.authorizeCompletedRepair(
+          projectId,
+          task.id,
+          {
+            approvalId: repair.approvalId,
+            expectedRevision: repair.expectedRevision,
+            rationale: repair.rationale,
+          },
+          verification.every((item) => item.passed && item.exitCode === 0)
+            ? verification
+            : undefined,
+        );
       } else if (
         task &&
         task.reviews.length === 0 &&
