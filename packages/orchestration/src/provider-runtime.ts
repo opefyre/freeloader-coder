@@ -343,6 +343,9 @@ function explainUnavailableRoute(
   if (failures.includes("permission")) {
     return "Provider authorization needs repair before this work can continue.";
   }
+  if (failures.length > 0) {
+    return "Every eligible free provider rejected this work or returned invalid evidence. Paid usage remains disabled; repair the provider response or retry with another authorized free provider.";
+  }
   if (route.rejected.every((rejection) => rejection.reason === "paid-disabled")) {
     return "Only paid providers are eligible and paid usage is disabled.";
   }

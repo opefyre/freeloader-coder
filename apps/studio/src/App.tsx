@@ -1633,7 +1633,7 @@ function ActivityWorkspace({
 }) {
   return (
     <div className="space-y-4">
-      <OwnerJourneyCertificationCard endpoint={endpoint} />
+      <OwnerJourneyCertificationCard endpoint={endpoint} navigate={navigate} />
       <ProjectActivityDashboard endpoint={endpoint} mode="actions" />
     </div>
   );

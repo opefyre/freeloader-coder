@@ -268,6 +268,22 @@ test("all-free exhaustion defers until reset without calling or poisoning the ta
   assert.equal(calls, 1);
 });
 
+test("permanent free-provider failures report the real failure instead of blaming paid capacity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "provider-contract-failure-"));
+  const result = await executeProviderTask({
+    ...identity,
+    workUnitId: "contract-failure",
+    requestDigest: "d".repeat(64),
+    candidates: [base],
+    routeRequest,
+    repository: new JsonProviderJournalStore(join(root, "journal.json")),
+    executor: { execute: async () => { throw Object.assign(new Error("invalid"), { status: 400, code: "response-contract-rejected" }); } }
+  });
+  assert.equal(result.projection.status, "needs_user");
+  assert.match(result.projection.statusReason ?? "", /Every eligible free provider rejected/);
+  assert.doesNotMatch(result.projection.statusReason ?? "", /Only paid providers/);
+});
+
 test("restart reconciles an interrupted call and continues to the next provider", async () => {
   const root = await mkdtemp(join(tmpdir(), "provider-restart-"));
   const repository = new JsonProviderJournalStore(join(root, "journal.json"));

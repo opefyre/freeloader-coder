@@ -47,8 +47,10 @@ import {
 
 export function OwnerJourneyCertificationCard({
   endpoint,
+  navigate,
 }: {
   endpoint: string;
+  navigate: (view: "overview" | "projects") => void;
 }) {
   const [snapshot, setSnapshot] =
     useState<OwnerJourneyCertificationSnapshot | null>(null);
@@ -290,6 +292,7 @@ export function OwnerJourneyCertificationCard({
             sessions={sessions}
             review={review}
             cohort={cohort}
+            startProject={() => navigate("overview")}
             saved={async (message) => {
               await refresh();
               setNotice(message);
@@ -305,12 +308,14 @@ function PilotCapture({
   sessions,
   review,
   cohort,
+  startProject,
   saved,
 }: {
   endpoint: string;
   sessions: readonly OwnerPilotSession[];
   review: OwnerPilotReview | null;
   cohort: OwnerPilotCohortReport | null;
+  startProject: () => void;
   saved: (message: string) => Promise<void>;
 }) {
   const [projects, setProjects] = useState<
@@ -334,6 +339,16 @@ function PilotCapture({
   const [observedSession, setObservedSession] = useState<OwnerPilotSession | null>(null);
   const storedSession = sessions.find((session) => ["active", "interrupted"].includes(session.status));
   const active = storedSession && observedSession?.id === storedSession.id ? observedSession : storedSession;
+  const completedProjects = new Set(
+    sessions
+      .filter((session) => session.status === "completed")
+      .map((session) => session.projectId),
+  );
+  const untestedProject = projects.find(
+    (project) => !completedProjects.has(project.id),
+  );
+  const needsAnotherProject =
+    !active && cohort?.nextSession.action === "add_project";
   useEffect(() => {
     void Promise.all([listLocalProjects({ endpoint }), listOwnerPilotImprovements(endpoint)])
       .then(([value, handoffs]) => {
@@ -351,9 +366,7 @@ function PilotCapture({
   useEffect(() => {
     if (active || projects.length === 0 || !cohort) return;
     if (cohort.nextSession.action === "add_project") {
-      const completedProjects = new Set(sessions.filter((session) => session.status === "completed").map((session) => session.projectId));
-      const untested = projects.find((project) => !completedProjects.has(project.id));
-      if (untested) setProjectId(untested.id);
+      if (untestedProject) setProjectId(untestedProject.id);
     }
     if (cohort.nextSession.scenario) setScenario(cohort.nextSession.scenario);
   }, [active, cohort?.evidenceDigest, projects, sessions]);
@@ -458,6 +471,30 @@ function PilotCapture({
         The participant stays anonymous. Prompts, files, names, email, and
         project content are excluded.
       </p>
+      {needsAnotherProject && (
+        <div
+          role="status"
+          className="mt-4 flex flex-col gap-3 rounded-2xl bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <strong className="text-sm">
+              {untestedProject
+                ? "A different project is ready"
+                : "Another project is needed"}
+            </strong>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {untestedProject
+                ? "Codkesh selected an untested project for the next representative session."
+                : "Start or open a different project before recording the next representative session."}
+            </p>
+          </div>
+          {!untestedProject && (
+            <Button type="button" onClick={startProject}>
+              Start another project
+            </Button>
+          )}
+        </div>
+      )}
       {active ? (
         <div className="mt-4 space-y-4">
           <div className="grid gap-2 sm:grid-cols-3">

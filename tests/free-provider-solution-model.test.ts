@@ -104,6 +104,24 @@ test("solution model rejects structurally incomplete research before it becomes 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("solution model performs one bounded same-provider repair for invalid structured evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-repair-"));
+  try {
+    let calls = 0;
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => {
+        calls += 1;
+        const content = calls === 1 ? JSON.stringify({ schemaVersion: 1, discipline: "wrong" }) : JSON.stringify(researchResponse("technical"));
+        return { schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content, finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false };
+      } }) as unknown as ProviderAdapter,
+    }, () => now);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const result = await model.run({ projectId, role: "technical_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit });
+    assert.equal(calls, 2, "one bounded same-provider repair is attempted");
+    assert.equal((result.response as any).discipline, "technical");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("solution model rejects private research citations at the provider boundary and falls back", async () => {
   const root = await mkdtemp(join(tmpdir(), "solution-model-private-citation-"));
   try {
@@ -120,7 +138,7 @@ test("solution model rejects private research citations at the provider boundary
     const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq", "mistral"], approvedAt: now - 1, expiresAt: now + 60_000 };
     const result = await model.run({ projectId, role: "product_research", contextDigest, instruction: "Analyze.", sources: [{ name: "CONTEXT.md", content: "Safe test context." }], permit });
     assert.equal(result.providerId, "groq");
-    assert.equal(calls, 2);
+    assert.equal(calls, 3, "one bounded repair precedes the independent provider fallback");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

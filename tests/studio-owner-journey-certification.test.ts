@@ -14,7 +14,10 @@ const client = readFileSync(
 
 test("Action Center owns a minimal honest certification and consented-learning experience", () => {
   assert.match(app, /OwnerJourneyCertificationCard = lazy/);
-  assert.match(app, /<OwnerJourneyCertificationCard endpoint=\{endpoint\}/);
+  assert.match(
+    app,
+    /<OwnerJourneyCertificationCard endpoint=\{endpoint\} navigate=\{navigate\}/,
+  );
   for (const phrase of [
     "Owner-journey check",
     "Local, synthetic, and always $0",
@@ -118,6 +121,7 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
     "Recommended next test",
     "No local project available",
     "Create or open a local project",
+    "Start another project",
     "Next:",
     "Cohort report",
   ]) assert.match(source, new RegExp(phrase, "i"));
@@ -132,4 +136,6 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
   assert.doesNotMatch(source, /session\.note/);
   assert.match(source, /cohort\.nextSession\.scenario/);
   assert.match(source, /completedProjects/);
+  assert.match(source, /cohort\?\.nextSession\.action === "add_project"/);
+  assert.match(source, /navigate\("overview"\)/);
 });
