@@ -107,6 +107,37 @@ test("temporary free-provider failure returns the truthful queued state instead 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("review-capacity recovery reuses passing implementation evidence without paying the validation cost again", async () => {
+  const root = await mkdtemp(join(tmpdir(), "project-execution-review-capacity-"));
+  try {
+    const service = new ProjectExecutionService(root, { readDraft: async () => ({ draft, document: { schemaVersion: 1, projectId, projectRelativePath: ".pipeline/BACKLOG.md", revision: 1, digest, markdown: "# Plan", itemCount: 4 } }) }, { get: async () => ({ completed: true, planDigest: digest, issues: { [taskId]: { issueKey: "PIPE-4" } } }) }, () => 100, eligibility);
+    const { FreeProviderExecutionError } = await import("../apps/core/src/free-provider-execution-model.js");
+    let implementations = 0;
+    let validations = 0;
+    let reviews = 0;
+    const adapters: ProjectExecutionAdapters = {
+      candidates: async () => [candidate()],
+      implement: async () => { implementations += 1; return implementation(); },
+      validate: async (_project, _task, tier) => { validations += 1; return { tier, commandLabel: tier, passed: true, exitCode: 0, evidenceDigest: evidence }; },
+      classifyFailure: async () => "provider",
+      healingPolicy: async () => ({ maxAttempts: 2, allowedFiles: ["src/app.ts"], protectedPaths: ["secrets"], requiredChecks: ["fast", "full"], requiredReviewRoles: ["functional", "design"], minimumGoldenScore: 90 }),
+      heal: async () => implementation(),
+      review: async () => { reviews += 1; if (reviews === 1) throw new FreeProviderExecutionError("capacity_unavailable", 1_000, "Review quorum is temporarily unavailable."); return [review("functional-reviewer", "gemini", "functional"), review("design-reviewer", "cloudflare", "design")]; },
+      integrate: async () => ({ commitDigest: evidence, integrationDigest: evidence, validation: { tier: "integration", commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: evidence } }),
+    };
+    const worker = new ProjectExecutionWorker(service, adapters, "worker-a", 30_000);
+    const deferred = await worker.tick(projectId);
+    assert.equal(deferred?.tasks[0]?.status, "queued");
+    assert.equal(implementations, 1);
+    assert.equal(validations, 2);
+    const completed = await worker.tick(projectId);
+    assert.equal(completed?.tasks[0]?.status, "completed");
+    assert.equal(implementations, 1);
+    assert.equal(validations, 2);
+    assert.equal(reviews, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("freshly verified quarantine recovery skips model reimplementation and resumes at validation", async () => {
   const root = await mkdtemp(join(tmpdir(), "project-execution-verified-recovery-"));
   try {

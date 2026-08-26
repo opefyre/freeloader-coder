@@ -360,6 +360,38 @@ export class ProjectExecutionService {
     );
   }
 
+  async resumeValidatedReview(
+    projectId: string,
+    taskId: string,
+    leaseId: string,
+    ownerId: string,
+  ) {
+    return this.#updateOwned(
+      projectId,
+      taskId,
+      leaseId,
+      ownerId,
+      (record, task, now) => {
+        if (
+          task.status !== "running" ||
+          task.implementationEvidence.length === 0 ||
+          task.reviews.length > 0 ||
+          task.failureClass === "implementation" ||
+          !hasValidation(task, "fast") ||
+          !hasValidation(task, "full")
+        ) throw new ProjectExecutionError("invalid_stage", "Only preserved, fully validated implementation evidence can resume directly at review.");
+        const updated: ExecutionTask = {
+          ...task,
+          status: "reviewing",
+          revision: task.revision + 1,
+          safeMessage: "Preserved validation evidence is current; independent review resumed without duplicate implementation.",
+          updatedAt: now,
+        };
+        return { record: replaceTask(record, updated), result: updated };
+      },
+    );
+  }
+
   async recordReviews(
     projectId: string,
     taskId: string,

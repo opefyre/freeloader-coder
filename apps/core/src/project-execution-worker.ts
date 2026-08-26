@@ -131,6 +131,7 @@ export class ProjectExecutionWorker {
     );
     heartbeat.unref();
     try {
+      const resumeAtReview = hasValidatedImplementationAwaitingReview(task);
       let implementation = task.verifiedRecoveryEvidenceDigest
         ? {
             evidenceDigest: task.verifiedRecoveryEvidenceDigest,
@@ -138,15 +139,31 @@ export class ProjectExecutionWorker {
             goldenScore: 100,
             previousGoldenScore: 100,
           }
-        : await this.adapters.implement(projectId, task, task.attempt);
-      task = await this.service.recordImplementation(
-        projectId,
-        task.id,
-        lease.leaseId,
-        this.workerId,
-        implementation.evidenceDigest,
-      );
-      while (true) {
+        : resumeAtReview
+          ? {
+              evidenceDigest: task.implementationEvidence.at(-1)!,
+              changedFiles: [],
+              goldenScore: 100,
+              previousGoldenScore: 100,
+            }
+          : await this.adapters.implement(projectId, task, task.attempt);
+      if (!resumeAtReview) {
+        task = await this.service.recordImplementation(
+          projectId,
+          task.id,
+          lease.leaseId,
+          this.workerId,
+          implementation.evidenceDigest,
+        );
+      } else {
+        task = await this.service.resumeValidatedReview(
+          projectId,
+          task.id,
+          lease.leaseId,
+          this.workerId,
+        );
+      }
+      while (!resumeAtReview) {
         const fast = await this.adapters.validate(projectId, task, "fast");
         task = await this.service.recordValidation(
           projectId,
@@ -364,4 +381,14 @@ function safeError(error: unknown) {
       ? error.message
       : "Execution stopped without a verified outcome.";
   return `Execution needs attention: ${message.replace(/(?:api[_-]?key|password|secret|token)\s*[:=]\s*\S+/gi, "$1=[redacted]").slice(0, 430)}`;
+}
+
+function hasValidatedImplementationAwaitingReview(task: ExecutionTask) {
+  if (
+    task.implementationEvidence.length === 0 ||
+    task.reviews.length > 0 ||
+    task.failureClass === "implementation"
+  ) return false;
+  const latest = (tier: "fast" | "full") => [...task.validations].reverse().find((validation) => validation.tier === tier);
+  return latest("fast")?.passed === true && latest("full")?.passed === true;
 }
