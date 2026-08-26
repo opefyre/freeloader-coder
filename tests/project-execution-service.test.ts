@@ -343,12 +343,19 @@ test("failed validation permits only bounded healing and expired outcomes requir
 });
 
 test("expired pre-mutation lease requeues once while evidence-bearing work remains owner-gated", async () => {
-  const root = await mkdtemp(join(tmpdir(), "project-execution-restart-classification-"));
+  const root = await mkdtemp(
+    join(tmpdir(), "project-execution-restart-classification-"),
+  );
   let now = 100;
   try {
     const service = makeService(root, () => now);
     await service.initialize(projectId);
-    const claimed = await service.claim(projectId, "worker-a", [candidate], 10_000);
+    const claimed = await service.claim(
+      projectId,
+      "worker-a",
+      [candidate],
+      10_000,
+    );
     const lease = claimed.task!.lease!;
     now = lease.expiresAt + 1;
     const recovered = await service.reconcileExpired(projectId);
@@ -1102,6 +1109,95 @@ test("owner can revalidate unchanged delivered files after a legacy post-review 
     });
     assert.equal(repaired.status, "queued");
     assert.equal(repaired.reviewAttempts?.at(-1)?.reviews.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("freshly verified clean-checkout repair preserves implementation and skips duplicate model work", async () => {
+  const root = await mkdtemp(
+    join(tmpdir(), "project-execution-clean-checkout-recovery-"),
+  );
+  try {
+    const service = makeService(root, () => 100);
+    await service.initialize(projectId);
+    const claimed = await service.claim(projectId, "worker-a", [candidate]);
+    const lease = claimed.task!.lease!;
+    await service.recordImplementation(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      evidence,
+    );
+    await service.recordValidation(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      {
+        tier: "fast",
+        commandLabel: "fast",
+        passed: true,
+        exitCode: 0,
+        evidenceDigest: evidence,
+      },
+    );
+    await service.recordValidation(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      {
+        tier: "full",
+        commandLabel: "full",
+        passed: true,
+        exitCode: 0,
+        evidenceDigest: evidence,
+      },
+    );
+    await service.recordReviews(projectId, taskId, lease.leaseId, "worker-a", [
+      review("functional-reviewer", "gemini", "functional"),
+      review("design-reviewer", "openrouter", "design"),
+    ]);
+    const interrupted = await service.interrupt(
+      projectId,
+      taskId,
+      lease.leaseId,
+      "worker-a",
+      "Execution needs attention: Clean-checkout validation failed before integration; no unverified commit was retained.",
+      "implementation",
+    );
+    assert.equal(interrupted.status, "needs_user");
+    const recovered = await service.authorizeQuarantineRecovery(
+      projectId,
+      {
+        taskId,
+        expectedRevision: interrupted.revision,
+        approvalId: "approval_77777777777777777777",
+        rationale: "The clean checkout now passes every required profile.",
+      },
+      [
+        {
+          profile: "typecheck",
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+        {
+          profile: "unit",
+          passed: true,
+          exitCode: 0,
+          evidenceDigest: evidence,
+        },
+      ],
+    );
+    assert.equal(recovered.status, "queued");
+    assert.equal(recovered.implementationEvidence.length, 1);
+    assert.equal(recovered.validations.length, 0);
+    assert.equal(recovered.reviews.length, 0);
+    assert.equal(recovered.reviewAttempts?.at(-1)?.reviews.length, 2);
+    assert.match(recovered.safeMessage, /clean-checkout recovery/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

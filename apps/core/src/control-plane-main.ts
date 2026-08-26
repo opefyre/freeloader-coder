@@ -274,7 +274,8 @@ const ownerPilotImprovements = new OwnerPilotImprovementService(
   stateDirectory,
   { review: async () => ownerPilot.review(await ownerJourneyTrust.snapshot()) },
   {
-    selectedProject: (projectId) => jiraDelivery.selectedImprovementProject(projectId),
+    selectedProject: (projectId) =>
+      jiraDelivery.selectedImprovementProject(projectId),
     createImprovement: (projectId, improvement, marker) =>
       jiraDelivery.createImprovement(projectId, improvement, marker),
   },
@@ -292,7 +293,11 @@ const projectExecutions = new ProjectExecutionService(
   Date.now,
   projectLifecycles,
 );
-const ownerPilotObserver = new OwnerPilotObserver(localProjects, projectLifecycles, projectExecutions);
+const ownerPilotObserver = new OwnerPilotObserver(
+  localProjects,
+  projectLifecycles,
+  projectExecutions,
+);
 const projectPortfolio = new ProjectPortfolioService(
   localProjects,
   projectLifecycles,
@@ -759,16 +764,22 @@ const controlPlane = createControlPlaneServer({
     cohortReport: async () =>
       ownerPilot.cohortReport(await ownerJourneyTrust.snapshot()),
     reconcile: async (id) => {
-      const session = (await ownerPilot.list()).sessions.find((candidate) => candidate.id === id);
+      const session = (await ownerPilot.list()).sessions.find(
+        (candidate) => candidate.id === id,
+      );
       if (!session) throw new Error("Pilot session is unavailable.");
-      return ownerPilot.reconcile(id, await ownerPilotObserver.observe(session.projectId));
+      return ownerPilot.reconcile(
+        id,
+        await ownerPilotObserver.observe(session.projectId),
+      );
     },
     summary: (id) => ownerPilot.summary(id),
     receipt: (id) => ownerPilot.receipt(id),
   },
   ownerPilotImprovements: {
     list: () => ownerPilotImprovements.list(),
-    preview: (input, idempotencyKey) => ownerPilotImprovements.preview(input, idempotencyKey),
+    preview: (input, idempotencyKey) =>
+      ownerPilotImprovements.preview(input, idempotencyKey),
     edit: (id, input) => ownerPilotImprovements.edit(id, input),
     approve: (id, input) => ownerPilotImprovements.approve(id, input),
     decline: (id, input) => ownerPilotImprovements.decline(id, input),
@@ -803,7 +814,10 @@ const controlPlane = createControlPlaneServer({
       return result;
     },
     replaceModel: async (connectionId, input) => {
-      const result = await providerConnectionService.replaceModel(connectionId, input);
+      const result = await providerConnectionService.replaceModel(
+        connectionId,
+        input,
+      );
       if (result.connection?.admission.admitted) {
         await intakeCapacity.recordProbeSuccess(connectionId, Date.now());
         await wakeQueuedProjectExecutions();
@@ -1049,11 +1063,38 @@ const controlPlane = createControlPlaneServer({
           expectedRevision?: unknown;
           rationale?: unknown;
         };
-        await projectExecutions.authorizeReviewRepair(projectId, task.id, {
-          approvalId: repair.approvalId,
-          expectedRevision: repair.expectedRevision,
-          rationale: repair.rationale,
-        });
+        const cleanCheckoutRepair =
+          task.status === "needs_user" &&
+          task.safeMessage.includes("Clean-checkout validation failed") &&
+          task.reviews.length > 0 &&
+          task.reviews.every((review) => review.verdict === "pass");
+        if (cleanCheckoutRepair) {
+          const verification = await executionAdapters.verifyQuarantineRepair(
+            projectId,
+            task,
+          );
+          if (
+            verification.every((item) => item.passed && item.exitCode === 0)
+          ) {
+            await projectExecutions.authorizeQuarantineRecovery(
+              projectId,
+              input,
+              verification,
+            );
+          } else {
+            await projectExecutions.authorizeReviewRepair(projectId, task.id, {
+              approvalId: repair.approvalId,
+              expectedRevision: repair.expectedRevision,
+              rationale: repair.rationale,
+            });
+          }
+        } else {
+          await projectExecutions.authorizeReviewRepair(projectId, task.id, {
+            approvalId: repair.approvalId,
+            expectedRevision: repair.expectedRevision,
+            rationale: repair.rationale,
+          });
+        }
       } else {
         await projectExecutions.authorizeEnvironmentRetry(projectId, input);
       }

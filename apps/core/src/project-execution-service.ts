@@ -379,12 +379,17 @@ export class ProjectExecutionService {
           task.failureClass === "implementation" ||
           !hasValidation(task, "fast") ||
           !hasValidation(task, "full")
-        ) throw new ProjectExecutionError("invalid_stage", "Only preserved, fully validated implementation evidence can resume directly at review.");
+        )
+          throw new ProjectExecutionError(
+            "invalid_stage",
+            "Only preserved, fully validated implementation evidence can resume directly at review.",
+          );
         const updated: ExecutionTask = {
           ...task,
           status: "reviewing",
           revision: task.revision + 1,
-          safeMessage: "Preserved validation evidence is current; independent review resumed without duplicate implementation.",
+          safeMessage:
+            "Preserved validation evidence is current; independent review resumed without duplicate implementation.",
           updatedAt: now,
         };
         return { record: replaceTask(record, updated), result: updated };
@@ -626,7 +631,12 @@ export class ProjectExecutionService {
           task.integrationDigest === null;
         if (preMutation) {
           const deferredProviderIds = task.assignment?.providerId
-            ? [...new Set([...(task.deferredProviderIds ?? []), task.assignment.providerId])].slice(-20)
+            ? [
+                ...new Set([
+                  ...(task.deferredProviderIds ?? []),
+                  task.assignment.providerId,
+                ]),
+              ].slice(-20)
             : task.deferredProviderIds;
           return {
             ...task,
@@ -1086,12 +1096,21 @@ export class ProjectExecutionService {
           task.failureClass &&
           ["implementation", "environment"].includes(task.failureClass),
         );
+      const verifiedCleanCheckoutRepair =
+        task.status === "needs_user" &&
+        task.reviews.length > 0 &&
+        task.reviews.every((review) => review.verdict === "pass") &&
+        task.commitDigest === null &&
+        task.integrationDigest === null &&
+        task.failureClass === "implementation" &&
+        task.safeMessage.includes("Clean-checkout validation failed");
       if (
         (!boundedQuarantine &&
           !legacyDependencyInterruption &&
-          !verifiedPreReviewInterruption) ||
+          !verifiedPreReviewInterruption &&
+          !verifiedCleanCheckoutRepair) ||
         task.lease ||
-        task.reviews.length > 0 ||
+        (task.reviews.length > 0 && !verifiedCleanCheckoutRepair) ||
         task.commitDigest ||
         task.integrationDigest
       ) {
@@ -1104,13 +1123,31 @@ export class ProjectExecutionService {
       const evidenceDigest = createHash("sha256")
         .update(JSON.stringify(verification))
         .digest("hex");
+      const archived = verifiedCleanCheckoutRepair
+        ? {
+            approvalId: recovery.approvalId,
+            priorRevision: task.revision,
+            implementerProviderId: task.assignment?.providerId ?? null,
+            implementationEvidence: task.implementationEvidence,
+            validations: task.validations,
+            reviews: task.reviews,
+            rationale: recovery.rationale,
+            decidedAt: now,
+          }
+        : null;
       const updated: ExecutionTask = {
         ...task,
         status: "queued",
         assignment: null,
         verifiedRecoveryEvidenceDigest: evidenceDigest,
+        attempt: verifiedCleanCheckoutRepair ? 0 : task.attempt,
+        validations: verifiedCleanCheckoutRepair ? [] : task.validations,
+        reviews: verifiedCleanCheckoutRepair ? [] : task.reviews,
+        reviewAttempts: archived
+          ? [...(task.reviewAttempts ?? []), archived]
+          : task.reviewAttempts,
         revision: task.revision + 1,
-        safeMessage: `Owner approved one freshly verified pre-review recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`,
+        safeMessage: `Owner approved one freshly verified ${verifiedCleanCheckoutRepair ? "clean-checkout" : "pre-review"} recovery (${recovery.approvalId}, ${evidenceDigest.slice(0, 12)}): ${recovery.rationale}`,
         updatedAt: now,
       };
       return {
