@@ -151,7 +151,12 @@ export class ProjectExecutionService {
       const now = this.now();
       const task = eligibleExecutionTasks(record, now)[0];
       if (!task) return { record, result: { record, task: null } };
-      const assignment = selectExecutionAssignment({ task, candidates, now });
+      // Review-capacity deferral must not erase the implementer identity after
+      // implementation and both deterministic validation tiers have passed.
+      // No implementation provider capacity is needed to resume review.
+      const assignment = hasValidatedImplementationAwaitingReview(task)
+        ? task.assignment
+        : selectExecutionAssignment({ task, candidates, now });
       if (!assignment) {
         const waiting = replaceTask(record, {
           ...task,
@@ -961,10 +966,11 @@ export class ProjectExecutionService {
       leaseId,
       ownerId,
       (record, task, now) => {
+        const preserveAssignment = hasValidatedImplementationAwaitingReview(task);
         const updated: ExecutionTask = {
           ...task,
           status: "queued",
-          assignment: null,
+          assignment: preserveAssignment ? task.assignment : null,
           lease: null,
           revision: task.revision + 1,
           safeMessage,
@@ -1589,6 +1595,16 @@ export function isPreEvidenceExecutionDissent(task: ExecutionTask): boolean {
 function hasValidation(task: ExecutionTask, tier: "fast" | "full") {
   return task.validations.some(
     (validation) => validation.tier === tier && validation.passed,
+  );
+}
+function hasValidatedImplementationAwaitingReview(task: ExecutionTask) {
+  return (
+    task.assignment !== null &&
+    task.implementationEvidence.length > 0 &&
+    task.reviews.length === 0 &&
+    task.failureClass !== "implementation" &&
+    hasValidation(task, "fast") &&
+    hasValidation(task, "full")
   );
 }
 function reviewDigest(review: QualityReview) {

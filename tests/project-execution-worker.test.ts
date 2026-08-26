@@ -115,8 +115,12 @@ test("review-capacity recovery reuses passing implementation evidence without pa
     let implementations = 0;
     let validations = 0;
     let reviews = 0;
+    let candidateChecks = 0;
     const adapters: ProjectExecutionAdapters = {
-      candidates: async () => [candidate()],
+      candidates: async () => {
+        candidateChecks += 1;
+        return candidateChecks === 1 ? [candidate()] : [];
+      },
       implement: async () => { implementations += 1; return implementation(); },
       validate: async (_project, _task, tier) => { validations += 1; return { tier, commandLabel: tier, passed: true, exitCode: 0, evidenceDigest: evidence }; },
       classifyFailure: async () => "provider",
@@ -128,6 +132,7 @@ test("review-capacity recovery reuses passing implementation evidence without pa
     const worker = new ProjectExecutionWorker(service, adapters, "worker-a", 30_000);
     const deferred = await worker.tick(projectId);
     assert.equal(deferred?.tasks[0]?.status, "queued");
+    assert.equal(deferred?.tasks[0]?.assignment?.providerId, "groq");
     assert.equal(implementations, 1);
     assert.equal(validations, 2);
     const completed = await worker.tick(projectId);
@@ -135,6 +140,7 @@ test("review-capacity recovery reuses passing implementation evidence without pa
     assert.equal(implementations, 1);
     assert.equal(validations, 2);
     assert.equal(reviews, 2);
+    assert.equal(candidateChecks, 2);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
