@@ -284,12 +284,15 @@ export class ProjectExecutionWorker {
         (error.code === "capacity_unavailable" ||
           error.code === "provider_failed")
       ) {
+        const awaitingReview = hasValidatedImplementationAwaitingReview(task);
         const released = await this.service.releaseForRetry(
           projectId,
           task.id,
           lease.leaseId,
           this.workerId,
-          "The assigned free provider is temporarily unavailable. The task is safely queued for its next eligible window.",
+          awaitingReview
+            ? "Implementation and deterministic validation passed. Independent free reviewers are temporarily unavailable; review will resume at the next eligible window without rebuilding."
+            : "The assigned free provider is temporarily unavailable. The task is safely queued for its next eligible window.",
         );
         await this.adapters.observe?.(projectId, released).catch(() => undefined);
         return await this.service.get(projectId);

@@ -133,6 +133,10 @@ test("review-capacity recovery reuses passing implementation evidence without pa
     const deferred = await worker.tick(projectId);
     assert.equal(deferred?.tasks[0]?.status, "queued");
     assert.equal(deferred?.tasks[0]?.assignment?.providerId, "groq");
+    assert.match(
+      deferred?.tasks[0]?.safeMessage ?? "",
+      /review will resume.*without rebuilding/i,
+    );
     assert.equal(implementations, 1);
     assert.equal(validations, 2);
     const completed = await worker.tick(projectId);
