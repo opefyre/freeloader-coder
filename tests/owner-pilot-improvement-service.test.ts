@@ -88,3 +88,33 @@ test("improvement handoff is durable, idempotent, and resumes only failed Jira i
   assert.equal(replay.state, "completed");
   assert.equal(calls.length, 3);
 });
+
+test("non-improvement pilot decisions cannot reach Jira preview or mutation", async () => {
+  for (const state of ["certification_needed", "sample_needed", "review_ready"] as const) {
+    const directory = await mkdtemp(join(tmpdir(), "codkesh-improvement-"));
+    let jiraCalls = 0;
+    const deniedReview: OwnerPilotReview = {
+      ...review,
+      state,
+      improvements: state === "review_ready" ? [] : review.improvements,
+    };
+    const service = new OwnerPilotImprovementService(
+      directory,
+      { review: async () => deniedReview },
+      {
+        selectedProject: async () => { jiraCalls += 1; return { key: "PIPE" }; },
+        createImprovement: async () => { jiraCalls += 1; throw new Error("must not run"); },
+      },
+      () => 400,
+    );
+    await assert.rejects(
+      () => service.preview(
+        { projectId, expectedReviewDigest: deniedReview.evidenceDigest },
+        `improvement.denied.${state}`,
+      ),
+      /no evidence-backed improvements/i,
+    );
+    assert.equal(jiraCalls, 0);
+    assert.equal((await service.list()).drafts.length, 0);
+  }
+});
