@@ -31,6 +31,8 @@ test("dependency readiness and completion evidence fail closed", () => {
 });
 
 test("owner recovery summary distinguishes automatic retry from owner-gated ambiguity", () => {
+  const queued = projectExecutionRecordSchema.parse({ schemaVersion: 1, projectId: "project_abcdef0123456789", planDigest: "d".repeat(64), state: "running", revision: 0, tasks: [baseTask], updatedAt: 1 });
+  assert.equal(summarizeExecutionRecovery(queued).state, "queued");
   const retrying = projectExecutionRecordSchema.parse({ schemaVersion: 1, projectId: "project_abcdef0123456789", planDigest: "d".repeat(64), state: "running", revision: 1, tasks: [{ ...baseTask, failureClass: "provider", safeMessage: "The task will resume on a free provider." }], updatedAt: 2 });
   assert.deepEqual(summarizeExecutionRecovery(retrying), {
     state: "recovering", completedTasks: 0, totalTasks: 1, activeJiraIssueKey: "PIPE-1", evidenceDigest: null,
@@ -39,4 +41,27 @@ test("owner recovery summary distinguishes automatic retry from owner-gated ambi
   const blocked = projectExecutionRecordSchema.parse({ ...retrying, state: "needs_user", tasks: [{ ...baseTask, status: "needs_user", safeMessage: "Preserved evidence requires owner review." }] });
   assert.equal(summarizeExecutionRecovery(blocked).state, "needs_user");
   assert.equal(summarizeExecutionRecovery(blocked).nextAction, "Review PIPE-1 before execution continues.");
+
+  const completedTask = {
+    ...baseTask,
+    status: "completed" as const,
+    assignment: { providerId: "groq", modelId: "model", deviceId: "provider:one", selectedAt: 1, reasons: ["Eligible free route."] },
+    implementationEvidence: ["1".repeat(64)],
+    validations: [
+      { tier: "fast" as const, commandLabel: "fast", passed: true, exitCode: 0, evidenceDigest: "2".repeat(64), observedAt: 2 },
+      { tier: "full" as const, commandLabel: "full", passed: true, exitCode: 0, evidenceDigest: "3".repeat(64), observedAt: 3 },
+      { tier: "integration" as const, commandLabel: "integration", passed: true, exitCode: 0, evidenceDigest: "4".repeat(64), observedAt: 4 },
+    ],
+    reviews: [
+      { reviewerId: "reviewer-functional", providerId: "gemini", role: "functional" as const, verdict: "pass" as const, evidenceDigest: "5".repeat(64), findings: [], observedAt: 5 },
+      { reviewerId: "reviewer-design", providerId: "cloudflare", role: "design" as const, verdict: "pass" as const, evidenceDigest: "6".repeat(64), findings: [], observedAt: 6 },
+    ],
+    commitDigest: "7".repeat(40),
+    integrationDigest: "8".repeat(64),
+    liveJourneyEvidence: { journeyId: "owner-preview", revisionDigest: "7".repeat(40), reference: "local-preview-proof", runtime: "browser" as const, viewport: "1440x900", passed: true, assertions: [{ name: "Owner preview rendered", passed: true, evidenceDigest: "9".repeat(64) }], observedAt: 7 },
+    safeMessage: "All gates passed.",
+  };
+  const completed = projectExecutionRecordSchema.parse({ ...queued, state: "completed", tasks: [completedTask] });
+  assert.equal(summarizeExecutionRecovery(completed).state, "completed");
+  assert.equal(summarizeExecutionRecovery(completed).evidenceDigest, "8".repeat(64));
 });
