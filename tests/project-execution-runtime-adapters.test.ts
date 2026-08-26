@@ -31,6 +31,8 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
         assert.match(instruction.toolchainCompatibilityRule, /NodeNext and Node16 require the emitted \.js suffix/);
         assert.match(instruction.toolchainCompatibilityRule, /when browser globals are not declared, use globalThis\.document/);
         assert.match(instruction.toolchainCompatibilityRule, /A \.ts file cannot contain JSX syntax/);
+        assert.match(instruction.authorityRule, /Never import a project-local module unless that module is present in the supplied sources/);
+        assert.match(instruction.authorityRule, /declare and export it inside an allowed implementation file/);
         return { providerId: "groq", modelId: "coder", artifactDigest: "a".repeat(64), response: { summary: "Update feature", operations: [{ type: "replace", path: "src/workflow.ts", content: "export const value = 2;\n", citations: ["src/workflow.ts"], rationale: "Meet the approved behavior." }] } };
       }
       const instruction = JSON.parse(input.instruction);
