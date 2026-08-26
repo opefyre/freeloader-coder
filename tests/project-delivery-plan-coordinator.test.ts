@@ -33,6 +33,22 @@ test("delivery plan coordinator persists completion and never duplicates complet
   }
 });
 
+test("concurrent schedule requests claim one delivery-planning run", async () => {
+  const root = await mkdtemp(join(tmpdir(), "delivery-plan-coordinator-concurrent-"));
+  try {
+    let calls = 0;
+    const coordinator = new ProjectDeliveryPlanCoordinator(root, {
+      run: async () => { calls += 1; await new Promise((resolve) => setTimeout(resolve, 20)); return {} as never; },
+    } as never, () => 100);
+    await Promise.all([coordinator.schedule(projectId), coordinator.schedule(projectId)]);
+    await waitFor(async () => (await coordinator.get(projectId))?.state === "completed");
+    assert.equal(calls, 1);
+    await coordinator.shutdown();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("delivery plan coordinator exposes safe owner action without retry loops", async () => {
   const root = await mkdtemp(join(tmpdir(), "delivery-plan-coordinator-denied-"));
   try {

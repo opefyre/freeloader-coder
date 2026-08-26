@@ -64,7 +64,9 @@ export class ProviderCapacityStore {
       const entry = document.connections[id] ?? freshEntry(now);
       const usage = entry.usage.utcDay === utcDay(now) ? entry.usage : emptyCapacityUsage(now);
       usageByConnectionId[id] = toProviderUsage(usage);
-      circuitOpenUntilByConnectionId[id] = entry.circuit.openUntil;
+      circuitOpenUntilByConnectionId[id] = isContractLocalFailure(entry.circuit.lastFailureCode)
+        ? 0
+        : entry.circuit.openUntil;
     }
     return { usageByConnectionId, circuitOpenUntilByConnectionId };
   }
@@ -123,7 +125,7 @@ export class ProviderCapacityStore {
         attempt.status === "succeeded"
           ? recordCircuitSuccess()
           : isContractLocalFailure(attempt.failureCode)
-            ? entry.circuit
+            ? (isContractLocalFailure(entry.circuit.lastFailureCode) ? recordCircuitSuccess() : entry.circuit)
           : recordCircuitFailure({
               state: entry.circuit,
               now: attempt.finishedAt ?? now,

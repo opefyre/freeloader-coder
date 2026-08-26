@@ -183,9 +183,9 @@ test("solution model rejects an incomplete delivery plan at the provider boundar
 
 test("delivery roles reserve independent provider capacity instead of exhausting the mesh", () => {
   const consented = ["gemini", "mistral", "nvidia-nim", "groq", "huggingface", "cohere", "zhipu", "kilo", "openrouter"];
-  assert.deepEqual(providerIdsForRole("delivery_planning", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), ["gemini"]);
-  assert.deepEqual(providerIdsForRole("delivery_review", consented, ["mistral", "huggingface", "cohere", "zhipu", "openrouter", "nvidia-nim", "gemini", "groq"]), ["mistral", "huggingface", "cohere", "zhipu", "openrouter"]);
-  assert.deepEqual(providerIdsForRole("technical_delivery_review", consented, ["nvidia-nim", "kilo", "groq", "mistral", "gemini"]), ["nvidia-nim", "kilo", "groq"]);
+  assert.deepEqual(providerIdsForRole("delivery_planning", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), ["gemini", "mistral"]);
+  assert.deepEqual(providerIdsForRole("delivery_review", consented, ["mistral", "huggingface", "cohere", "zhipu", "openrouter", "nvidia-nim", "gemini", "groq"]), ["mistral", "huggingface", "cohere", "zhipu", "openrouter", "nvidia-nim", "gemini", "groq"]);
+  assert.deepEqual(providerIdsForRole("technical_delivery_review", consented, ["nvidia-nim", "kilo", "groq", "mistral", "gemini"]), ["nvidia-nim", "kilo", "groq", "mistral", "gemini"]);
   assert.deepEqual(providerIdsForRole("delivery_review", ["gemini"], ["mistral", "gemini"]), ["gemini"]);
   assert.deepEqual(providerIdsForRole("product_research", consented, ["gemini", "mistral", "nvidia-nim", "groq"]), ["gemini", "mistral", "nvidia-nim", "groq"]);
   assert.deepEqual(providerIdsForRole("product_review", consented, ["mistral", "nvidia-nim", "gemini", "huggingface", "kilo", "groq", "cohere", "openrouter"]), ["gemini", "huggingface", "openrouter"]);
@@ -240,6 +240,21 @@ test("delivery planning canonically decomposes a valid leaf task without inventi
     assert.equal(plan.items.at(-1).parentId, plan.items[2].id);
     assert.equal(plan.items.at(-1).description, plan.items[2].description);
     assert.ok(plan.coverage.every((entry: any) => entry.itemIds.includes(plan.items.at(-1).id)));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("delivery planning bounds verbose provider detail fields to the published contract", async () => {
+  const root = await mkdtemp(join(tmpdir(), "solution-model-delivery-bounds-"));
+  try {
+    const raw = threeLevelDeliveryPlan();
+    raw.items[1]!.implementationNotes = ["x".repeat(2_500)];
+    const model = new FreeProviderSolutionModel(root, { list: async () => [connection("groq", "openai/gpt-oss-120b")] } as any, { read: async () => "safe-test-credential" }, {
+      adapter: (providerId) => ({ manifest: { providerId }, chat: async (_credential: unknown, request: any) => ({ schemaVersion: 1, providerId, modelId: request.modelId, requestId: request.requestId, content: JSON.stringify(raw), finishReason: "stop", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimated: false, extensions: [] }, toolCalls: [], extensions: [], verified: false }) }) as unknown as ProviderAdapter,
+    }, () => now);
+    const solutionDigest = "b".repeat(64);
+    const permit = { schemaVersion: 1 as const, projectId, contextDigest, dataClass: "source_code" as const, providerIds: ["groq"], approvedAt: now - 1, expiresAt: now + 60_000 };
+    const result = await model.run({ projectId, role: "delivery_planning", contextDigest, instruction: `Set solutionDigest exactly to ${solutionDigest}.`, sources: [{ name: "SOLUTION.md", content: "Safe approved solution." }], permit });
+    assert.equal((result.response as any).items[1].implementationNotes[0].length, 2_000);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

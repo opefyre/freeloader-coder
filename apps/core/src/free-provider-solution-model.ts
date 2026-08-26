@@ -10,7 +10,7 @@ import { deliveryPlanContentSchema } from "../../../packages/orchestration/src/d
 import type { RoutedSolutionModel, SolutionModelEvidence } from "./project-solution-orchestrator.js";
 
 const SENSITIVE = /(?:api[_-]?key|password|private[_-]?key|access[_-]?token|secret)["']?\s*[:=]|-----BEGIN [A-Z ]*PRIVATE KEY-----|\/Users\/[^/\s]+\/|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+\d[\d ()-]{8,}\d/i;
-const RESPONSE_CONTRACT_VERSION = 12;
+const RESPONSE_CONTRACT_VERSION = 14;
 const CONSERVATIVE_FREE_REQUEST_TOKEN_BUDGET = 7_500;
 const REQUEST_ENVELOPE_TOKEN_RESERVE = 1_500;
 
@@ -166,20 +166,22 @@ export function providerIdsForRole(
   if (!["delivery_planning", "delivery_review", "technical_delivery_review"].includes(role)) {
     return [...consentedProviderIds];
   }
-  // Delivery planning has a deterministic local fallback. Giving it one
-  // external attempt prevents a large planning contract from opening every
-  // provider circuit before the two independent QA roles can run.
-  if (role === "delivery_planning") return ordered.slice(0, 1);
+  // Delivery planning has a deterministic local fallback, but a second
+  // consented route is still valuable when the first model misses the large
+  // structured contract. Bound the pool at two so independent reviewer
+  // capacity remains reserved.
+  if (role === "delivery_planning") return ordered.slice(0, 2);
 
-  // Keep the two QA roles on disjoint fallback pools. A bad response or open
-  // circuit in one pool must not consume the capacity reserved for the other
-  // independent reviewer.
+  // Prefer disjoint QA pools, then retain every other consented free route as
+  // a bounded fail-safe. The orchestrator independently verifies executor
+  // identities, so provider preference must not turn a healthy mesh into a
+  // single-provider dead end when one free quota is exhausted.
   const reserved =
     role === "delivery_review"
       ? new Set(["mistral", "huggingface", "cohere", "zhipu", "openrouter"])
       : new Set(["nvidia-nim", "kilo", "groq"]);
   const pool = ordered.filter((providerId) => reserved.has(providerId));
-  return pool.length > 0 ? pool : ordered.slice(0, 1);
+  return [...pool, ...ordered.filter((providerId) => !reserved.has(providerId))];
 }
 
 function providerPriority(providerId: string, order: readonly string[]): number {
@@ -264,12 +266,19 @@ function canonicalizeDeliveryPlan(value: unknown, input?: Parameters<RoutedSolut
     ids.set(oldId, `plan_${hash(`${index}:${oldId}:${String(item.title ?? "")}`).slice(0, 16)}`);
   }
   const itemId = (candidate: unknown) => ids.get(String(candidate)) ?? String(candidate);
+  const boundedDetails = (candidate: unknown) => Array.isArray(candidate)
+    ? candidate.map((entry) => typeof entry === "string" ? entry.trim().slice(0, 2_000) : entry)
+    : candidate;
   const items: Record<string, unknown>[] = rawItems.map((item, index) => ({
     ...item,
     id: ids.get(String(item.id ?? `item-${index}`))!,
     parentId: item.parentId === null ? null : itemId(item.parentId),
     dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(itemId) : item.dependencies,
     storyPoints: item.type === "epic" || item.type === "subtask" ? null : normalizeStoryPoints(item.storyPoints, item.estimatedMinutes),
+    acceptanceCriteria: boundedDetails(item.acceptanceCriteria),
+    definitionOfDone: boundedDetails(item.definitionOfDone),
+    implementationNotes: boundedDetails(item.implementationNotes),
+    rollbackRequirements: boundedDetails(item.rollbackRequirements),
   }));
   const parentIds = new Set(items.map((item) => item.parentId).filter((candidate): candidate is string => typeof candidate === "string"));
   const generatedChildren = new Map<string, string>();
@@ -286,7 +295,9 @@ function canonicalizeDeliveryPlan(value: unknown, input?: Parameters<RoutedSolut
     solutionDigest,
     items,
     coverage: Array.isArray(source.coverage) ? source.coverage.map((entry) => typeof entry === "object" && entry !== null ? { ...entry, itemIds: Array.isArray((entry as { itemIds?: unknown }).itemIds) ? ((entry as { itemIds: unknown[] }).itemIds).flatMap((candidate) => { const canonical = itemId(candidate); return generatedChildren.has(canonical) ? [canonical, generatedChildren.get(canonical)] : [canonical]; }) : (entry as { itemIds?: unknown }).itemIds } : entry) : source.coverage,
-    gates: Array.isArray(source.gates) ? source.gates.map((gate, index) => typeof gate === "object" && gate !== null ? { ...gate, id: `gate_${hash(`${index}:${String((gate as { id?: unknown }).id ?? "gate")}:${String((gate as { title?: unknown }).title ?? "")}`).slice(0, 16)}`, beforeItemIds: Array.isArray((gate as { beforeItemIds?: unknown }).beforeItemIds) ? ((gate as { beforeItemIds: unknown[] }).beforeItemIds).map(itemId) : (gate as { beforeItemIds?: unknown }).beforeItemIds } : gate) : source.gates,
+    gates: Array.isArray(source.gates) ? source.gates.map((gate, index) => typeof gate === "object" && gate !== null ? { ...gate, rationale: typeof (gate as { rationale?: unknown }).rationale === "string" ? (gate as { rationale: string }).rationale.trim().slice(0, 2_000) : (gate as { rationale?: unknown }).rationale, id: `gate_${hash(`${index}:${String((gate as { id?: unknown }).id ?? "gate")}:${String((gate as { title?: unknown }).title ?? "")}`).slice(0, 16)}`, beforeItemIds: Array.isArray((gate as { beforeItemIds?: unknown }).beforeItemIds) ? ((gate as { beforeItemIds: unknown[] }).beforeItemIds).map(itemId) : (gate as { beforeItemIds?: unknown }).beforeItemIds } : gate) : source.gates,
+    risks: boundedDetails(source.risks),
+    assumptions: boundedDetails(source.assumptions),
   };
 }
 function normalizeStoryPoints(value: unknown, estimatedMinutes: unknown): 1 | 2 | 3 | 5 | 8 | 13 {

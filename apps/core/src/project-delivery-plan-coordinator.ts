@@ -20,6 +20,7 @@ export class ProjectDeliveryPlanCoordinator {
   readonly #inFlight = new Map<string, Promise<void>>();
   readonly #timers = new Map<string, ReturnType<typeof setTimeout>>();
   #mutation = Promise.resolve();
+  #scheduling = Promise.resolve();
 
   constructor(
     stateDirectory: string,
@@ -31,6 +32,18 @@ export class ProjectDeliveryPlanCoordinator {
   }
 
   async schedule(projectId: string, options: { forceDeferredRetry?: boolean } = {}): Promise<DeliveryPlanRun> {
+    let release!: () => void;
+    const previous = this.#scheduling;
+    this.#scheduling = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await this.#schedule(projectId, options);
+    } finally {
+      release();
+    }
+  }
+
+  async #schedule(projectId: string, options: { forceDeferredRetry?: boolean } = {}): Promise<DeliveryPlanRun> {
     let run = await this.get(projectId);
     if (run?.state === "completed") return run;
     if (run?.state === "deferred" && options.forceDeferredRetry) {
