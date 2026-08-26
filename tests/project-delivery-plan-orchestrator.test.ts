@@ -81,6 +81,9 @@ test("free-provider planning exhaustion falls back to a complete local plan and 
   assert.ok(ux.validationProfiles.includes("build"));
   assert.ok(ux.validationProfiles.includes("visual"));
   assert.equal(draft.coverage.length, 10);
+  assert.equal(JSON.stringify(draft).includes("decision-journal"), false);
+  assert.equal(JSON.stringify(draft).includes("free-ai.ts"), false);
+  assert.ok(subtasks.some((item: any) => item.allowedFiles.includes("src/integrations/boundaries.ts")));
   assert.equal(JSON.stringify(draft).includes("local://SOLUTION.md"), false);
   assert.equal(JSON.stringify(draft).includes("local://RESEARCH.md"), false);
   assert.ok(draft.citations.includes("local://DESIGN.md"));
