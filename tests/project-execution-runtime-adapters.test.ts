@@ -18,6 +18,7 @@ const secondReviewer = candidate("cloudflare", "provider:second-review");
 test("runtime adapter joins exact provider output, bounded workspace, validation, reviews, integration, and Jira observation", async () => {
   const calls: string[] = [];
   const reviewOutputBudgets: number[] = [];
+  const reviewSourcesByRole = new Map<string, string[]>();
   let sawToolchainContext = false;
   const workspace = {
     projectId,
@@ -48,7 +49,11 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
         assert.deepEqual(
           input.responseSchema.properties.operations.items.properties.citations
             .items.enum,
-          ["src/workflow.ts", `delivery-plan://${taskId}`],
+          [
+            "src/workflow.ts",
+            "tests/workflow.test.ts",
+            `delivery-plan://${taskId}`,
+          ],
         );
         assert.equal(input.responseSchema.properties.summary.maxLength, 500);
         assert.match(
@@ -128,6 +133,10 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
       const role = input.taskId.includes("-security-")
         ? "security"
         : "functional";
+      reviewSourcesByRole.set(
+        role,
+        input.sources.map((source: { name: string }) => source.name),
+      );
       return {
         providerId: input.assignment.providerId,
         modelId: "reviewer",
@@ -163,6 +172,11 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
           path: "src/workflow.ts",
           content: "export const value = 1;\n",
           digest: "c".repeat(64),
+        },
+        {
+          path: "tests/workflow.test.ts",
+          content: "test('workflow', () => {});\n",
+          digest: "f".repeat(64),
         },
       ];
     },
@@ -307,6 +321,11 @@ test("runtime adapter joins exact provider output, bounded workspace, validation
     "No repair required.",
   );
   assert.deepEqual(reviewOutputBudgets, [2_000, 2_000]);
+  assert.deepEqual(reviewSourcesByRole.get("functional"), [
+    "src/workflow.ts",
+    "tests/workflow.test.ts",
+  ]);
+  assert.deepEqual(reviewSourcesByRole.get("security"), ["src/workflow.ts"]);
   assert.equal(
     (await adapters.integrate(projectId, task)).validation.passed,
     true,

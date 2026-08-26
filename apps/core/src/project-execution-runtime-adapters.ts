@@ -486,6 +486,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     const item = plan.draft.items.find((candidate) => candidate.id === task.id);
     const reviews: QualityReview[] = [];
     for (const [index, role] of roles.entries()) {
+      const roleSources = reviewSourceEvidence(sources, role);
       const unused = independent.filter(
         (candidate) =>
           !reviews.some((review) => review.providerId === candidate.providerId),
@@ -538,7 +539,7 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
                 ],
               },
             }),
-            sources: sources.map((source) => ({
+            sources: roleSources.map((source) => ({
               name: source.path,
               content: source.content,
             })),
@@ -693,6 +694,19 @@ export class ProjectExecutionRuntimeAdapters implements ProjectExecutionAdapters
     const context = await this.contexts.readVerified(projectId);
     return this.egress.authorize(projectId, context.digest);
   }
+}
+
+function reviewSourceEvidence<T extends { path: string }>(
+  sources: readonly T[],
+  role: ReviewRole,
+): readonly T[] {
+  if (role === "functional") return sources;
+  const implementation = sources.filter(
+    (source) =>
+      !/(?:^|\/)(?:tests?|__tests__|spec)(?:\/|$)/i.test(source.path) &&
+      !/\.(?:test|spec)\.[cm]?[jt]sx?$/i.test(source.path),
+  );
+  return implementation.length > 0 ? implementation : sources;
 }
 
 function reviewCapacityUnavailable(message: string) {
