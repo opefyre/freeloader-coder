@@ -1584,6 +1584,11 @@ function ProjectsWorkspace({
           activate={(destination) => {
             if (destination === "actions") {
               navigate("activity");
+              const url = new URL(window.location.href);
+              url.searchParams.set("project", selectedProject.id);
+              if (selectedProject.lifecycleStage === "awaiting_design_approval")
+                url.searchParams.set("action", "design-review");
+              window.history.replaceState({}, "", `${url.pathname}${url.search}`);
               return;
             }
             setSection(destination);

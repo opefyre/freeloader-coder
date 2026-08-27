@@ -23,6 +23,7 @@ test("project detail presents one bounded owner command with consequences and re
     "Approval boundary",
     "What happens next",
     "If something is wrong",
+    "What this action changes",
     "Maximum automatic cost: $0",
   ]) {
     assert.equal(
@@ -39,6 +40,8 @@ test("project command remains above project tabs and routes to the relevant owne
   assert.match(app, /<ProjectStageCommand/);
   assert.match(app, /destination === "actions"/);
   assert.match(app, /navigate\("activity"\)/);
+  assert.match(app, /action", "design-review"/);
+  assert.match(app, /searchParams\.set\("project", selectedProject\.id\)/);
   assert.match(app, /setSection\(destination\)/);
   assert.ok(
     app.indexOf("<ProjectStageCommand") <
@@ -55,6 +58,9 @@ test("portfolio and Action Center share the same owner-stage language", () => {
   assert.match(activity, /ownerProjectGuidance\(project\)/);
   assert.match(activity, /Current stage · \{guidance\.stageLabel\}/);
   assert.match(activity, /guidance\.ownerStateLabel/);
+  assert.match(activity, /ownerDesignDecisionGuidance\(\)/);
+  assert.match(activity, /Design decision options/);
+  assert.match(activity, /action.*design-review/);
 });
 
 test("project cards can shrink to the mobile viewport without clipping progress evidence", () => {

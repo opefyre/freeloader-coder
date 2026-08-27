@@ -34,6 +34,42 @@ export const ownerProjectGuidanceSchema = z.strictObject({
 
 export type OwnerProjectGuidance = z.infer<typeof ownerProjectGuidanceSchema>;
 
+export const ownerDesignDecisionGuidanceSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  provenance: z.literal("canonical_owner_decision_guidance"),
+  title: z.string().trim().min(1).max(80),
+  decision: z.string().trim().min(1).max(180),
+  consequence: z.string().trim().min(1).max(240),
+  recovery: z.string().trim().min(1).max(240),
+  approvalBoundary: z.string().trim().min(1).max(240),
+  options: z.tuple([
+    z.strictObject({ id: z.literal("approved"), label: z.string(), effect: z.string() }),
+    z.strictObject({ id: z.literal("revision_requested"), label: z.string(), effect: z.string() }),
+    z.strictObject({ id: z.literal("declined"), label: z.string(), effect: z.string() }),
+  ]),
+  automaticSpendLimitUsd: z.literal(0),
+});
+
+export type OwnerDesignDecisionGuidance = z.infer<typeof ownerDesignDecisionGuidanceSchema>;
+
+export function ownerDesignDecisionGuidance(): OwnerDesignDecisionGuidance {
+  return ownerDesignDecisionGuidanceSchema.parse({
+    schemaVersion: 1,
+    provenance: "canonical_owner_decision_guidance",
+    title: "Approve the proposed design?",
+    decision: "Decide whether this solution is ready to become a detailed delivery plan.",
+    consequence: "Approval creates the Jira-backed backlog. It does not authorize implementation or deployment.",
+    recovery: "Request changes to revise the design, or decline to stop while preserving the current evidence.",
+    approvalBoundary: "Implementation and deployment remain blocked until their own verified gates pass.",
+    options: [
+      { id: "approved", label: "Approve plan", effect: "Create the detailed delivery backlog." },
+      { id: "revision_requested", label: "Request changes", effect: "Revise this design using your feedback." },
+      { id: "declined", label: "Decline", effect: "Stop this run without downstream changes." },
+    ],
+    automaticSpendLimitUsd: 0,
+  });
+}
+
 type GuidanceSeed = Omit<
   OwnerProjectGuidance,
   "schemaVersion" | "provenance" | "projectId" | "lifecycleStage" | "automaticSpendLimitUsd"

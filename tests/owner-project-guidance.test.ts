@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ownerProjectGuidance, ownerProjectGuidanceSchema } from "../packages/runtime/src/owner-project-guidance.js";
+import { ownerDesignDecisionGuidance, ownerDesignDecisionGuidanceSchema, ownerProjectGuidance, ownerProjectGuidanceSchema } from "../packages/runtime/src/owner-project-guidance.js";
 import type { LocalProjectSnapshot } from "../packages/runtime/src/local-projects.js";
 
 const stages = ["intake", "context_review", "clarification", "solution_design", "awaiting_design_approval", "backlog_design", "backlog_qa", "delivery", "blocked", "complete", "cancelled"] as const;
@@ -18,6 +18,15 @@ test("every lifecycle stage has one complete owner command model", () => {
     assert.equal(result.automaticSpendLimitUsd, 0);
     ownerProjectGuidanceSchema.parse(result);
   }
+});
+
+test("design approval guidance bounds every owner choice without authorizing delivery", () => {
+  const decision = ownerDesignDecisionGuidanceSchema.parse(ownerDesignDecisionGuidance());
+  assert.equal(decision.options.map((option) => option.id).join(","), "approved,revision_requested,declined");
+  assert.match(decision.consequence, /Jira-backed backlog/);
+  assert.match(decision.consequence, /does not authorize implementation or deployment/i);
+  assert.match(decision.recovery, /preserving the current evidence/i);
+  assert.equal(decision.automaticSpendLimitUsd, 0);
 });
 
 test("owner-required, autonomous, terminal, warning, and failed states stay honest", () => {

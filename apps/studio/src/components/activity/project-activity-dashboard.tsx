@@ -3,10 +3,10 @@ import { CheckCircle } from "@phosphor-icons/react/CheckCircle";
 import { FolderOpen } from "@phosphor-icons/react/FolderOpen";
 import { Warning } from "@phosphor-icons/react/Warning";
 import { ArrowSquareOut } from "@phosphor-icons/react/ArrowSquareOut";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { LocalProjectSnapshot } from "../../../../../packages/runtime/src/local-projects.js";
-import { ownerProjectGuidance } from "../../../../../packages/runtime/src/owner-project-guidance.js";
+import { ownerDesignDecisionGuidance, ownerProjectGuidance } from "../../../../../packages/runtime/src/owner-project-guidance.js";
 import type { LocalRequest } from "../../../../../packages/runtime/src/local-requests.js";
 import type {
   OwnerAnswer,
@@ -74,6 +74,8 @@ export function ProjectActivityDashboard(props: {
   const [feedback, setFeedback] = useState("");
   const [notice, setNotice] = useState("");
   const [working, setWorking] = useState(false);
+  const deepLinkHandled = useRef(false);
+  const designDecision = ownerDesignDecisionGuidance();
 
   const refresh = useCallback(async () => {
     try {
@@ -227,6 +229,17 @@ export function ProjectActivityDashboard(props: {
       setNotice("The solution artifact could not be verified.");
     }
   }
+
+  useEffect(() => {
+    if (deepLinkHandled.current || solutionItems.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("action") !== "design-review") return;
+    const requested = params.get("project");
+    const lifecycle = solutionItems.find((item) => item.projectId === requested);
+    if (!lifecycle) return;
+    deepLinkHandled.current = true;
+    void openSolution(lifecycle);
+  }, [solutionItems]);
   async function decide(
     decision: "approved" | "declined" | "revision_requested",
   ) {
@@ -552,8 +565,7 @@ export function ProjectActivityDashboard(props: {
                                   </Badge>
                                 </span>
                                 <span className="mt-2 line-clamp-2 block text-sm leading-6 text-muted-foreground">
-                                  Product and technical review passed. Planning
-                                  is waiting for your decision.
+                                  {designDecision.decision}
                                 </span>
                               </span>
                               <span className="text-xs text-muted-foreground">
@@ -884,7 +896,7 @@ export function ProjectActivityDashboard(props: {
                     id="solution-review-title"
                     className="mt-4 text-xl font-semibold"
                   >
-                    Proposed solution
+                    {designDecision.title}
                   </h2>
                 </div>
                 <Button
@@ -900,6 +912,12 @@ export function ProjectActivityDashboard(props: {
               </div>
               {solution ? (
                 <>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <DecisionFact label="Decision" value={designDecision.decision} />
+                    <DecisionFact label="Consequence" value={designDecision.consequence} />
+                    <DecisionFact label="Authority boundary" value={designDecision.approvalBoundary} />
+                    <DecisionFact label="Recovery" value={designDecision.recovery} />
+                  </div>
                   <div className="mt-5 max-h-[52vh] overflow-y-auto rounded-3xl bg-muted/35 px-5 py-3 sm:px-7">
                     <MarkdownDocument body={solution.markdown} />
                   </div>
@@ -912,29 +930,35 @@ export function ProjectActivityDashboard(props: {
                     placeholder="Changes you need…"
                     className="mt-4 w-full resize-y rounded-3xl bg-muted px-4 py-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
                   />
-                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3" aria-label="Design decision options">
                     <Button
+                      className="h-auto min-h-14 flex-col items-start whitespace-normal rounded-2xl py-3 text-left"
                       onClick={() => void decide("approved")}
                       disabled={working}
                     >
-                      <CheckCircle />
-                      Approve
+                      <span className="flex items-center gap-2"><CheckCircle />{designDecision.options[0].label}</span>
+                      <span className="text-xs font-normal opacity-75">{designDecision.options[0].effect}</span>
                     </Button>
                     <Button
                       variant="secondary"
+                      className="h-auto min-h-14 flex-col items-start whitespace-normal rounded-2xl py-3 text-left"
                       onClick={() => void decide("revision_requested")}
                       disabled={working || feedback.trim().length < 3}
                     >
-                      Request changes
+                      <span>{designDecision.options[1].label}</span>
+                      <span className="text-xs font-normal opacity-75">{designDecision.options[1].effect}</span>
                     </Button>
                     <Button
                       variant="ghost"
+                      className="h-auto min-h-14 flex-col items-start whitespace-normal rounded-2xl py-3 text-left"
                       onClick={() => void decide("declined")}
                       disabled={working}
                     >
-                      Decline
+                      <span>{designDecision.options[2].label}</span>
+                      <span className="text-xs font-normal text-muted-foreground">{designDecision.options[2].effect}</span>
                     </Button>
                   </div>
+                  <p className="mt-3 text-xs font-medium text-muted-foreground">Maximum automatic cost: ${designDecision.automaticSpendLimitUsd}</p>
                 </>
               ) : (
                 <p className="mt-5 rounded-3xl bg-muted p-4 text-sm text-muted-foreground">
@@ -1103,6 +1127,15 @@ function actionTitle(request: LocalRequest): string {
   if (request.plan?.state === "draft" && request.grounding)
     return "Review the proposed design";
   return "Answer a project question";
+}
+
+function DecisionFact(props: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-muted/45 p-4">
+      <strong className="text-xs">{props.label}</strong>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{props.value}</p>
+    </div>
+  );
 }
 
 function Empty(props: { title: string; detail: string; positive?: boolean }) {
