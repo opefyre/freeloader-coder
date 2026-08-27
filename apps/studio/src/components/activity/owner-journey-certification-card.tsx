@@ -12,6 +12,7 @@ import type {
   OwnerPilotSummary,
   OwnerPilotImprovementDraft,
 } from "../../../../../packages/runtime/src/owner-journey-certification.js";
+import { ownerPilotRunbook } from "../../../../../packages/runtime/src/owner-pilot-runbook.js";
 import {
   approveOwnerPilotImprovements,
   completeOwnerPilot,
@@ -60,6 +61,7 @@ export function OwnerJourneyCertificationCard({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [showLearning, setShowLearning] = useState(false);
+  const [runtimeState, setRuntimeState] = useState<"loading" | "live" | "offline">("loading");
   const refresh = useCallback(async () => {
     try {
       const [certification, pilot, pilotReview, cohortReport] =
@@ -73,10 +75,12 @@ export function OwnerJourneyCertificationCard({
       setSessions(pilot.sessions);
       setReview(pilotReview);
       setCohort(cohortReport);
+      setRuntimeState("live");
     } catch {
       setSnapshot(null);
       setReview(null);
       setCohort(null);
+      setRuntimeState("offline");
     }
   }, [endpoint]);
   useEffect(() => {
@@ -185,15 +189,20 @@ export function OwnerJourneyCertificationCard({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => void downloadEvidence()} disabled={busy} aria-label="Download privacy-safe certification evidence">
+          <Button variant="secondary" onClick={() => void downloadEvidence()} disabled={busy || runtimeState !== "live"} aria-label="Download privacy-safe certification evidence">
             <DownloadSimple aria-hidden="true" /> Evidence
           </Button>
-          <Button onClick={() => void run()} disabled={busy}>
+          <Button onClick={() => void run()} disabled={busy || runtimeState !== "live"}>
             {busy ? "Working…" : passed ? "Run again" : "Run check"}
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        {runtimeState === "offline" && (
+          <p role="alert" className="rounded-2xl bg-amber-400/10 px-4 py-3 text-sm">
+            Local runtime unavailable. Start Codkesh services, then refresh. No sample session or progress is substituted.
+          </p>
+        )}
         {notice && (
           <p role="status" className="rounded-2xl bg-muted px-4 py-3 text-sm">
             {notice}
@@ -311,6 +320,7 @@ export function OwnerJourneyCertificationCard({
           <Button
             variant="secondary"
             onClick={() => setShowLearning((value) => !value)}
+            disabled={runtimeState !== "live"}
           >
             {showLearning ? "Close" : "Record next session"}
           </Button>
@@ -368,6 +378,7 @@ function PilotCapture({
   const [observedSession, setObservedSession] = useState<OwnerPilotSession | null>(null);
   const storedSession = sessions.find((session) => ["active", "interrupted"].includes(session.status));
   const active = storedSession && observedSession?.id === storedSession.id ? observedSession : storedSession;
+  const runbook = ownerPilotRunbook(active?.scenario ?? scenario);
   const completedProjects = new Set(
     sessions
       .filter((session) => session.status === "completed")
@@ -434,11 +445,12 @@ function PilotCapture({
     setBusy(true);
     setError("");
     try {
-      await createOwnerPilot(
+      const created = await createOwnerPilot(
         endpoint,
         { projectId, scenario, consent, startedAt: Date.now() },
         `pilot.ui.${Date.now()}`,
       );
+      setObservedSession(created);
       await saved("Consented pilot session started locally.");
     } catch (value) {
       setError(
@@ -538,6 +550,8 @@ function PilotCapture({
       )}
       {active ? (
         <div className="mt-4 space-y-4">
+          <Runbook runbook={runbook} />
+          <ProjectLink projectId={active.projectId} label="Open test project" />
           <div className="grid gap-2 sm:grid-cols-3">
             <Fact label="Verified progress" value={summary ? `${summary.provenMilestones}/5` : "Checking…"} />
             <Fact label="Elapsed" value={summary ? duration(summary.elapsedSeconds) : "Checking…"} />
@@ -546,20 +560,16 @@ function PilotCapture({
           {summary && <p role="status" className="rounded-2xl bg-background px-4 py-3 text-xs">{summary.nextAction}</p>}
           {active.previewAt !== null && active.status === "active" && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-medium">
-                Trust rating
-                <select
-                  value={rating}
-                  onChange={(event) => setRating(Number(event.target.value))}
-                  className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-                >
+              <fieldset className="text-xs font-medium">
+                <legend>Trust rating</legend>
+                <div className="mt-2 grid grid-cols-5 gap-1" aria-label="Trust rating from 1 to 5">
                   {[1, 2, 3, 4, 5].map((value) => (
-                    <option key={value} value={value}>
-                      {value} of 5
-                    </option>
+                    <button key={value} type="button" aria-pressed={rating === value} onClick={() => setRating(value)} className={`min-h-11 rounded-xl font-semibold outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/30 ${rating === value ? "bg-primary text-primary-foreground" : "bg-background hover:bg-background/70"}`}>
+                      {value}
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              </fieldset>
               <fieldset className="text-xs font-medium">
                 <legend>Friction</legend>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -605,13 +615,6 @@ function PilotCapture({
                 <Button onClick={() => void complete()} disabled={busy}>
                   Complete session
                 </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => void withdraw()}
-                  disabled={busy}
-                >
-                  Withdraw consent
-                </Button>
               </div>
             </div>
           )}
@@ -623,16 +626,18 @@ function PilotCapture({
       ) : (
         <>
           {cohort && (
-            <p role="status" className="mt-4 rounded-2xl bg-background px-4 py-3 text-xs">
-              Recommended next test: {cohort.nextSession.instruction}
-            </p>
+            <div role="status" className="mt-4 rounded-2xl bg-background p-4">
+              <strong className="text-sm">Recommended next session</strong>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{cohort.nextSession.instruction}</p>
+            </div>
           )}
           {projectsState === "loading" && <p role="status" className="mt-2 text-xs text-muted-foreground">Loading local projects…</p>}
           {projectsState === "ready" && projects.length === 0 && <p role="alert" className="mt-2 text-xs text-destructive">Create or open a local project before starting a pilot session.</p>}
           {projectId && (
-            <p className="mt-4 text-sm font-medium">
-              Recommended: {projects.find((project) => project.id === projectId)?.name ?? "Local project"} · {label(scenario)}
-            </p>
+            <div className="mt-4">
+              <p className="text-sm font-medium">{projects.find((project) => project.id === projectId)?.name ?? "Local project"} · {label(scenario)}</p>
+              <Runbook runbook={runbook} />
+            </div>
           )}
           <details className="mt-3 rounded-2xl bg-background px-4 py-3 text-xs">
             <summary className="cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30">
@@ -676,17 +681,12 @@ function PilotCapture({
             The participant explicitly consented to this anonymous, local
             learning record.
           </label>
-          {error && (
-            <p role="alert" className="mt-3 text-xs text-destructive">
-              {error}
-            </p>
-          )}
           <Button
             className="mt-4"
             onClick={() => void create()}
             disabled={!consent || !projectId || busy}
           >
-            {busy ? "Starting…" : "Start session"}
+            {busy ? "Starting…" : "Start recommended session"}
           </Button>
         </>
       )}
@@ -834,6 +834,26 @@ function ImprovementDecision({ endpoint, draft, busy, setBusy, failed, saved }: 
 }
 
 function duration(seconds: number) { return seconds < 60 ? `${seconds}s` : `${Math.round(seconds / 60)}m`; }
+
+function Runbook({ runbook }: { runbook: ReturnType<typeof ownerPilotRunbook> }) {
+  return (
+    <div className="mt-3 rounded-2xl bg-background p-4">
+      <ol className="grid gap-3 sm:grid-cols-3" aria-label={runbook.title}>
+        {runbook.steps.map((step, index) => (
+          <li key={step.id} className="flex min-w-0 gap-3">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/12 text-xs font-semibold text-primary">{index + 1}</span>
+            <span><strong className="block text-xs">{step.label}</strong><span className="mt-1 block text-xs leading-5 text-muted-foreground">{step.detail}</span></span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 text-xs leading-5 text-muted-foreground">{runbook.privacyBoundary} Maximum automatic cost: ${runbook.automaticSpendLimitUsd}.</p>
+    </div>
+  );
+}
+
+function ProjectLink({ projectId, label: text }: { projectId: string; label: string }) {
+  return <a href={`/projects/${projectId}`} className="inline-flex min-h-10 items-center justify-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm outline-none transition-[color,background-color,transform] hover:-translate-y-px hover:bg-primary/88 focus-visible:ring-3 focus-visible:ring-ring/30">{text}</a>;
+}
 
 function thresholdLabel(metric: OwnerPilotCohortReport["thresholds"][number]["metric"]): string {
   return {

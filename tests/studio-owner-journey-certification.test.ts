@@ -23,6 +23,8 @@ test("Action Center owns a minimal honest certification and consented-learning e
     "Local, synthetic, and always $0",
     "Run check",
     "Record next session",
+    "Start recommended session",
+    "Open test project",
     "explicitly consented",
     "anonymous",
     "external adoption",
@@ -30,6 +32,8 @@ test("Action Center owns a minimal honest certification and consented-learning e
     "Pilot thresholds needing work",
     "Passing evidence",
     "Cohort report",
+    "Local runtime unavailable",
+    "No sample session or progress is substituted",
   ])
     assert.equal(
       source.toLocaleLowerCase().includes(phrase.toLocaleLowerCase()),
@@ -48,6 +52,10 @@ test("Action Center owns a minimal honest certification and consented-learning e
   );
   assert.match(source, /saved=\{async \(message\) =>/);
   assert.match(source, /getOwnerPilotCohortReport/);
+  assert.match(source, /runtimeState !== "live"/);
+  assert.match(source, /ownerPilotRunbook/);
+  assert.match(source, /setObservedSession\(created\)/);
+  assert.match(source, /href=\{`\/projects\/\$\{projectId\}`\}/);
   assert.doesNotMatch(source, /participantAlias.*trust\.learning|trust\.learning.*note/);
 });
 
@@ -119,7 +127,7 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
     "Scenario coverage",
     "Recent private sessions",
     "Privacy-safe pilot session history",
-    "Recommended next test",
+    "Recommended next session",
     "Change recommended test",
     "At least",
     "projection, not a guarantee",
@@ -143,4 +151,6 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
   assert.match(source, /completedProjects/);
   assert.match(source, /cohort\?\.nextSession\.action === "add_project"/);
   assert.match(source, /navigate\("overview"\)/);
+  assert.match(source, /Trust rating from 1 to 5/);
+  assert.match(source, /aria-pressed=\{rating === value\}/);
 });
