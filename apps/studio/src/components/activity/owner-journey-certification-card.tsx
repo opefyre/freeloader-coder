@@ -727,7 +727,7 @@ function PilotCapture({
               ))}
             </ul>
           )}
-          {cohort?.decision === "improve" && review.state === "improvements_needed" && projectId && !drafts.some((draft) => draft.projectId === projectId && ["pending", "partially_applied"].includes(draft.state)) && (
+          {(cohort?.decision === "pause" || cohort?.decision === "improve") && review.state === "improvements_needed" && projectId && !drafts.some((draft) => draft.projectId === projectId && ["pending", "partially_applied"].includes(draft.state)) && (
             <Button
               className="mt-3"
               variant="secondary"

@@ -129,7 +129,7 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
     "Next:",
     "Cohort report",
   ]) assert.match(source, new RegExp(phrase, "i"));
-  assert.match(source, /cohort\?\.decision === "improve"/);
+  assert.match(source, /cohort\?\.decision === "pause" \|\| cohort\?\.decision === "improve"/);
   assert.match(source, /getOwnerPilotCohortReport/);
   assert.match(source, /ownerPilotCohortReportFilename/);
   assert.match(client, /\/api\/v1\/owner-pilot\/cohort-report/);
