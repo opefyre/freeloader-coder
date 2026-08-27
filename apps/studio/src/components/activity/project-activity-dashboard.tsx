@@ -40,7 +40,9 @@ export function ProjectActivityDashboard(props: {
   projectId?: string;
 }) {
   const requestedProject =
-    props.projectId ?? new URLSearchParams(window.location.search).get("project") ?? "all";
+    props.projectId ??
+    new URLSearchParams(window.location.search).get("project") ??
+    "all";
   const [projectId, setProjectId] = useState(requestedProject);
   const [projects, setProjects] = useState<readonly LocalProjectSnapshot[]>([]);
   const [requests, setRequests] = useState<readonly LocalRequest[]>([]);
@@ -179,9 +181,17 @@ export function ProjectActivityDashboard(props: {
       run.state === "needs_user" &&
       (projectId === "all" || run.projectId === projectId),
   );
+  const terminalProjectIds = new Set(
+    lifecycles
+      .filter((lifecycle) =>
+        ["complete", "cancelled"].includes(lifecycle.stage),
+      )
+      .map((lifecycle) => lifecycle.projectId),
+  );
   const executionActions = executions.filter(
     (record) =>
       ["needs_user", "quarantined"].includes(record.state) &&
+      !terminalProjectIds.has(record.projectId) &&
       (projectId === "all" || record.projectId === projectId),
   );
   const scopedProjects = projects.filter(
@@ -377,78 +387,107 @@ export function ProjectActivityDashboard(props: {
               .map((project) => {
                 const guidance = ownerProjectGuidance(project);
                 return (
-                <section
-                  key={project.id}
-                  aria-labelledby={`actions-${project.id}`}
-                >
-                  <div className="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
-                    <div>
-                      <h2
-                        id={`actions-${project.id}`}
-                        className="font-semibold"
-                      >
-                        {project.displayName}
-                      </h2>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Current stage · {guidance.stageLabel}
-                      </p>
-                    </div>
-                    <Badge
-                      tone={
-                        guidance.ownerState === "action_required" ||
-                        guidance.ownerState === "attention"
-                          ? "caution"
-                          : "neutral"
-                      }
-                    >
-                      {guidance.ownerStateLabel}
-                    </Badge>
-                  </div>
-                  <div className="grid gap-3">
-                    {clarificationItems
-                      .filter((item) => item.projectId === project.id)
-                      .map((lifecycle) => (
-                        <button
-                          key={`clarification-${lifecycle.projectId}`}
-                          type="button"
-                          onClick={() => {
-                            setSelectedClarification(lifecycle);
-                            setClarificationChoices({});
-                            setCustomAnswers({});
-                            setNotice("");
-                          }}
-                          className="rounded-3xl bg-card p-5 text-left outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
+                  <section
+                    key={project.id}
+                    aria-labelledby={`actions-${project.id}`}
+                  >
+                    <div className="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
+                      <div>
+                        <h2
+                          id={`actions-${project.id}`}
+                          className="font-semibold"
                         >
-                          <div className="flex items-start gap-4">
-                            <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
-                              <Warning weight="fill" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <strong>Choose the project direction</strong>
-                              <span className="mt-2 block text-sm leading-6 text-muted-foreground">
-                                {lifecycle.questions.length} focused question
-                                {lifecycle.questions.length === 1 ? "" : "s"}{" "}
-                                block the next stage. Current work remains safe.
+                          {project.displayName}
+                        </h2>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Current stage · {guidance.stageLabel}
+                        </p>
+                      </div>
+                      <Badge
+                        tone={
+                          guidance.ownerState === "action_required" ||
+                          guidance.ownerState === "attention"
+                            ? "caution"
+                            : "neutral"
+                        }
+                      >
+                        {guidance.ownerStateLabel}
+                      </Badge>
+                    </div>
+                    <div className="grid gap-3">
+                      {clarificationItems
+                        .filter((item) => item.projectId === project.id)
+                        .map((lifecycle) => (
+                          <button
+                            key={`clarification-${lifecycle.projectId}`}
+                            type="button"
+                            onClick={() => {
+                              setSelectedClarification(lifecycle);
+                              setClarificationChoices({});
+                              setCustomAnswers({});
+                              setNotice("");
+                            }}
+                            className="rounded-3xl bg-card p-5 text-left outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
+                          >
+                            <div className="flex items-start gap-4">
+                              <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
+                                <Warning weight="fill" />
                               </span>
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              Answer
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                    {executionActions
-                      .filter((item) => item.projectId === project.id)
-                      .map((record) => {
-                        const task = record.tasks.find((candidate) =>
-                          ["needs_user", "quarantined"].includes(
-                            candidate.status,
-                          ),
-                        );
-                        return (
+                              <span className="min-w-0 flex-1">
+                                <strong>Choose the project direction</strong>
+                                <span className="mt-2 block text-sm leading-6 text-muted-foreground">
+                                  {lifecycle.questions.length} focused question
+                                  {lifecycle.questions.length === 1
+                                    ? ""
+                                    : "s"}{" "}
+                                  block the next stage. Current work remains
+                                  safe.
+                                </span>
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                Answer
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      {executionActions
+                        .filter((item) => item.projectId === project.id)
+                        .map((record) => {
+                          const task = record.tasks.find((candidate) =>
+                            ["needs_user", "quarantined"].includes(
+                              candidate.status,
+                            ),
+                          );
+                          return (
+                            <a
+                              href={`/projects/${record.projectId}`}
+                              key={`execution-${record.projectId}`}
+                              className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
+                            >
+                              <div className="flex items-start gap-4">
+                                <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
+                                  <Warning weight="fill" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <strong>Implementation needs you</strong>
+                                  <span className="mt-2 block text-sm leading-6 text-muted-foreground">
+                                    {task?.safeMessage ??
+                                      "A verified execution task requires attention."}
+                                  </span>
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  Resolve
+                                </span>
+                              </div>
+                            </a>
+                          );
+                        })}
+                      {backlogActions
+                        .filter((item) => item.projectId === project.id)
+                        .map((run) => (
                           <a
-                            href={`/projects/${record.projectId}`}
-                            key={`execution-${record.projectId}`}
+                            href={`/projects/${run.projectId}`}
+                            key={`backlog-${run.projectId}`}
                             className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
                           >
                             <div className="flex items-start gap-4">
@@ -456,10 +495,9 @@ export function ProjectActivityDashboard(props: {
                                 <Warning weight="fill" />
                               </span>
                               <span className="min-w-0 flex-1">
-                                <strong>Implementation needs you</strong>
+                                <strong>Delivery planning needs you</strong>
                                 <span className="mt-2 block text-sm leading-6 text-muted-foreground">
-                                  {task?.safeMessage ??
-                                    "A verified execution task requires attention."}
+                                  {run.safeMessage}
                                 </span>
                               </span>
                               <span className="text-xs text-muted-foreground">
@@ -467,117 +505,92 @@ export function ProjectActivityDashboard(props: {
                               </span>
                             </div>
                           </a>
-                        );
-                      })}
-                    {backlogActions
-                      .filter((item) => item.projectId === project.id)
-                      .map((run) => (
-                        <a
-                          href={`/projects/${run.projectId}`}
-                          key={`backlog-${run.projectId}`}
-                          className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
-                        >
-                          <div className="flex items-start gap-4">
-                            <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
-                              <Warning weight="fill" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <strong>Delivery planning needs you</strong>
-                              <span className="mt-2 block text-sm leading-6 text-muted-foreground">
-                                {run.safeMessage}
+                        ))}
+                      {researchActions
+                        .filter((item) => item.projectId === project.id)
+                        .map((run) => (
+                          <a
+                            href={`/projects/${run.projectId}`}
+                            key={`research-${run.projectId}`}
+                            className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
+                          >
+                            <div className="flex items-start gap-4">
+                              <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
+                                <Warning weight="fill" />
                               </span>
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              Resolve
-                            </span>
-                          </div>
-                        </a>
-                      ))}
-                    {researchActions
-                      .filter((item) => item.projectId === project.id)
-                      .map((run) => (
-                        <a
-                          href={`/projects/${run.projectId}`}
-                          key={`research-${run.projectId}`}
-                          className="rounded-3xl bg-card p-5 outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
-                        >
-                          <div className="flex items-start gap-4">
-                            <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
-                              <Warning weight="fill" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <strong>Solution research needs you</strong>
-                              <span className="mt-2 block text-sm leading-6 text-muted-foreground">
-                                {run.safeMessage}
+                              <span className="min-w-0 flex-1">
+                                <strong>Solution research needs you</strong>
+                                <span className="mt-2 block text-sm leading-6 text-muted-foreground">
+                                  {run.safeMessage}
+                                </span>
                               </span>
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              Resolve
-                            </span>
-                          </div>
-                        </a>
-                      ))}
-                    {solutionItems
-                      .filter((item) => item.projectId === project.id)
-                      .map((lifecycle) => (
-                        <button
-                          key={`solution-${lifecycle.projectId}`}
-                          type="button"
-                          onClick={() => void openSolution(lifecycle)}
-                          className="rounded-3xl bg-card p-5 text-left outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
-                        >
-                          <div className="flex items-start gap-4">
-                            <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
-                              <Warning weight="fill" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="flex flex-wrap items-center gap-2">
-                                <strong>Review the proposed solution</strong>
-                                <Badge>
-                                  {projectNames.get(lifecycle.projectId) ??
-                                    "Unknown project"}
-                                </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                Resolve
                               </span>
-                              <span className="mt-2 line-clamp-2 block text-sm leading-6 text-muted-foreground">
-                                Product and technical review passed. Planning is
-                                waiting for your decision.
+                            </div>
+                          </a>
+                        ))}
+                      {solutionItems
+                        .filter((item) => item.projectId === project.id)
+                        .map((lifecycle) => (
+                          <button
+                            key={`solution-${lifecycle.projectId}`}
+                            type="button"
+                            onClick={() => void openSolution(lifecycle)}
+                            className="rounded-3xl bg-card p-5 text-left outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
+                          >
+                            <div className="flex items-start gap-4">
+                              <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
+                                <Warning weight="fill" />
                               </span>
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              Review
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                    {actionItems
-                      .filter((item) => item.projectId === project.id)
-                      .map((request) => (
-                        <button
-                          key={request.id}
-                          type="button"
-                          onClick={() => setSelected(request)}
-                          className="rounded-3xl bg-card p-5 text-left outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
-                        >
-                          <div className="flex items-start gap-4">
-                            <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
-                              <Warning weight="fill" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="flex flex-wrap items-center gap-2">
-                                <strong>{actionTitle(request)}</strong>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <strong>Review the proposed solution</strong>
+                                  <Badge>
+                                    {projectNames.get(lifecycle.projectId) ??
+                                      "Unknown project"}
+                                  </Badge>
+                                </span>
+                                <span className="mt-2 line-clamp-2 block text-sm leading-6 text-muted-foreground">
+                                  Product and technical review passed. Planning
+                                  is waiting for your decision.
+                                </span>
                               </span>
-                              <span className="mt-2 line-clamp-2 block text-sm leading-6 text-muted-foreground">
-                                {request.outcome}
+                              <span className="text-xs text-muted-foreground">
+                                Review
                               </span>
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              Review
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                  </div>
-                </section>
+                            </div>
+                          </button>
+                        ))}
+                      {actionItems
+                        .filter((item) => item.projectId === project.id)
+                        .map((request) => (
+                          <button
+                            key={request.id}
+                            type="button"
+                            onClick={() => setSelected(request)}
+                            className="rounded-3xl bg-card p-5 text-left outline-none hover:bg-muted/55 focus-visible:ring-3 focus-visible:ring-ring/30"
+                          >
+                            <div className="flex items-start gap-4">
+                              <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-500/12 text-amber-500">
+                                <Warning weight="fill" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <strong>{actionTitle(request)}</strong>
+                                </span>
+                                <span className="mt-2 line-clamp-2 block text-sm leading-6 text-muted-foreground">
+                                  {request.outcome}
+                                </span>
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                Review
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  </section>
                 );
               })}
           </div>

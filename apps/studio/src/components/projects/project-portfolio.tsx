@@ -9,7 +9,8 @@ import { ownerProjectGuidance } from "../../../../../packages/runtime/src/owner-
 import { listLocalProjects } from "../../local-project-client.js";
 import { Button } from "../ui/button.js";
 
-const endpoint = import.meta.env.VITE_PIPELINE_STUDIO_CONTROL_URL ?? "http://127.0.0.1:4312";
+const endpoint =
+  import.meta.env.VITE_PIPELINE_STUDIO_CONTROL_URL ?? "http://127.0.0.1:4312";
 
 export function ProjectPortfolio(props: {
   openProject: (projectId: string) => void;
@@ -37,33 +38,103 @@ export function ProjectPortfolio(props: {
   return (
     <section aria-labelledby="projects-title">
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
-        <h2 id="projects-title" className="text-sm font-semibold">Recent projects</h2>
+        <h2 id="projects-title" className="text-sm font-semibold">
+          Recent projects
+        </h2>
         <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={() => void refresh()} aria-label="Refresh projects"><ArrowClockwise /></Button>
-          <Button variant="ghost" size="sm" onClick={props.startProject}><Plus />New</Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => void refresh()}
+            aria-label="Refresh projects"
+          >
+            <ArrowClockwise />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={props.startProject}>
+            <Plus />
+            New
+          </Button>
         </div>
       </div>
 
       {offline ? (
-        <p className="rounded-2xl bg-muted/50 px-4 py-5 text-sm text-muted-foreground">Projects are temporarily unavailable.</p>
+        <p className="rounded-2xl bg-muted/50 px-4 py-5 text-sm text-muted-foreground">
+          Projects are temporarily unavailable.
+        </p>
       ) : projects.length === 0 ? (
         <button
           type="button"
           onClick={props.startProject}
           className="flex w-full items-center gap-3 rounded-2xl bg-muted/45 px-4 py-4 text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/30"
         >
-          <FolderOpen /><span className="text-sm font-medium">Start your first project</span>
+          <FolderOpen />
+          <span className="text-sm font-medium">Start your first project</span>
         </button>
       ) : (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           {projects.map((project) => {
             const attention = needsAttention(project);
             const guidance = ownerProjectGuidance(project);
             const update = project.latestUpdate?.summary ?? guidance.outcome;
             return (
-              <button key={project.id} type="button" onClick={() => props.openProject(project.id)} className="group flex min-h-36 w-full flex-col rounded-3xl bg-muted/45 p-4 text-left outline-none transition duration-200 hover:-translate-y-0.5 hover:bg-muted/70 hover:shadow-lg hover:shadow-black/5 focus-visible:ring-3 focus-visible:ring-ring/30">
-                <span className="flex w-full items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-background text-muted-foreground transition-transform group-hover:scale-105"><FolderOpen size={18} weight="duotone" /></span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{project.displayName}</strong><span className="mt-1 block text-xs font-medium text-foreground">{guidance.stageLabel}</span><span className="mt-1 line-clamp-2 text-xs text-muted-foreground">{update}</span></span>{attention ? <span className="shrink-0 text-[11px] font-semibold text-amber-500">Needs attention</span> : <ArrowRight className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />}</span>
-                <span className="mt-auto flex w-full items-end justify-between gap-3 pt-5"><span className="min-w-0 flex-1">{project.progress ? <><span className="mb-1.5 flex justify-between text-[11px] text-muted-foreground"><span>{project.progress.percent}%</span><span>{project.progress.completed}/{project.progress.total}</span></span><span className="block h-1.5 overflow-hidden rounded-full bg-background"><span className="block h-full rounded-full bg-primary transition-[width]" style={{ width: `${project.progress.percent}%` }} /></span></> : <span className="text-xs font-medium text-primary">{guidance.primaryAction.label}</span>}</span><span className="shrink-0 text-xs text-muted-foreground">{project.latestUpdate ? relativeTime(project.latestUpdate.occurredAt) : "Open project"}</span></span>
+              <button
+                key={project.id}
+                type="button"
+                onClick={() => props.openProject(project.id)}
+                className="group flex min-h-36 min-w-0 w-full flex-col rounded-3xl bg-muted/45 p-4 text-left outline-none transition duration-200 hover:-translate-y-0.5 hover:bg-muted/70 hover:shadow-lg hover:shadow-black/5 focus-visible:ring-3 focus-visible:ring-ring/30"
+              >
+                <span className="flex w-full items-start gap-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-background text-muted-foreground transition-transform group-hover:scale-105">
+                    <FolderOpen size={18} weight="duotone" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-sm">
+                      {project.displayName}
+                    </strong>
+                    <span className="mt-1 block text-xs font-medium text-foreground">
+                      {guidance.stageLabel} · {guidance.ownerStateLabel}
+                    </span>
+                    <span className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      {update}
+                    </span>
+                  </span>
+                  {attention ? (
+                    <span className="shrink-0 text-[11px] font-semibold text-amber-500">
+                      Needs attention
+                    </span>
+                  ) : (
+                    <ArrowRight className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  )}
+                </span>
+                <span className="mt-auto min-w-0 w-full pt-4">
+                  <span className="mb-2 flex items-center justify-between gap-3 text-[11px]">
+                    <strong className="truncate text-primary">
+                      {guidance.primaryAction.label}
+                    </strong>
+                    <span className="shrink-0 text-muted-foreground">
+                      {project.latestUpdate
+                        ? relativeTime(project.latestUpdate.occurredAt)
+                        : "Open project"}
+                    </span>
+                  </span>
+                  {project.progress && (
+                    <>
+                      <span className="mb-1.5 flex justify-between text-[11px] text-muted-foreground">
+                        <span>{project.progress.percent}% complete</span>
+                        <span>
+                          {project.progress.completed}/{project.progress.total}{" "}
+                          Jira items
+                        </span>
+                      </span>
+                      <span className="block h-1.5 overflow-hidden rounded-full bg-background">
+                        <span
+                          className="block h-full rounded-full bg-primary transition-[width]"
+                          style={{ width: `${project.progress.percent}%` }}
+                        />
+                      </span>
+                    </>
+                  )}
+                </span>
               </button>
             );
           })}
@@ -74,7 +145,11 @@ export function ProjectPortfolio(props: {
 }
 
 function needsAttention(project: LocalProjectSnapshot): boolean {
-  return project.state !== "ready" || project.lifecycleStage === "blocked" || (project.reconciliation?.disagreements.length ?? 0) > 0;
+  return (
+    project.state !== "ready" ||
+    project.lifecycleStage === "blocked" ||
+    (project.reconciliation?.disagreements.length ?? 0) > 0
+  );
 }
 
 function relativeTime(timestamp: number): string {

@@ -43,6 +43,14 @@ test("Decision Inbox is accessible, responsive, zero-cost, and truthful when sta
   assert.match(source, /No resolution or progress was inferred/);
 });
 
+test("Decision Inbox leads with bounded consequence and recovery before approval controls", () => {
+  for (const phrase of ["Decision", "Target", "Consequence", "Recovery", "backlog planning only", "Implementation and deployment remain blocked", "Request changes", "decline"]) {
+    assert.match(source, new RegExp(phrase, "i"));
+  }
+  assert.ok(source.indexOf('label="Consequence"') < source.indexOf('onClick={() => void decideSolution("approved")}'));
+  assert.ok(source.indexOf('label="Recovery"') < source.indexOf('onClick={() => void decideSolution("approved")}'));
+});
+
 test("decision client is loopback-only, bounded, abortable, no-store, credentialless, and validated", () => {
   assert.match(client, /validateEndpoint/);
   assert.match(client, /MAX_RESPONSE_BYTES/);
