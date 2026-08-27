@@ -371,16 +371,12 @@ export class OwnerPilotService {
           evidenceDigest: hash(`${trust.observedAt}:${category}:${count}`),
         };
       });
-    const thresholdsPass =
-      (learning.completionRatePercent ?? 0) >= 80 &&
-      (learning.trustAtLeastFourPercent ?? 0) >= 67 &&
-      (learning.medianTimeToPreviewSeconds ?? Number.POSITIVE_INFINITY) <= 1_800;
     const state =
       trust.freshness.state !== "current"
         ? "certification_needed"
         : !learning.eligibleForDecision || !representative
           ? "sample_needed"
-          : thresholdsPass && improvements.length
+          : improvements.length
             ? "improvements_needed"
             : "review_ready";
     const title = (
@@ -447,6 +443,18 @@ export class OwnerPilotService {
       ...new Set(completed.map((session) => hash(session.projectId))),
     ].sort();
     const scenarios = [...new Set(completed.map((session) => session.scenario))].sort();
+    const scenarioCounts = new Map(
+      (["new_product", "existing_product", "major_feature"] as const).map(
+        (scenario) => [
+          scenario,
+          completed.filter((session) => session.scenario === scenario).length,
+        ],
+      ),
+    );
+    const leastTestedScenario = [...scenarioCounts.entries()].sort(
+      ([leftScenario, leftCount], [rightScenario, rightCount]) =>
+        leftCount - rightCount || leftScenario.localeCompare(rightScenario),
+    )[0]?.[0] ?? "new_product";
     const distinctProjects = distinctProjectDigests.length;
     const distinctScenarios = scenarios.length;
     const missingScenario = (["new_product", "existing_product", "major_feature"] as const).find(
@@ -511,12 +519,23 @@ export class OwnerPilotService {
             ? { action: "add_scenario" as const, scenario: missingScenario, instruction: `Run a ${missingScenario ? missingScenario.replaceAll("_", " ") : "different"} scenario next.` }
             : learning.completedSessions < 3
               ? { action: "complete_session" as const, scenario: missingScenario, instruction: "Complete one more representative project session." }
-              : { action: "review_decision" as const, scenario: null, instruction: "Review the evidence-backed cohort decision." };
+              : decision === "pause" || decision === "improve"
+                ? {
+                    action: "complete_session" as const,
+                    scenario: leastTestedScenario,
+                    instruction: `Run the next ${leastTestedScenario.replaceAll("_", " ")} session after applying the recommended correction. Historical evidence remains in the cohort.`,
+                  }
+                : { action: "review_decision" as const, scenario: null, instruction: "Review the evidence-backed cohort decision." };
     const [title, baseReason, baseNextAction] = content[decision];
     const reason = decision === "sample_needed" && learning.completedSessions >= 3
       ? "The minimum sample exists, but project or scenario coverage is not representative yet."
       : baseReason;
-    const nextAction = decision === "sample_needed" ? nextSession.instruction : baseNextAction;
+    const nextAction =
+      decision === "sample_needed"
+        ? nextSession.instruction
+        : decision === "pause" || decision === "improve"
+          ? `${baseNextAction} Then run the next ${nextSession.scenario?.replaceAll("_", " ") ?? "recommended"} session after applying the correction.`
+          : baseNextAction;
     const evidenceDigest = hash(JSON.stringify({
       review: review.evidenceDigest,
       distinctProjectDigests,

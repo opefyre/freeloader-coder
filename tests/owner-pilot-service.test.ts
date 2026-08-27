@@ -140,7 +140,9 @@ test("pilot cohort report makes strict, deterministic, privacy-safe product deci
   assert.equal(improve.thresholds.length, 7);
   assert.equal(improve.distinctProjects, 2);
   assert.equal(improve.distinctScenarios, 2);
-  assert.equal(improve.nextSession.action, "review_decision");
+  assert.equal(improve.nextSession.action, "complete_session");
+  assert.equal(improve.nextSession.scenario, "existing_product");
+  assert.match(improve.nextSession.instruction, /Historical evidence remains/);
   assert.equal(improve.thresholds.at(-1)?.state, "failed");
   assert.equal(improve.automaticSpendLimitUsd, 0);
   assert.deepEqual(Object.values(improve.privacy), Array(8).fill(false));
@@ -162,6 +164,21 @@ test("pilot cohort report makes strict, deterministic, privacy-safe product deci
   const stale = trust();
   stale.freshness.state = "due";
   assert.equal((await service.cohortReport(stale)).decision, "certification_needed");
+});
+
+test("failed trust keeps evidence-backed recovery visible and recommends another real session", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "codkesh-owner-pilot-"));
+  const service = new OwnerPilotService(directory);
+  await seedRepresentativeCohort(service);
+  const lowTrust = trust();
+  lowTrust.learning.trustAtLeastFourPercent = 43;
+  const report = await service.cohortReport(lowTrust, startedAt + 10_000);
+  const review = await service.review(lowTrust, startedAt + 10_000);
+  assert.equal(report.decision, "pause");
+  assert.equal(report.nextSession.action, "complete_session");
+  assert.match(report.nextAction, /run the next/i);
+  assert.equal(review.state, "improvements_needed");
+  assert.equal(review.improvements.length > 0, true);
 });
 
 test("repeated project and scenario sessions cannot game representative readiness", async () => {

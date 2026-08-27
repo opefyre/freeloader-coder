@@ -139,6 +139,20 @@ export function OwnerJourneyCertificationCard({
   const completedLearning = sessions.filter(
     (session) => session.status === "completed",
   ).length;
+  const failingThresholds =
+    cohort?.thresholds.filter((threshold) => threshold.state !== "passed") ?? [];
+  const passingThresholds =
+    cohort?.thresholds.filter((threshold) => threshold.state === "passed") ?? [];
+  const trustThreshold = cohort?.thresholds.find(
+    (threshold) => threshold.metric === "trust_at_least_four_percent",
+  );
+  const trustRecoverySessions = trustThreshold
+    ? passingSessionsNeeded(
+        completedLearning,
+        trustThreshold.observed,
+        trustThreshold.target,
+      )
+    : null;
   return (
     <Card className="overflow-hidden">
       <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -226,15 +240,22 @@ export function OwnerJourneyCertificationCard({
                 {label(cohort.decision)}
               </Badge>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5" aria-label="Pilot decision thresholds">
-              {cohort.thresholds.map((threshold) => (
-                <Fact
-                  key={threshold.metric}
-                  label={thresholdLabel(threshold.metric)}
-                  value={`${threshold.observed === null ? "—" : `${threshold.observed}${thresholdSuffix(threshold.metric)}`} · ${threshold.state === "passed" ? "Pass" : "Needs work"}`}
-                />
-              ))}
-            </div>
+            {failingThresholds.length > 0 && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2" aria-label="Pilot thresholds needing work">
+                {failingThresholds.map((threshold) => (
+                  <Fact
+                    key={threshold.metric}
+                    label={thresholdLabel(threshold.metric)}
+                    value={`${threshold.observed === null ? "—" : `${threshold.observed}${thresholdSuffix(threshold.metric)}`} · Needs work`}
+                  />
+                ))}
+              </div>
+            )}
+            {trustRecoverySessions !== null && trustRecoverySessions > 0 && (
+              <p className="mt-4 rounded-2xl bg-background px-4 py-3 text-xs leading-5">
+                At least {trustRecoverySessions} more trust-positive session{trustRecoverySessions === 1 ? "" : "s"} would bring the full historical cohort to the current trust target. This is a projection, not a guarantee.
+              </p>
+            )}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">Next: {cohort.nextAction}</p>
@@ -246,25 +267,33 @@ export function OwnerJourneyCertificationCard({
                 <DownloadSimple aria-hidden="true" /> Cohort report
               </Button>
             </div>
+            {(passingThresholds.length > 0 || stages.length > 0) && (
+              <details className="mt-4 rounded-2xl bg-background px-4 py-3 text-xs">
+                <summary className="cursor-pointer font-medium">Passing evidence</summary>
+                {passingThresholds.length > 0 && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {passingThresholds.map((threshold) => (
+                      <Fact
+                        key={threshold.metric}
+                        label={thresholdLabel(threshold.metric)}
+                        value={`${threshold.observed === null ? "—" : `${threshold.observed}${thresholdSuffix(threshold.metric)}`} · Pass`}
+                      />
+                    ))}
+                  </div>
+                )}
+                {stages.length > 0 && (
+                  <ol aria-label="Certification stages" className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {stages.map((stage, index) => (
+                      <li key={stage.name} className="flex items-center gap-2 rounded-2xl bg-muted/55 px-3 py-2">
+                        <CheckCircle className="text-emerald-600" weight="fill" />
+                        <span>{index + 1}. {label(stage.name)}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </details>
+            )}
           </section>
-        )}
-        {stages.length > 0 && (
-          <ol
-            aria-label="Certification stages"
-            className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
-          >
-            {stages.map((stage, index) => (
-              <li
-                key={stage.name}
-                className="flex items-center gap-2 rounded-2xl bg-muted/55 px-3 py-2 text-xs"
-              >
-                <CheckCircle className="text-emerald-600" weight="fill" />
-                <span>
-                  {index + 1}. {label(stage.name)}
-                </span>
-              </li>
-            ))}
-          </ol>
         )}
         {snapshot?.state === "failed" && (
           <div className="flex items-start gap-2 rounded-2xl bg-amber-400/10 p-4 text-sm">
@@ -283,7 +312,7 @@ export function OwnerJourneyCertificationCard({
             variant="secondary"
             onClick={() => setShowLearning((value) => !value)}
           >
-            {showLearning ? "Close" : "Record a real session"}
+            {showLearning ? "Close" : "Record next session"}
           </Button>
         </div>
         {showLearning && (
@@ -347,6 +376,18 @@ function PilotCapture({
   const untestedProject = projects.find(
     (project) => !completedProjects.has(project.id),
   );
+  const recommendedProject = projects
+    .map((project) => ({
+      ...project,
+      sessions: sessions.filter(
+        (session) =>
+          session.status === "completed" && session.projectId === project.id,
+      ).length,
+    }))
+    .sort(
+      (left, right) =>
+        left.sessions - right.sessions || left.name.localeCompare(right.name),
+    )[0];
   const needsAnotherProject =
     !active && cohort?.nextSession.action === "add_project";
   useEffect(() => {
@@ -365,9 +406,9 @@ function PilotCapture({
   }, [endpoint]);
   useEffect(() => {
     if (active || projects.length === 0 || !cohort) return;
-    if (cohort.nextSession.action === "add_project") {
-      if (untestedProject) setProjectId(untestedProject.id);
-    }
+    if (cohort.nextSession.action === "add_project" && untestedProject)
+      setProjectId(untestedProject.id);
+    else if (recommendedProject) setProjectId(recommendedProject.id);
     if (cohort.nextSession.scenario) setScenario(cohort.nextSession.scenario);
   }, [active, cohort?.evidenceDigest, projects, sessions]);
   useEffect(() => {
@@ -586,37 +627,45 @@ function PilotCapture({
               Recommended next test: {cohort.nextSession.instruction}
             </p>
           )}
-          <label className="mt-4 block text-xs font-medium">
-            Project
-            <select
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
-              className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-            >
-              {projects.length === 0 && <option value="">No local project available</option>}
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
           {projectsState === "loading" && <p role="status" className="mt-2 text-xs text-muted-foreground">Loading local projects…</p>}
           {projectsState === "ready" && projects.length === 0 && <p role="alert" className="mt-2 text-xs text-destructive">Create or open a local project before starting a pilot session.</p>}
-          <label className="mt-4 block text-xs font-medium">
-            Scenario
-            <select
-              value={scenario}
-              onChange={(event) =>
-                setScenario(event.target.value as typeof scenario)
-              }
-              className="mt-2 h-11 w-full rounded-2xl bg-background px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-            >
-              <option value="new_product">New product</option>
-              <option value="existing_product">Existing product</option>
-              <option value="major_feature">Major feature</option>
-            </select>
-          </label>
+          {projectId && (
+            <p className="mt-4 text-sm font-medium">
+              Recommended: {projects.find((project) => project.id === projectId)?.name ?? "Local project"} · {label(scenario)}
+            </p>
+          )}
+          <details className="mt-3 rounded-2xl bg-background px-4 py-3 text-xs">
+            <summary className="cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30">
+              Change recommended test
+            </summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="font-medium">
+                Project
+                <select
+                  value={projectId}
+                  onChange={(event) => setProjectId(event.target.value)}
+                  className="mt-2 h-11 w-full rounded-2xl bg-muted px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                >
+                  {projects.length === 0 && <option value="">No local project available</option>}
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="font-medium">
+                Scenario
+                <select
+                  value={scenario}
+                  onChange={(event) => setScenario(event.target.value as typeof scenario)}
+                  className="mt-2 h-11 w-full rounded-2xl bg-muted px-3 outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                >
+                  <option value="new_product">New product</option>
+                  <option value="existing_product">Existing product</option>
+                  <option value="major_feature">Major feature</option>
+                </select>
+              </label>
+            </div>
+          </details>
           <label className="mt-4 flex items-start gap-3 text-xs leading-5">
             <input
               type="checkbox"
@@ -698,8 +747,8 @@ function PilotCapture({
         </div>
       )}
       {sessions.some((session) => session.status !== "active") && (
-        <section className="mt-5" aria-labelledby="pilot-history-title">
-          <h3 id="pilot-history-title" className="text-sm font-semibold">Recent private sessions</h3>
+        <details className="mt-5 rounded-2xl bg-muted/35 p-4">
+          <summary className="cursor-pointer text-sm font-semibold focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30">Recent private sessions</summary>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2" aria-label="Privacy-safe pilot session history">
             {sessions.filter((session) => session.status !== "active").slice(-6).reverse().map((session) => (
               <li key={session.id} className="rounded-2xl bg-background p-3 text-xs">
@@ -712,7 +761,7 @@ function PilotCapture({
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       )}
       {drafts.filter((draft) => draft.projectId === projectId).slice(-1).map((draft) => (
         <ImprovementDecision key={`${draft.id}:${draft.revision}`} endpoint={endpoint} draft={draft} busy={busy} setBusy={setBusy} failed={setError} saved={async (message) => { await reloadDrafts(); await saved(message); }} />
@@ -826,4 +875,22 @@ function label(value: string) {
   return value
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function passingSessionsNeeded(
+  completedSessions: number,
+  observedPercent: number | null,
+  targetPercent: number,
+): number | null {
+  if (observedPercent === null || completedSessions <= 0) return null;
+  const passingSessions = Math.round(
+    (completedSessions * observedPercent) / 100,
+  );
+  for (let additional = 0; additional <= 1_000; additional += 1) {
+    const projected = Math.round(
+      ((passingSessions + additional) / (completedSessions + additional)) * 100,
+    );
+    if (projected >= targetPercent) return additional;
+  }
+  return null;
 }

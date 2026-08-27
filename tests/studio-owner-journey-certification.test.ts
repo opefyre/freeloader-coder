@@ -22,12 +22,13 @@ test("Action Center owns a minimal honest certification and consented-learning e
     "Owner-journey check",
     "Local, synthetic, and always $0",
     "Run check",
-    "Record a real session",
+    "Record next session",
     "explicitly consented",
     "anonymous",
     "external adoption",
     "Pilot readiness",
-    "Pilot decision thresholds",
+    "Pilot thresholds needing work",
+    "Passing evidence",
     "Cohort report",
   ])
     assert.equal(
@@ -108,7 +109,7 @@ test("pilot improvements use one exact owner decision before Jira mutation", () 
 
 test("Action Center exposes one strict pilot decision, explicit thresholds, and a privacy-safe report", () => {
   for (const phrase of [
-    "Pilot decision thresholds",
+    "Pilot thresholds needing work",
     "Completed sessions",
     "Completion rate",
     "Trust 4–5",
@@ -119,6 +120,9 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
     "Recent private sessions",
     "Privacy-safe pilot session history",
     "Recommended next test",
+    "Change recommended test",
+    "At least",
+    "projection, not a guarantee",
     "No local project available",
     "Create or open a local project",
     "Start another project",
@@ -135,6 +139,7 @@ test("Action Center exposes one strict pilot decision, explicit thresholds, and 
   assert.doesNotMatch(source, /\{session\.projectId\}/);
   assert.doesNotMatch(source, /session\.note/);
   assert.match(source, /cohort\.nextSession\.scenario/);
+  assert.match(source, /passingSessionsNeeded/);
   assert.match(source, /completedProjects/);
   assert.match(source, /cohort\?\.nextSession\.action === "add_project"/);
   assert.match(source, /navigate\("overview"\)/);
