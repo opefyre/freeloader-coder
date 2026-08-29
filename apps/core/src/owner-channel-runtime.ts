@@ -54,13 +54,14 @@ export class OwnerChannelRuntime {
     this.#transports = entries;
   }
 
-  async synchronize() {
-    let result!: { planned: number; delivered: number; deferred: number; applied: number; pending: number };
+  async synchronize(options: { includeRelay?: boolean } = {}) {
+    let result!: { planned: number; delivered: number; deferred: number; applied: number; pending: number; awaiting: number };
     const next = this.#run.then(async () => {
       const state = await this.#load();
       const now = this.now();
-      const delivered = Object.fromEntries(Object.entries(state.delivered).filter(([, item]) => item.expiresAt > now));
       const plans = (await this.planner.plan()).map((item) => ownerNotificationPlanSchema.parse(item));
+      const currentDeliveries = new Set(plans.map(deliveryKey));
+      const delivered = Object.fromEntries(Object.entries(state.delivered).filter(([key, item]) => item.expiresAt > now && currentDeliveries.has(key)));
       let sent = 0;
       let deferred = 0;
 
@@ -87,7 +88,7 @@ export class OwnerChannelRuntime {
 
       let applied = 0;
       let pending = 0;
-      if (this.relay) {
+      if (this.relay && options.includeRelay !== false && Object.keys(delivered).length > 0) {
         try {
           const inbound = await this.relay.synchronize();
           applied = inbound.applied;
@@ -99,7 +100,7 @@ export class OwnerChannelRuntime {
       }
 
       await this.#save({ schemaVersion: 1, delivered });
-      result = { planned: plans.length, delivered: sent, deferred, applied, pending };
+      result = { planned: plans.length, delivered: sent, deferred, applied, pending, awaiting: Object.keys(delivered).length };
     });
     this.#run = next.catch(() => undefined);
     await next;

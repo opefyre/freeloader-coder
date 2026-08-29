@@ -501,9 +501,28 @@ const ownerChannelRuntime = new OwnerChannelRuntime(
   channelRelay,
   async () => undefined,
 );
-void ownerChannelRuntime.synchronize().catch(() => undefined);
+// Keep local delivery planning responsive without spending a remote Worker
+// invocation while idle. The relay is consulted only while at least one
+// externally delivered owner decision is genuinely awaiting a response, and
+// backs off to five minutes when that response has not arrived.
+let ownerChannelRelayDelayMs = 15_000;
+let ownerChannelRelayNextAt = 0;
+async function synchronizeOwnerChannels() {
+  const now = Date.now();
+  const includeRelay = ownerChannelRelayNextAt > 0 && now >= ownerChannelRelayNextAt;
+  const result = await ownerChannelRuntime.synchronize({ includeRelay });
+  if (result.awaiting === 0) {
+    ownerChannelRelayDelayMs = 15_000;
+    ownerChannelRelayNextAt = 0;
+    return;
+  }
+  if (result.delivered > 0) ownerChannelRelayDelayMs = 15_000;
+  else if (includeRelay) ownerChannelRelayDelayMs = Math.min(ownerChannelRelayDelayMs * 2, 300_000);
+  ownerChannelRelayNextAt = now + ownerChannelRelayDelayMs;
+}
+void synchronizeOwnerChannels().catch(() => undefined);
 setInterval(
-  () => void ownerChannelRuntime.synchronize().catch(() => undefined),
+  () => void synchronizeOwnerChannels().catch(() => undefined),
   15_000,
 ).unref();
 const autonomy = new LocalAutonomyService(
